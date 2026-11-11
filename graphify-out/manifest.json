@@ -78,15 +78,15 @@
     "semantic_hash": ""
   },
   "bindings/CMakeLists.txt": {
-    "mtime": 1794332882.32109,
-    "seen": 1794333051.166347,
-    "ast_hash": "29ccf8ec992f5f61539d6f9746de52df",
+    "mtime": 1794387161.5060725,
+    "seen": 1794387303.6223128,
+    "ast_hash": "4904effe8cb18922c403091300f92952",
     "semantic_hash": ""
   },
   "core/CMakeLists.txt": {
-    "mtime": 1794332521.8854535,
-    "seen": 1794332640.0503347,
-    "ast_hash": "997a28ea49ac523c08a5f169618fc420",
+    "mtime": 1794387133.2808993,
+    "seen": 1794387303.6223135,
+    "ast_hash": "aee3d8cdd4f90efcc5a7d4e49188899a",
     "semantic_hash": ""
   },
   "cuda/CMakeLists.txt": {
@@ -96,9 +96,9 @@
     "semantic_hash": ""
   },
   "tests/cpp/CMakeLists.txt": {
-    "mtime": 1794332543.1644175,
-    "seen": 1794332640.0503385,
-    "ast_hash": "9023178560db41f1cce1ec80c8b791e3",
+    "mtime": 1794387168.575146,
+    "seen": 1794387303.622317,
+    "ast_hash": "664799eefb08c8738d8493978560b03b",
     "semantic_hash": ""
   },
   "app/main.py": {
@@ -126,9 +126,9 @@
     "semantic_hash": ""
   },
   "bindings/core_bridge.cpp": {
-    "mtime": 1794332876.667233,
-    "seen": 1794333051.1663132,
-    "ast_hash": "c6b0783df4aa9f20c1453841a05ee9ee",
+    "mtime": 1794387153.6443424,
+    "seen": 1794387303.6222672,
+    "ast_hash": "b29c8c6123ca6966f3e2795b4318188c",
     "semantic_hash": ""
   },
   "tests/python/test_bridge.py": {
@@ -288,9 +288,9 @@
     "semantic_hash": ""
   },
   "core/urm/joint.hpp": {
-    "mtime": 1794386074.856956,
-    "seen": 1794386430.1028564,
-    "ast_hash": "cfe69699919829e62dc3ada6dd4e9fc8",
+    "mtime": 1794387095.407518,
+    "seen": 1794387303.6222746,
+    "ast_hash": "8109758efd80a18173bc544abede464a",
     "semantic_hash": ""
   },
   "core/urm/link.hpp": {
@@ -300,8 +300,8 @@
     "semantic_hash": ""
   },
   "core/urm/robot_model.cpp": {
-    "mtime": 1794386374.7851467,
-    "seen": 1794386430.1028588,
+    "mtime": 1794386717.0988595,
+    "seen": 1794387303.6222765,
     "ast_hash": "c80a230700bae820001eddcd1dd02562",
     "semantic_hash": ""
   },
@@ -318,8 +318,8 @@
     "semantic_hash": ""
   },
   "tests/cpp/test_urm.cpp": {
-    "mtime": 1794386267.3537934,
-    "seen": 1794386430.102868,
+    "mtime": 1794386717.1490736,
+    "seen": 1794387303.6222873,
     "ast_hash": "796c651660fdcec9c0e96a514acf80aa",
     "semantic_hash": ""
   },
@@ -360,9 +360,39 @@
     "semantic_hash": ""
   },
   "PROGRESS.md": {
-    "mtime": 1794386457.3205843,
-    "seen": 1794386465.179838,
-    "ast_hash": "899d858ea5f257738d0beb0b08a2e3c3",
+    "mtime": 1794387333.2357407,
+    "seen": 1794387341.2859945,
+    "ast_hash": "d4a4b6e3ac204abad3ebb1edf5a9d1ca",
+    "semantic_hash": ""
+  },
+  "bindings/kin_bindings.cpp": {
+    "mtime": 1794387145.065713,
+    "seen": 1794387303.6222687,
+    "ast_hash": "f28e7815bbe50c7d55d5d708b9d629f8",
+    "semantic_hash": ""
+  },
+  "core/kin/fk.cpp": {
+    "mtime": 1794387127.8893166,
+    "seen": 1794387303.6222715,
+    "ast_hash": "2cb4b18b5da040617a274cd9000bd34b",
+    "semantic_hash": ""
+  },
+  "core/kin/fk.hpp": {
+    "mtime": 1794387105.8002012,
+    "seen": 1794387303.6222723,
+    "ast_hash": "083f4197269227c3958a96a7e9c85fde",
+    "semantic_hash": ""
+  },
+  "tests/cpp/test_fk.cpp": {
+    "mtime": 1794387221.4053812,
+    "seen": 1794387303.6222854,
+    "ast_hash": "470a55d88c187eb6902072899f24ff40",
+    "semantic_hash": ""
+  },
+  "tests/python/test_fk_bridge.py": {
+    "mtime": 1794387235.1783369,
+    "seen": 1794387303.6222918,
+    "ast_hash": "e4897dbc542212942404e334231f84f6",
     "semantic_hash": ""
   }
 }

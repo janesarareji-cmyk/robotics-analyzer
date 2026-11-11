@@ -33,11 +33,13 @@ struct DHParams {
 };
 
 /// Modified DH parameters (Craig convention).
+/// In Craig convention, parameters `a` and `alpha` stored on joint i correspond
+/// to link length a_{i-1} and link twist α_{i-1} between axes i-1 and i.
 struct MDHParams {
-    double a      = 0.0;  ///< Link length [m]
-    double alpha  = 0.0;  ///< Link twist [rad]
-    double d      = 0.0;  ///< Link offset [m]
-    double theta  = 0.0;  ///< Joint angle [rad]
+    double a      = 0.0;  ///< Preceding link length a_{i-1} [m]
+    double alpha  = 0.0;  ///< Preceding link twist α_{i-1} [rad]
+    double d      = 0.0;  ///< Link offset d_i along joint axis i [m]
+    double theta  = 0.0;  ///< Joint angle θ_i about joint axis i [rad]
 };
 
 /// Joint limits.

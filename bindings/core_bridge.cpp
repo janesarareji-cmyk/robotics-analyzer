@@ -3,6 +3,7 @@
  * pybind11 bridge — exposes core C++ functions to Python.
  * R0.4: Minimal bridge to verify pybind11 builds and links correctly.
  * R2.2: Wires URM bindings into core_bridge.
+ * R2.5: Wires Kinematics (FK) bindings into core_bridge.
  */
 
 #include <pybind11/pybind11.h>
@@ -15,6 +16,9 @@ std::string get_version();
 
 // Forward declare from urm_bindings
 void bind_urm(py::module_& m);
+
+// Forward declare from kin_bindings
+void bind_kin(py::module_& m);
 
 // Simple arithmetic function for bridge verification
 int add(int a, int b) {
@@ -33,4 +37,7 @@ PYBIND11_MODULE(core_bridge, m) {
 
     // R2.2: URM bindings
     bind_urm(m);
+
+    // R2.5: Kinematics bindings
+    bind_kin(m);
 }

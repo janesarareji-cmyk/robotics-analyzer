@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.5 --- FK engine (spec below)
--   **Owner now:** Builder
+-   **Substage:** R2.5 --- FK engine (ready for review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -47,7 +47,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.2  | URM pybind11 bindings                     | tests/python/test_urm_bridge.py    | approved |
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
 | R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
-| R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | planned |
+| R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | ready-for-review |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | planned |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
@@ -195,6 +195,18 @@ Tests Python `tests/python/test_fk_bridge.py`:
 
 Done when: `.\run_tests.ps1` all green (5 CTest targets), `graphify
 update .` run, row set to `ready-for-review`, commit `R2.5: FK engine`.
+
+Changed files:
+- `core/kin/fk.hpp`
+- `core/kin/fk.cpp`
+- `core/CMakeLists.txt`
+- `core/urm/joint.hpp`
+- `bindings/kin_bindings.cpp`
+- `bindings/core_bridge.cpp`
+- `bindings/CMakeLists.txt`
+- `tests/cpp/test_fk.cpp`
+- `tests/cpp/CMakeLists.txt`
+- `tests/python/test_fk_bridge.py`
 
 ### R2.6 onward
 
