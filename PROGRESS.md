@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R4 --- Kinematics and dynamics (status: `planned`, spec pack written, ready for Builder)
--   **Next substage:** R4.3 --- Numerical IK
+-   **Next substage:** R4.4 --- Multiple IK solutions + validation
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R4
@@ -85,7 +85,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R3.8  | CAD import (mini-stage R3b, spec after R3.7) | tbd                | planned  |
 | R4.1 | Compiled model freeze + to_arrays | test_compiled_arrays.py, test_compiled_arrays.cpp | committed |
 | R4.2 | Jacobian | test_jacobian.py | committed |
-| R4.3 | Numerical IK | test_ik.py | planned |
+| R4.3 | Numerical IK | test_ik.py | committed |
 | R4.4 | Multiple IK solutions | test_ik_multi.py | planned |
 | R4.5 | Singularity indicators | test_singularity.py | planned |
 | R4.6 | Inverse dynamics (RNEA) | test_dynamics.cpp, test_dynamics.py | planned |
