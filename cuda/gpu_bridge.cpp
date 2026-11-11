@@ -22,6 +22,10 @@
 #include "compute/workspace.hpp"
 #include "compute/workspace_py.hpp"
 #include "workspace_gpu.hpp"
+#include "ik_gpu.hpp"
+#include "kin/ik.hpp"
+#include "kin/ik_batch.hpp"
+#include "kin/ik_py.hpp"
 
 namespace py = pybind11;
 
@@ -478,6 +482,122 @@ py::dict sample_workspace_py(const py::dict& arrays, const std::vector<double>& 
     return compute::workspace_result_to_dict(r, o);
 }
 
+// ---------------------------------------------------------------------------
+// R5.4 part B: GPU batch IK PROTOTYPE (GPU_IK_EXPERIMENTAL; not used by the backend).
+// GPU fp32 DLS + CPU fp64 polish. CPU fallback (no polish) when the GPU cannot run.
+// ---------------------------------------------------------------------------
+
+std::mutex g_ik_mutex;
+constexpr bool kGpuIkExperimental = true;
+
+py::dict solve_ik_batch_py(const py::dict& arrays, const std::vector<double>& lo,
+                           const std::vector<double>& hi, kin::DArr targets, kin::DArr q0,
+                           const py::object& options, long long chunk, int n_threads) {
+    kin::CompiledArrays a = parse_arrays(arrays);
+    if (a.n_joints > gpu::FK_MAX_JOINTS || a.n_links > gpu::FK_MAX_JOINTS ||
+        a.n_dof > gpu::FK_MAX_JOINTS)
+        throw std::invalid_argument("solve_ik_batch: more than 64 joints/links/dof is not supported");
+    if (a.n_dof > gpu::IK_MAX_DOF)
+        throw std::invalid_argument("solve_ik_batch: GPU IK supports at most 12 DOF");
+    kin::CompiledModel cm = kin::from_arrays(a);
+    const kin::IKOptions opt = kin::parse_ik_options(options);
+    if (opt.null_gain != 0.0)
+        throw std::invalid_argument("solve_ik_batch: null_gain is not supported by the GPU IK");
+    if (!(opt.weights[0] == opt.weights[1] && opt.weights[1] == opt.weights[2] &&
+          opt.weights[3] == opt.weights[4] && opt.weights[4] == opt.weights[5]))
+        throw std::invalid_argument(
+            "solve_ik_batch: GPU IK needs weights uniform inside the position and rotation triples");
+    if (chunk < 0 || (chunk > 0 && chunk % 128 != 0))
+        throw std::invalid_argument("solve_ik_batch: chunk must be 0 or a positive multiple of 128");
+    bool bc = false;
+    const std::size_t N = kin::check_ik_batch_inputs(targets, q0, cm.n_dof, bc, "solve_ik_batch");
+    if (lo.size() != static_cast<std::size_t>(cm.n_dof) || hi.size() != lo.size())
+        throw std::invalid_argument("solve_ik_batch: lo/hi must have n_dof entries");
+
+    const std::vector<int> path = kin::active_path(cm);
+    const gpu::FkPathTables tables = build_tables(cm, path);
+
+    gpu::IkGpuIn in;
+    in.tables = &tables;
+    gpu::IkParams& P = in.prm;
+    P.nd = cm.n_dof;
+    P.max_iter = opt.max_iter;
+    const float wr = opt.position_only ? 0.f : 1.f;
+    for (int i = 0; i < 6; ++i)
+        P.w[i] = static_cast<float>(opt.weights[i]) * (i >= 3 ? wr : 1.f);
+    P.tol_pos = static_cast<float>(std::max(opt.tol_pos, 1e-4));  // fp32 tolerance
+    P.tol_rot = static_cast<float>(std::max(opt.tol_rot, 1e-4));
+    P.lam_min = 5e-3f;
+    P.lam0 = static_cast<float>(std::max(opt.damping, 5e-3));
+    for (int d = 0; d < cm.n_dof; ++d) {
+        P.lo[d] = opt.enforce_limits ? static_cast<float>(lo[d]) : -3e38f;
+        P.hi[d] = opt.enforce_limits ? static_cast<float>(hi[d]) : 3e38f;
+        P.cap[d] = 0.2f;
+    }
+    for (int j = 0; j < tables.n; ++j)
+        if (tables.type[j] == 1 && tables.src_q[j] >= 0) P.cap[tables.src_q[j]] = 0.05f;
+    in.targets = targets.data();
+    in.q0 = q0.data();
+    in.q0_broadcast = bc;
+    in.N = N;
+    in.forced_chunk = chunk;
+    in.n_threads = n_threads;
+    {
+        const Eigen::Matrix4d M = cm.base.matrix();
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c) in.base[r * 4 + c] = M(r, c);
+    }
+
+    kin::IkBatchResult res;
+    gpu::IkGpuOut go;
+    std::string reason;
+    bool used_gpu = false;
+    double gpu_ms = 0.0, polish_ms = 0.0;
+    long long n_gpu_conv = 0;
+    {
+        py::gil_scoped_release nogil;
+        std::lock_guard<std::mutex> lk(g_ik_mutex);
+        const auto t0 = std::chrono::steady_clock::now();
+        used_gpu = N > 0 && gpu::ik_gpu_run(in, go, reason);
+        const auto t1 = std::chrono::steady_clock::now();
+        if (used_gpu) {
+            gpu_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            for (std::size_t i = 0; i < N; ++i)
+                if (go.status[i] == gpu::IKS_CONVERGED) ++n_gpu_conv;
+            kin::IKOptions po = opt;  // CPU fp64 polish from the GPU result
+            po.max_iter = 10;
+            po.damping = 1e-6;
+            po.null_gain = 0.0;
+            res = kin::ik_batch_cpu(cm, lo, hi, targets.data(), N, go.q.data(), false, po,
+                                    n_threads);
+            polish_ms = std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - t1).count();
+        } else {  // CPU double fallback (full solve, no polish)
+            if (N == 0) reason = "empty input";
+            res = kin::ik_batch_cpu(cm, lo, hi, targets.data(), N, q0.data(), bc, opt, n_threads);
+            polish_ms = 0.0;
+            gpu_ms = 0.0;
+        }
+    }
+    long long n_conv = 0;
+    for (std::size_t i = 0; i < N; ++i)
+        if (res.status[i] == kin::IK_CONVERGED) ++n_conv;
+
+    py::dict out = kin::ik_batch_result_to_dict(res);
+    py::dict info;
+    info["backend"] = used_gpu ? "cuda" : "cpu";
+    info["gpu_ms"] = gpu_ms;
+    info["kernel_ms"] = go.kernel_ms;
+    info["polish_ms"] = polish_ms;
+    info["n_gpu_converged"] = n_gpu_conv;
+    info["n_polish_converged"] = n_conv;
+    info["chunks"] = go.chunks;
+    info["chunk"] = go.chunk;
+    info["fallback_reason"] = reason;
+    out["info"] = info;
+    return out;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(gpu_bridge, m) {
@@ -550,6 +670,14 @@ PYBIND11_MODULE(gpu_bridge, m) {
         return out;
     }, py::arg("lo"), py::arg("hi"), py::arg("options") = py::none(), py::arg("start") = 0,
        py::arg("n") = 0, "Debug: float32 q (n, n_dof) generated on the device (same as core_bridge.sample_q).");
+    m.attr("GPU_IK_EXPERIMENTAL") = kGpuIkExperimental;
+    m.def("solve_ik_batch", &solve_ik_batch_py, py::arg("arrays"), py::arg("lo"), py::arg("hi"),
+          py::arg("targets"), py::arg("q0"), py::arg("options") = py::none(),
+          py::arg("chunk") = 0, py::arg("n_threads") = 0,
+          "EXPERIMENTAL (GPU_IK_EXPERIMENTAL, not used by the backend): fp32 DLS IK on the GPU + "
+          "CPU fp64 polish (10 iterations). Same result dict as core_bridge.solve_ik_batch plus "
+          "info (gpu_ms, polish_ms, n_polish_converged, ...). CPU fallback without a GPU. chunk "
+          "(multiple of 128) is a test hook.");
     m.def("release_buffers", [] {
         std::lock_guard<std::mutex> lk(g_fk_mutex);
         cudaDeviceSynchronize();

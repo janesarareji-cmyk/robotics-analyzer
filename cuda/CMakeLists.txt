@@ -15,12 +15,12 @@ set_target_properties(cuda_lib PROPERTIES
 )
 
 # R5.1: GPU manager (device query, error policy)
-target_sources(cuda_lib PRIVATE gpu_manager.cu fk_kernel.cu workspace_kernel.cu)
+target_sources(cuda_lib PRIVATE gpu_manager.cu fk_kernel.cu workspace_kernel.cu ik_kernel.cu)
 find_package(CUDAToolkit REQUIRED)
 target_link_libraries(cuda_lib PUBLIC CUDA::cudart_static)
 
 # R5.1: optional pybind11 module gpu_bridge (pybind11 declared in bindings/)
-pybind11_add_module(gpu_bridge gpu_bridge.cpp workspace_gpu.cpp)
+pybind11_add_module(gpu_bridge gpu_bridge.cpp workspace_gpu.cpp ik_gpu.cpp)
 target_link_libraries(gpu_bridge PRIVATE cuda_lib core_lib)
 target_compile_features(gpu_bridge PRIVATE cxx_std_20)
 

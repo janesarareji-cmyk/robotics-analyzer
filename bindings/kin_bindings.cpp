@@ -22,6 +22,8 @@
 #include "kin/jacobian.hpp"
 #include "kin/ik.hpp"
 #include "kin/ik_multi.hpp"
+#include "kin/ik_batch.hpp"
+#include "kin/ik_py.hpp"
 #include "kin/singularity.hpp"
 #include <stdexcept>
 #include "urm/robot_model.hpp"
@@ -74,55 +76,7 @@ static py::dict compiled_arrays_to_dict(const kin::CompiledArrays& a) {
     return d;
 }
 
-static kin::IKOptions parse_ik_options(const py::object& options) {
-
-        kin::IKOptions o;
-
-        if (!options.is_none()) {
-
-            for (auto item : options.cast<py::dict>()) {
-
-                const std::string k = py::str(item.first);
-
-                py::handle v = item.second;
-
-                if (k == "position_only") o.position_only = v.cast<bool>();
-
-                else if (k == "weights") {
-
-                    auto w = v.cast<std::vector<double>>();
-
-                    if (w.size() != 6) throw std::invalid_argument("solve_ik: weights needs 6 values");
-
-                    std::copy(w.begin(), w.end(), o.weights.begin());
-
-                }
-
-                else if (k == "damping") o.damping = v.cast<double>();
-
-                else if (k == "max_iter") o.max_iter = v.cast<int>();
-
-                else if (k == "tol_pos") o.tol_pos = v.cast<double>();
-
-                else if (k == "tol_rot") o.tol_rot = v.cast<double>();
-
-                else if (k == "max_step") o.max_step = v.cast<double>();
-
-                else if (k == "enforce_limits") o.enforce_limits = v.cast<bool>();
-
-                else if (k == "null_gain") o.null_gain = v.cast<double>();
-
-                else throw std::invalid_argument("solve_ik: unknown option '" + k + "'");
-
-            }
-
-        }
-
-    return o;
-
-}
-
-
+using kin::parse_ik_options;
 
 void bind_kin(py::module_& m) {
     py::class_<kin::CompiledModel>(m, "CompiledModel")
@@ -291,6 +245,30 @@ void bind_kin(py::module_& m) {
     }, py::arg("cm"), py::arg("lo"), py::arg("hi"), py::arg("target"), py::arg("q0"),
        py::arg("options") = py::none(),
        "Damped least squares IK to a 4x4 world TCP target. Returns dict.");
+
+    m.attr("IK_CONVERGED") = static_cast<int>(kin::IK_CONVERGED);
+    m.attr("IK_MAX_ITER") = static_cast<int>(kin::IK_MAX_ITER);
+    m.attr("IK_STALLED") = static_cast<int>(kin::IK_STALLED);
+    m.attr("IK_NAN") = static_cast<int>(kin::IK_NAN);
+    m.def("solve_ik_batch", [](const kin::CompiledModel& cm, const std::vector<double>& lo,
+                               const std::vector<double>& hi, kin::DArr targets, kin::DArr q0,
+                               const py::object& options, int n_threads) {
+        const kin::IKOptions o = parse_ik_options(options);
+        bool bc = false;
+        const std::size_t N = kin::check_ik_batch_inputs(targets, q0, cm.n_dof, bc, "solve_ik_batch");
+        if (lo.size() != static_cast<std::size_t>(cm.n_dof) || hi.size() != lo.size())
+            throw std::invalid_argument("solve_ik_batch: lo/hi must have n_dof entries");
+        kin::IkBatchResult r;
+        {
+            py::gil_scoped_release nogil;
+            r = kin::ik_batch_cpu(cm, lo, hi, targets.data(), N, q0.data(), bc, o, n_threads);
+        }
+        return kin::ik_batch_result_to_dict(r);
+    }, py::arg("cm"), py::arg("lo"), py::arg("hi"), py::arg("targets"), py::arg("q0"),
+       py::arg("options") = py::none(), py::arg("n_threads") = 0,
+       "Multi-threaded batch DLS IK (each item = one solve_ik call). targets (N,4,4), q0 (N,dof) or "
+       "(dof,). Returns dict q (N,dof), status (IK_CONVERGED/IK_MAX_ITER/IK_STALLED/IK_NAN), "
+       "converged, pos_error, rot_error, iterations.");
 
     m.def("solve_ik_multi", [](const kin::CompiledModel& cm, const std::vector<double>& lo,
                                const std::vector<double>& hi, const Eigen::Matrix4d& target,

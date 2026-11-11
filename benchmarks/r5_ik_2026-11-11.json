@@ -1,0 +1,76 @@
+{
+  "benchmark": "r5_ik",
+  "date": "2026-11-11",
+  "n_targets": 100000,
+  "repeats": 5,
+  "robot": "six_dof_fixture (six_dof_with_gripper.urdf, tcp l6)",
+  "start": "q_true + U(-0.5,0.5)/sqrt(dof), clipped to limits",
+  "versions": {
+    "numpy": "2.5.4",
+    "python": "3.13.15",
+    "os": "Windows-11-10.0.26300-SP0",
+    "cpu": "AMD Ryzen 9 8940HX with Radeon Graphics",
+    "cpu_threads": 32,
+    "git_commit": "3b5796e07a8eb67eda2b1b6fd643e6878b80b264",
+    "nvcc": [
+      "Build cuda_13.5.r13.5/compiler.39125733_0"
+    ],
+    "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+    "sm": "12.0",
+    "driver_version": 13010,
+    "runtime_version": 13010,
+    "vram_total_mb": 8150
+  },
+  "results": {
+    "cpu_all_threads": {
+      "e2e_ms_median": 82.788800000003,
+      "e2e_ms_all": [
+        86.57349999998587,
+        82.69289999998364,
+        82.788800000003,
+        82.30900000000929,
+        88.68089999998574
+      ],
+      "convergence_rate": 0.99945,
+      "status_counts": {
+        "0": 99945,
+        "1": 9,
+        "2": 46,
+        "3": 0
+      }
+    },
+    "gpu_fp32_plus_polish": {
+      "e2e_ms_median": 65.79469999996945,
+      "e2e_ms_all": [
+        66.39990000007856,
+        67.18869999997423,
+        65.79469999996945,
+        56.563800000049014,
+        45.90830000006463
+      ],
+      "convergence_rate": 0.99955,
+      "status_counts": {
+        "0": 99955,
+        "1": 27,
+        "2": 18,
+        "3": 0
+      },
+      "last_run_info": {
+        "backend": "cuda",
+        "gpu_ms": 13.3393,
+        "kernel_ms": 1.801632046699524,
+        "polish_ms": 30.0942,
+        "n_gpu_converged": 99902,
+        "n_polish_converged": 99955,
+        "chunks": 2,
+        "chunk": 100096,
+        "fallback_reason": ""
+      },
+      "speedup_vs_cpu": 1.2582898014588018,
+      "rate_gap_points_cpu_minus_gpu": -0.010000000000010001,
+      "rule_a_speedup_ge_5x": false,
+      "rule_b_rate_within_1pt": true,
+      "verdict": "NO-GO"
+    }
+  }
+}

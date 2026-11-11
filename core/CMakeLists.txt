@@ -9,6 +9,7 @@ add_library(core_lib STATIC
     kin/jacobian.cpp
     kin/ik.cpp
     kin/ik_multi.cpp
+    kin/ik_batch.cpp
     kin/singularity.cpp
     dyn/dynamics.cpp
 )

@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- GPU compute (status: `in-progress`)
--   **Next substage:** R5.4 --- CPU batch IK + GPU IK go/no-go. R5.3 committed: workspace sampling (`docs/workspace-sampling.md`). Tests after R5.3: CTest 9/9, pytest 592 passed.
+-   **Next substage:** R5.5 --- Python backend, fallback, Workspace panel (spec `docs/specs/R5-spec.md`). R5.4 committed: CPU batch IK + GPU IK prototype, GPU IK NO-GO. Tests after R5.4: CTest 9/9, pytest 615 passed.
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
@@ -98,7 +98,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R5.1 | GPU Compute Manager | test_budget.cpp, test_gpu_manager.py | committed |
 | R5.2 | Batch FK kernel + precision decision (STOP after) | test_gpu_fk.py, test_fk_batch_cpu.py | committed |
 | R5.3 | Workspace sampling | test_workspace.py | committed |
-| R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | planned |
+| R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | committed |
 | R5.5 | Python backend, fallback, Workspace panel | test_compute_backend.py, test_ui_workspace.py | planned |
 | R5.6 | Performance dashboard | test_performance.py | planned |
 | R5.7 | R5 milestone | test_milestone_r5.py | planned |
@@ -149,6 +149,7 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: OPUS consulted (R5 GPU design, GPU memory model decision point). Answer: fp32 default with CPU fp64 reference; templated kernel, precision rule at R5.2 (fp64 default for FK only if e2e_fp64 <= 2x e2e_fp32 and <= 50 ms per 1e6); GPU computes in base frame, host applies base in double; thread-per-sample, joint tables in shared memory (3x4 float), SoA q [dof][N] and output [12][N], SASS-only build for sm_120 (driver 13.1 vs toolkit 13.5), own Philox RNG shared by CPU and GPU, chunk size = clamp(floor(budget/(2*bytes_per_sample)),65536,4M) with 0.6 headroom, 50 ms launch target for WDDM TDR, OOM -> halve chunk -> CPU, sticky error -> GPU dead, GPU IK with unrolled fp32 Cholesky plus CPU fp64 polish and a go/no-go rule (>=5x faster, convergence within 1 point). Details in R5-spec.
 -   2026-11-11: R5 decisions (Sonnet): GPU code in a separate optional pybind11 module `gpu_bridge` (core_bridge never links CUDA, so CPU fallback always imports); no CuPy (new dependency, needs Windows proof build); CPU batch FK and CPU batch IK are built in R5 as reference and fallback.
 -   2026-11-11: R5.2 precision rule applied mechanically (Opus rule): GPU FK default precision = fp32, fp64 available via precision="fp64". Workspace and GPU IK always fp32.
+-   2026-11-11: R5.4 GPU IK go/no-go = NO-GO (Sonnet applied Opus rule mechanically). 1e5 targets, 6-DOF fixture, RTX 5060 Laptop / Ryzen 9 8940HX 32 threads: CPU fp64 82.8 ms 99.945%; GPU fp32 + fp64 polish 65.8 ms 99.955% (1.26x, rule needs 5x; rate OK). CPU polish ~30 ms caps speedup at 2.7x. GPU IK stays behind GPU_IK_EXPERIMENTAL, backend uses CPU batch IK. See `docs/gpu-ik-decision.md`.
 
 ## Risks
 
