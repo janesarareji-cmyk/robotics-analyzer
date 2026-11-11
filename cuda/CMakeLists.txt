@@ -13,3 +13,20 @@ set_target_properties(cuda_lib PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
+
+# R5.1: GPU manager (device query, error policy)
+target_sources(cuda_lib PRIVATE gpu_manager.cu)
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(cuda_lib PUBLIC CUDA::cudart_static)
+
+# R5.1: optional pybind11 module gpu_bridge (pybind11 declared in bindings/)
+pybind11_add_module(gpu_bridge gpu_bridge.cpp)
+target_link_libraries(gpu_bridge PRIVATE cuda_lib)
+target_compile_features(gpu_bridge PRIVATE cxx_std_20)
+
+add_custom_command(TARGET gpu_bridge POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_FILE:gpu_bridge>
+        ${CMAKE_SOURCE_DIR}/$<TARGET_FILE_NAME:gpu_bridge>
+    COMMENT "Copying gpu_bridge to project root"
+)

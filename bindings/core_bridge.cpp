@@ -7,7 +7,11 @@
  */
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <stdexcept>
 #include <string>
+
+#include "compute/budget.hpp"
 
 namespace py = pybind11;
 
@@ -46,4 +50,26 @@ PYBIND11_MODULE(core_bridge, m) {
 
     // R4.6: Dynamics bindings
     bind_dyn(m);
+
+    // R5.1: GPU chunk-size rule (pure function, no CUDA)
+    m.def("chunk_size",
+          [](long long free_bytes, long long user_budget_bytes,
+             long long persistent_bytes, long long bytes_per_sample,
+             double headroom, long long reserve_bytes, long long min_chunk,
+             long long max_chunk) {
+              try {
+                  return compute::chunk_size(free_bytes, user_budget_bytes,
+                                             persistent_bytes, bytes_per_sample,
+                                             headroom, reserve_bytes, min_chunk,
+                                             max_chunk);
+              } catch (const std::invalid_argument& e) {
+                  throw py::value_error(e.what());
+              }
+          },
+          py::arg("free_bytes"), py::arg("user_budget_bytes"),
+          py::arg("persistent_bytes"), py::arg("bytes_per_sample"),
+          py::arg("headroom") = 0.6,
+          py::arg("reserve_bytes") = 256LL * 1024 * 1024,
+          py::arg("min_chunk") = 65536, py::arg("max_chunk") = 4194304,
+          "GPU chunk size in samples (0 = use CPU).");
 }

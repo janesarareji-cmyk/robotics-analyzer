@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- GPU compute (status: `planned`, spec pack written, ready for Builder)
--   **Next substage:** R5.1 --- GPU Compute Manager (first: verify driver)
+-   **Next substage:** R5.2 --- Batch FK kernel + precision decision (Builder STOPS after R5.2 for the precision decision). R5.1 committed: CTest 9/9, pytest 476.
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
@@ -95,7 +95,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R4.8 | Energy and torque tools | test_energy.py | stage-approved |
 | R4.9 | IK + analysis panels | test_ui_kin_dyn.py | stage-approved |
 | R4.10 | R4 milestone | test_milestone_r4.py | stage-approved |
-| R5.1 | GPU Compute Manager | test_budget.cpp, test_gpu_manager.py | planned |
+| R5.1 | GPU Compute Manager | test_budget.cpp, test_gpu_manager.py | committed |
 | R5.2 | Batch FK kernel + precision decision (STOP after) | test_gpu_fk.py | planned |
 | R5.3 | Workspace sampling | test_workspace.py | planned |
 | R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | planned |

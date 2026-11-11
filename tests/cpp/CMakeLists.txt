@@ -47,3 +47,9 @@ add_executable(test_dynamics test_dynamics.cpp)
 target_link_libraries(test_dynamics PRIVATE core_lib Eigen3::Eigen)
 target_compile_features(test_dynamics PUBLIC cxx_std_20)
 add_test(NAME test_dynamics COMMAND test_dynamics)
+
+# test_budget - R5.1
+add_executable(test_budget test_budget.cpp)
+target_link_libraries(test_budget PRIVATE core_lib)
+target_compile_features(test_budget PUBLIC cxx_std_20)
+add_test(NAME test_budget COMMAND test_budget)

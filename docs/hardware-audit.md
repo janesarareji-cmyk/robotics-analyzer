@@ -49,3 +49,12 @@
 - pyvistaqt: 0.13.2
 - VTK: 9.7.2
 
+
+## R5.1 GPU verification (2026-11-11)
+- GPU: NVIDIA GeForce RTX 5060 Laptop GPU, SM 12.0, 8546484224 bytes total (8151 MiB), 7374635008 bytes free at query
+- Driver: 592.19 (nvidia-smi: CUDA 13.1; `cudaDriverGetVersion` = 13010)
+- CUDA runtime (`cudaRuntimeGetVersion`): 13010 (cudart_static linked from toolkit 13.5 reports 13.1)
+- Toolkit: nvcc 13.5.37 (cuda_13.5.r13.5)
+- Build: `CMAKE_CUDA_ARCHITECTURES 120-real` (SASS only, no PTX), MSVC 19.44, CMake 4.4
+- Result: `test_cuda` (vector-add, 1e6 elements) PASSES on driver 592.19 with the SASS-only build. No driver blocker.
+- `gpu_bridge` (`device_info`, `mem_info`, `is_dead`, `set_fake_oom`) imports and reports the device.

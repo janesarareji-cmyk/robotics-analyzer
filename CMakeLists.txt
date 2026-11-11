@@ -9,7 +9,8 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # RTX 5060 Laptop — Blackwell SM 12.0
-set(CMAKE_CUDA_ARCHITECTURES 120)
+# SASS only: PTX from toolkit 13.5 does not JIT on a 13.1 driver
+set(CMAKE_CUDA_ARCHITECTURES 120-real)
 
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -47,8 +48,8 @@ set(JSON_Install OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(nlohmann_json)
 
 add_subdirectory(core)
+add_subdirectory(bindings)  # before cuda: declares pybind11 for gpu_bridge
 add_subdirectory(cuda)
-add_subdirectory(bindings)
 add_subdirectory(tests/cpp)
 
 message(STATUS "RoboticsAnalyzer v${PROJECT_VERSION} configured")
