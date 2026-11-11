@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot name="cycle">
+  <link name="base"/>
+  <link name="l1"/>
+  <link name="l2"/>
+  <link name="l3"/>
+  <joint name="j1" type="revolute">
+    <parent link="base"/>
+    <child link="l1"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="1"/>
+  </joint>
+  <joint name="j2" type="revolute">
+    <parent link="l2"/>
+    <child link="l3"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="1"/>
+  </joint>
+  <joint name="j3" type="revolute">
+    <parent link="l3"/>
+    <child link="l2"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="1"/>
+  </joint>
+</robot>

@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<robot name="two_roots">
+  <link name="a"/>
+  <link name="b"/>
+  <link name="c"/>
+  <link name="d"/>
+  <joint name="j1" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="1"/>
+  </joint>
+  <joint name="j2" type="revolute">
+    <parent link="c"/>
+    <child link="d"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="1"/>
+  </joint>
+</robot>

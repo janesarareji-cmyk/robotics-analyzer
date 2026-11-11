@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot name="floating">
+  <link name="base"/>
+  <link name="body"/>
+  <joint name="free" type="floating">
+    <parent link="base"/>
+    <child link="body"/>
+  </joint>
+</robot>

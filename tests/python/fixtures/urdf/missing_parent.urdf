@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<robot name="missing_parent">
+  <link name="base"/>
+  <link name="l1"/>
+  <joint name="j1" type="revolute">
+    <parent link="ghost"/>
+    <child link="l1"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="1"/>
+  </joint>
+</robot>
