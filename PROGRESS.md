@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.8 --- Joint control panel + TCP pose readout (ready-for-review)
--   **Owner now:** Reviewer
+-   **Substage:** R2.9 --- 3-DOF end-to-end milestone test (planned)
+-   **Owner now:** Builder
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -50,7 +50,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | approved (follow-ups → R2.8) |
-| R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | ready-for-review |
+| R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | approved (follow-up → R2.9) |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
@@ -315,9 +315,41 @@ Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.8 set to `re
 
 Changed files: `app/panels/joint_panel.py`, `app/main_window.py`, `app/project/project_controller.py`, `app/viewport/robot_view.py`, `tests/python/test_joint_panel.py`, `tests/python/test_viewport_robot.py`.
 
-### R2.9 onward
+### R2.9 --- 3-DOF end-to-end milestone test (closes Stage R2)
 
-Spec written by Reviewer when R2.8 is approved.
+Goal: prove the whole R2 chain works together on a real 3-DOF arm. Mostly tests. One small perf fix first.
+
+Builder: `graphify query` on MainWindow, JointPanel, DH editor, serializer first.
+
+R2.8 follow-up (do first, small): `MainWindow._on_joint_q_changed` must NOT call `dh_editor.set_model(...)` per slider tick (rebuilds whole table). Add `DHEditorWidget.refresh_q()` (or similar) that updates only the q cells/spinboxes under the `_updating` guard, and call that instead. Test: drag slider 50 times → DH table widget objects are the same instances (no rebuild); q cell shows the new value.
+
+Milestone test `tests/python/test_milestone_r2.py` (offscreen MainWindow, no mocks of core_bridge). Use a 3-DOF arm with real nonzero alpha and d (e.g. standard DH: j1 a=0 alpha=π/2 d=0.3; j2 a=0.5 alpha=0 d=0; j3 a=0.4 alpha=0 d=0; limits ±π; tool xyz=(0.1,0,0)). Steps in ONE test flow:
+1.  New project → build the arm through the DH editor widget (add joints, set cells, set convention, tool pose) — not through direct core_bridge calls.
+2.  `validate()` returns empty list. Viewport has 4 frame triads + TCP + polyline with 5 points.
+3.  Set q via JointPanel spinboxes to (30°, −45°, 60°). TCP from `cb.fk(model)` equals a closed-form expected value computed in the test by an INDEPENDENT numpy implementation (write own DH matrices with numpy; do not import kin code). Tol 1e-9. TCP readout label text matches expected mm/deg to 2 decimals.
+4.  Viewport polyline points equal numpy-computed frame origins (tol 1e-9).
+5.  Save project to a temp `.robotproj`, close it (viewport + panels empty), open it again: DH table, joint panel values, TCP readout, and viewport are identical to before (tol 1e-9).
+6.  Switch convention to Modified in the editor with an MDH-equivalent parameter set (convert the same arm by hand in the test) → same TCP as before (tol 1e-9).
+7.  Edit link a1 from 0.5 to 0.7 via editor → viewport + readout update, triad scale rebuild occurs only if >1%.
+8.  Make q out of limits via editor (shrink limits) → warning shown, model q unchanged, `validate()` reports it, save still works.
+9.  Zero all → TCP equals numpy value for q=0; Reset → returns to earlier q.
+10. Corrupt `robot_model.json` inside a copy of the project zip → open fails with clean error, app window still usable.
+
+Also run a Python-only numeric check: 200 random q (seed 42) for the 3-DOF arm, `cb.fk(model, q)` vs the independent numpy implementation, tol 1e-9, both conventions.
+
+Stage R2 gate (Builder records results in PROGRESS.md under Current when done; Reviewer verifies):
+-   All tests green: CTest 5/5, pytest all.
+-   FK numerical reference tests pass (R2.5 + milestone numeric check).
+-   `graphify update .` run, `graphify-out/graph.json` current.
+-   Hardware-dependent GPU/CPU equivalence: not applicable until R5.
+
+Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.9 set to `ready-for-review`, commit `R2.9: R2 milestone test`.
+
+Changed files (expected): `app/main_window.py`, `app/panels/dh_editor.py`, `tests/python/test_milestone_r2.py`, `tests/python/test_dh_editor.py` (or test_joint_panel.py for the no-rebuild test).
+
+### R3 onward
+
+Stage R3 planned by Reviewer after R2 gate passes.
 
 ## Open review items
 
