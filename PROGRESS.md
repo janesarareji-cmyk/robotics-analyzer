@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.7 --- Viewport: links, frames, TCP (ready for review)
--   **Owner now:** Reviewer
+-   **Substage:** R2.8 --- Joint control panel + TCP pose readout (planned)
+-   **Owner now:** Builder
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -49,7 +49,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
-| R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | ready-for-review |
+| R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | approved (follow-ups → R2.8) |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
 
@@ -279,9 +279,45 @@ Changed files:
 - `app/panels/log_panel.py`
 - `tests/python/test_viewport_robot.py`
 
-### R2.8 onward
+### R2.8 --- Joint control panel + TCP pose readout
 
-Spec written by Reviewer when R2.7 is approved.
+Goal: user moves joints with sliders/spinboxes, viewport and TCP readout update live. No new C++.
+
+Builder: `graphify query` on MainWindow, ProjectController, RobotView, DH editor first. Reuse.
+
+R2.7 follow-ups (do first, small):
+-   `RobotView`: rebuild actors when computed scale (spec R2.7 item 7) changes by more than 1% (store last scale). Test: change a link `a` from 0.1 to 2.0 → triad size grows.
+-   Connect `project_closed` to `RobotView.clear()` (viewport empty after close). Test it.
+
+R2.8 items:
+1.  New `app/panels/joint_panel.py`: `JointPanel(QWidget)` in a new right-side dock "Joints" (View-menu toggle, default on, tabbed with the DH editor dock). One row per NON-fixed joint: name label, QSlider + QDoubleSpinBox (synced), unit label (deg for revolute, mm for prismatic; internal values stay rad / m). Range = joint limits. Row for fixed joints not shown.
+2.  Slider/spinbox change → writes `joint.q` on the controller's model and emits `q_changed`. MainWindow recomputes FK and updates RobotView. Use whole-object assignment rules from R2.4 notes where needed. Must not rebuild the panel on each change (only on joint count/type/limits change).
+3.  Out-of-limit q (e.g. loaded from file): panel shows it clamped in the widget but does NOT silently change the model; show a small warning icon/label on that row. Slider drag never produces q outside limits.
+4.  Buttons: "Zero all" (q=0 clamped to limits) and "Reset" (restore q values from when the project/robot was loaded or last edited in DH editor).
+5.  TCP readout (same dock, below sliders): x, y, z in mm; roll, pitch, yaw in deg (use R = Rz·Ry·Rx extraction consistent with `pose_to_iso`; write helper `rotation_to_rpy(R)` in Python with gimbal-lock handling at pitch=±90°). Readout updates on every FK recompute. Also a "Copy pose" button that puts the readout text on the clipboard.
+6.  q edits mark project dirty. q is saved in the URM JSON already.
+7.  DH editor edit (joint count, type, limits, convention) → JointPanel rebuilds itself. JointPanel ↔ DH editor never fight (use update guards like `_updating`).
+8.  Log: no log line per slider tick. One log line on Zero all / Reset.
+
+Tests `tests/python/test_joint_panel.py`:
+-   3R model: panel has 3 rows; fixed joint adds no row; prismatic row uses mm.
+-   Setting spinbox deg value changes `model.joints[i].q` in rad; slider and spinbox stay in sync.
+-   Slider change → RobotView polyline points == `cb.fk(model)` origins (tol 1e-9).
+-   TCP readout of 2R planar at q=(90°,−90°) → x=1000mm, y=1000mm, z=0, yaw=0 (a1=a2=1 m).
+-   `rotation_to_rpy` round-trip against `pose_to_iso` for 50 random rpy (pitch within ±80°), tol 1e-9; gimbal-lock case does not return NaN.
+-   Out-of-limit q: model unchanged, warning shown.
+-   Zero all and Reset behave as specified.
+-   DH editor type change/joint add → panel rebuilds, row count correct.
+-   Dirty flag set on q edit.
+-   Follow-ups: scale rebuild test; project close clears viewport.
+
+Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.8 set to `ready-for-review`, commit `R2.8: joint panel + TCP readout`.
+
+Changed files (expected): `app/panels/joint_panel.py`, `app/main_window.py`, `app/viewport/robot_view.py`, `tests/python/test_joint_panel.py`, `tests/python/test_viewport_robot.py`.
+
+### R2.9 onward
+
+Spec written by Reviewer when R2.8 is approved.
 
 ## Open review items
 
