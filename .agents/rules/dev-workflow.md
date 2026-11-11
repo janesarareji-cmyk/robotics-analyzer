@@ -47,7 +47,7 @@ Authority: `docs/MASTER_PLAN.md` section 1. Where it conflicts with "Workflow Pe
 
 ### User Shortcuts
 
-- To Gemini: "continue" → continue the current stage from the first substage not `committed`, following the stage spec pack, then stage gate and push. See `.agents/rules/continue-protocol.md`.
+- To Gemini: "continue" → continue the current stage from the first substage not `committed`, following the stage spec pack, then stage gate and push. See `.agents/rules/continue-protocol.md` (it also lists the read order for a new session).
 - To Claude: "review" → review the stage marked `stage-ready-for-review` in `PROGRESS.md`, set `stage-approved` or `stage-changes-requested`, and write the next stage spec pack if approved.
 
 ### Progress File
@@ -56,7 +56,7 @@ Authority: `docs/MASTER_PLAN.md` section 1. Where it conflicts with "Workflow Pe
 Read it at the start of every session. Update the substage log row and "Current"
 section at every handoff. Follow the handoff protocol inside that file.
 
-### Workflow Per Substage
+### Workflow Per Substage (legacy R0-R2; from R3 see Stage-Batch Workflow and `continue-protocol.md`)
 
 0. **Gemini (Builder)** reads `PROGRESS.md`, then runs `graphify update .` and checks the graph BEFORE writing code. Use `graphify query` to find files that are new or changed since the last session, and existing code to reuse. Do not create a file or class that already exists in the graph.
 1. **Gemini (Builder)** implements the substage: writes code, runs commands, verifies it compiles/runs.
@@ -66,7 +66,7 @@ section at every handoff. Follow the handoff protocol inside that file.
 5. **Gemini (Builder)** applies fixes if needed, rebuilds, updates graphify again.
 6. Repeat until substage is clean.
 
-### Stage Completion Gate
+### Stage Completion Gate (legacy wording; from R3 the gate is `docs/MASTER_PLAN.md` 1.3)
 
 A **stage** consists of multiple **substages**.
 

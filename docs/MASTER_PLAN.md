@@ -28,15 +28,17 @@ Review is at the END of a stage, not after each substage.
 
 -   **Blocking review** = Gemini does NOT start the next stage until Claude
     sets the stage `approved`. Applies to: **R3, R4** (schema and math that
-    everything later depends on) and **R5.2 precision decision** (section 6).
+    everything later depends on) and **R5.2 precision decision** (section 4, R5.2).
 -   **Non-blocking review** = Gemini pushes, starts the next stage at once.
     Claude reviews the pushed stage when the user says "review". Findings
     become `R<x>-fix` substages done FIRST in the next session. Applies to:
-    **R6, R7, R8**.
+    **R5 (after the R5.2 decision), R6, R7, R8**.
 -   Maximum review lag: one stage. Never two unreviewed stages at once.
 -   Claude review of a stage = graphify query, Haiku runs tests, read every
     stage diff (`git diff stage-R<x-1>-done..stage-R<x>-done`), findings in
-    Caveman, then verdict.
+    Caveman, then verdict. Tags: `stage-R2-done` = commit `91a53a0` (R2
+    closed). If a tag is missing (no remote yet), Gemini still creates it
+    locally at the stage gate; diff base = previous stage tag.
 
 ### 1.3 Stage gate (all must be true before push)
 
@@ -109,17 +111,17 @@ branches are drawn and flagged.
 
 | ID | Module | What is built | Tests / done when |
 |----|--------|---------------|-------------------|
-| R3.1 | URM schema v2 | Fields above, v1→v2 migration, `dof()` rule (non-fixed and non-mimic), `q_index_map()`, new `validate()` rules, `docs/urm-schema-v2.md`. Full spec already in `PROGRESS.md`. | C++ and Python tests in spec; v1 fixture opens |
-| R3.2 | Compiled kinematic model + tree FK | C++ `kin::CompiledModel`: arrays (T_origin, axis, type, parent, q_index) in topological order, built once per model. FK for tree: `frames[child] = frames[parent] * T_origin * motion(axis,q)`. DH/MDH joints compile to the same form (A_i split as origin part + motion part, exact). Mimic: `q_eff = mult*q_master + offset`. `fk()` for existing DH robots unchanged in result. Python: `fk()` also returns per-link frames for trees; `active_chain(model)` returns joint indices root→tcp_link. | R2 FK tests still pass bit-for-bit (tol 1e-12); tree test (3 links, 2 branches) vs hand numbers; mimic test; origin_axis revolute/prismatic vs closed form; random-model test: 200 random chains, DH-compiled FK == old FK |
-| R3.3 | URDF parser | Python (`app/importers/urdf.py`, stdlib `xml.etree`): `<robot>`, `<link>`, `<joint>` types revolute, continuous (limits ±π, flagged), prismatic, fixed; `<origin xyz rpy>`, `<axis>`, `<limit>`, `<mimic>`, `<parent>/<child>`. Floating and planar joints: rejected with clear error (not supported v1). Xacro: not supported v1, clear error. Link order made topological. Root link must be unique. Output: `RobotModel` via bindings, `tcp_link` = first leaf along longest chain (user can change later). Returns a result object: `model`, `warnings`, `errors`. | Fixtures: serial 6-DOF, branched gripper, mimic joint, continuous joint, bad XML, missing parent, two roots, cycle, floating joint. FK of imported 2R equals hand value |
-| R3.4 | UI for tree / origin_axis | Robot tree view (links/joints, parent-child), joint property panel; DH editor shows origin_axis joints read-only and refuses edits; JointPanel lists active-chain joints plus a collapsed "other branches" group; viewport draws all branches, non-active branches dimmed and labelled; File > Import URDF; asserts DH table cells after project reopen (open item from R2.9). | Offscreen UI tests, import flow end-to-end, branch drawn, DH refusal |
+| R3.1 | URM schema v2 (DONE, `fadcca7`) | Fields above, v1→v2 migration, `dof()` rule (non-fixed and non-mimic), `q_index_map()`, new `validate()` rules, `docs/urm-schema-v2.md`. Spec: `docs/specs/R3.1-spec.md`. | C++ and Python tests in spec; v1 fixture opens |
+| R3.2 | Compiled kinematic model + tree FK | C++ `kin::CompiledModel`: per joint (pre, post, axis, type, parent, child, q_index, mimic source/mult/offset), sorted by child_link, built once per model. FK for tree: `frames[child] = frames[parent] * pre * motion(axis,q_eff) * post`. DH/MDH joints compile to the same form (exact split, see R3 spec). Mimic flattened to its root master at compile time: `q_eff = mult*q[src] + offset`. `fk()` for existing DH robots unchanged in result. Python: `fk()` also returns per-link frames for trees; `active_chain(model)` returns joint indices root→tcp_link. | R2 FK tests still pass bit-for-bit (tol 1e-12); tree test (3 links, 2 branches) vs hand numbers; mimic test; origin_axis revolute/prismatic vs closed form; random-model test: 200 random chains, DH-compiled FK == old FK |
+| R3.3 | URDF parser | Python (`app/importers/urdf.py`, stdlib `xml.etree`): `<robot>`, `<link>`, `<joint>` types revolute, continuous (limits ±π, flagged), prismatic, fixed; `<origin xyz rpy>`, `<axis>`, `<limit>`, `<mimic>`, `<parent>/<child>`. Floating and planar joints: rejected with clear error (not supported v1). Xacro: not supported v1, clear error. Link order made topological. Root link must be unique. Output: `ImportResult(model, report, visuals, collisions)`; model built via bindings in canonical order (`joints[i].child_link == i+1`); `tcp_link` = deepest link (user can change later). | Fixtures: serial 6-DOF, branched gripper, mimic joint, continuous joint, bad XML, missing parent, two roots, cycle, floating joint. FK of imported 2R equals hand value |
+| R3.4 | UI for tree / origin_axis | Robot tree view (reuses `ModelPanel`), read-only `PropertiesPanel`; DH editor shows origin_axis joints read-only and refuses edits; JointPanel lists active-chain joints plus a collapsed "other branches" group; viewport draws all branches, non-active branches dimmed and labelled; File > Import URDF; asserts DH table cells after project reopen (open item from R2.9). | Offscreen UI tests, import flow end-to-end, branch drawn, DH refusal |
 | R3.5 | Meshes and assets | Resolve `package://`, relative paths and absolute paths (search roots list in project settings). Load STL, OBJ, PLY with PyVista; DAE not supported v1 (warning, falls back to primitive). URDF primitives (box, cylinder, sphere) drawn. Visual vs collision geometry kept apart (collision stored, not drawn yet). Mesh `scale`, `origin`. Meshes copied into the project archive (`assets/`) so a saved project is self-contained. | Fixtures with STL, missing mesh (warning, robot still loads), package:// resolve, archive round-trip |
 | R3.6 | Import validation + report | One `ImportReport` (errors, warnings, info with link/joint names) shown in a dock; clickable rows select the joint/link; report saved as text; severity rules fixed (error = model unusable, warning = model usable). Re-runs `validate()` after import. | Report content per fixture; UI test |
-| R3.7 | Physical properties | `Link.inertial`: mass, COM (xyz), inertia tensor (6), from URDF `<inertial>`. Estimate: uniform density from mesh volume (PyVista), user sets density or total mass. Manual editor table. Validation: mass > 0, inertia positive definite and obeys triangle inequality, else warning. Stored in URM (schema v2, no bump if added as optional keys; else v3 with migration). Total mass and COM readout. | Box/cylinder analytic inertia vs estimate (tol 1%), URDF inertial import, validation cases |
+| R3.7 | Physical properties | Existing `Link.inertia` (mass, COM, tensor; defaults changed to mass 0 = not set), from URDF `<inertial>`. Estimate: uniform density from mesh volume (PyVista), user sets density or total mass. Manual editor table. Validation in new `validate_physical()` (warnings, separate from structural `validate()`): mass ≥ 0, inertia positive definite, triangle inequality. Stored in URM, schema v2, no bump. Total mass and COM readout. | Box/cylinder analytic inertia vs estimate (tol 1%), URDF inertial import, validation cases |
 | R3.8 | CAD import + guided joints | Split into four sub-parts; **re-plan before starting** (needs a Windows proof of the CAD library). R3.8a feasibility: STEP reader candidates (pythonocc/OpenCASCADE, cadquery) proof build on Windows, decision logged. R3.8b: STEP assembly → parts tessellated to meshes + part tree. R3.8c: guided joint wizard (pick two parts, pick joint type, axis from cylindrical face or manual, origin) producing `origin_axis` joints. R3.8d: manual mode (edit origin/axis numbers) and automatic mode (detect cylindrical faces as revolute candidates, user confirms). | PoC built; sample STEP assembly of 3 parts becomes a 2-joint robot whose FK matches the expected pose |
 
 **R3 milestone test** (`test_milestone_r3.py`): import a 6-DOF URDF with
-meshes and a gripper branch → report has no errors → viewport draws all
+meshes and a gripper branch → report has no errors → set TCP link to the flange → viewport draws all
 branches → joint panel moves the active chain → TCP readout equals an
 independent numpy FK → mass/COM shown → save, close, open, same state.
 
@@ -249,6 +251,7 @@ R7 (7) → R8 (8). Push after every stage. Review: blocking after R3 and R4;
 non-blocking after R5, R6, R7; final full review at R8.8.
 
 Stage spec packs are written by Claude at the start of each stage (step A
-in 1.1) because they depend on the real code at that time. The R3 pack
-starts now: R3.1 is already specified in `PROGRESS.md`; the R3.2 to R3.7
-specs are written next, all at once, before Gemini starts R3.
+in 1.1) because they depend on the real code at that time. R3 pack:
+`docs/specs/R3-spec.md` (R3.2-R3.7; R3.1 done, archived in
+`docs/specs/R3.1-spec.md`). R3.8 (CAD) is re-planned as mini-stage `R3b`
+after R3.7. R4 pack is written after R3 is `stage-approved`.
