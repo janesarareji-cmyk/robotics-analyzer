@@ -102,6 +102,7 @@ Specs do not live in this file. Find them here:
 -   (resolved) URM serial chain → tree in R3.1 (see Decisions, Opus).
 -   (resolved R3.4) R2.9 test now asserts DH table cells after reopen.
 -   (resolved R3.4 item 0) DH editor remove-joint leaves stale parent_link/child_link and extra links → validate() fails.
+-   (info) R3 review: `joint_links()` in app/panels/model_panel.py duplicates C++ `kin::effective_links` (legacy 0/0 serial rule). Unify in R4 (bind effective_links or expose via compile).
 
 ## Decisions
 
