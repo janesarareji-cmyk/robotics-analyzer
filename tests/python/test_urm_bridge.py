@@ -1,6 +1,6 @@
 """
 tests/python/test_urm_bridge.py
-R2.2: Tests for the pybind11 URM Python bindings.
+R2.4: Tests for the pybind11 URM Python bindings and hardening.
 """
 
 import os
@@ -19,6 +19,12 @@ def test_joint_type_enum():
     assert cb.JointType.Fixed is not None
 
 
+def test_dh_convention_enum():
+    """DHConvention enum values are accessible from Python."""
+    assert cb.DHConvention.Standard is not None
+    assert cb.DHConvention.Modified is not None
+
+
 def test_dh_params_readwrite():
     """DHParams fields can be set and read from Python."""
     dh = cb.DHParams()
@@ -30,6 +36,16 @@ def test_dh_params_readwrite():
     assert abs(dh.alpha - 1.5708) < 1e-9
 
 
+def test_pose_readwrite():
+    """Pose fields xyz and rpy can be set and read from Python."""
+    p = cb.Pose()
+    p.xyz = [1.0, 2.0, 3.0]
+    p.rpy = [0.1, 0.2, 0.3]
+    assert abs(p.xyz[0] - 1.0) < 1e-9
+    assert abs(p.rpy[2] - 0.3) < 1e-9
+    assert "xyz" in repr(p)
+
+
 def test_joint_creation():
     """Joint can be created and fields set from Python."""
     j = cb.Joint()
@@ -39,6 +55,21 @@ def test_joint_creation():
     assert j.name == "shoulder"
     assert j.type == cb.JointType.Revolute
     assert abs(j.q - 0.5) < 1e-9
+
+
+def test_default_limits_callable():
+    """default_limits returns correct limits per type."""
+    r_lim = cb.default_limits(cb.JointType.Revolute)
+    assert abs(r_lim.lower - (-math.pi)) < 1e-6
+    assert abs(r_lim.upper - math.pi) < 1e-6
+
+    p_lim = cb.default_limits(cb.JointType.Prismatic)
+    assert abs(p_lim.lower - 0.0) < 1e-6
+    assert abs(p_lim.upper - 0.5) < 1e-6
+
+    f_lim = cb.default_limits(cb.JointType.Fixed)
+    assert abs(f_lim.lower - 0.0) < 1e-6
+    assert abs(f_lim.upper - 0.0) < 1e-6
 
 
 def test_link_creation():
@@ -56,7 +87,25 @@ def test_robot_model_creation():
     robot.metadata.name = "TestBot"
     robot.metadata.author = "Claude"
     assert robot.metadata.name == "TestBot"
+    assert robot.schema_version == 1
+    assert robot.convention == cb.DHConvention.Standard
     assert robot.dof() == 0
+
+
+def test_robot_model_convention_readwrite():
+    """RobotModel convention can be modified."""
+    robot = cb.RobotModel()
+    robot.convention = cb.DHConvention.Modified
+    assert robot.convention == cb.DHConvention.Modified
+
+
+def test_robot_model_base_tool_poses():
+    """RobotModel base and tool poses can be accessed and modified."""
+    robot = cb.RobotModel()
+    robot.base.xyz = [0.1, 0.2, 0.3]
+    robot.tool.rpy = [0.0, 1.57, 0.0]
+    assert abs(robot.base.xyz[0] - 0.1) < 1e-9
+    assert abs(robot.tool.rpy[1] - 1.57) < 1e-9
 
 
 def test_robot_model_add_joints():
@@ -89,6 +138,36 @@ def test_robot_model_set_get_q():
         assert abs(a - b) < 1e-9
 
 
+def test_set_q_wrong_length_raises_value_error():
+    """set_q raises ValueError (std::invalid_argument) when input length != dof."""
+    robot = cb.RobotModel()
+    for i in range(2):
+        j = cb.Joint()
+        j.type = cb.JointType.Revolute
+        robot.joints.append(j)
+
+    with pytest.raises(ValueError, match="q size mismatch"):
+        robot.set_q([0.1])
+
+    with pytest.raises(ValueError, match="q size mismatch"):
+        robot.set_q([0.1, 0.2, 0.3])
+
+
+def test_robot_model_validate():
+    """validate() returns a list of error strings for invalid models."""
+    robot = cb.RobotModel()
+    robot.links.append(cb.Link())
+    j1 = cb.Joint()
+    j1.name = "j1"
+    j1.limits.lower = 1.0
+    j1.limits.upper = 0.0  # invalid: lower > upper
+    robot.joints.append(j1)
+
+    errors = robot.validate()
+    assert isinstance(errors, list)
+    assert len(errors) > 0
+
+
 def test_robot_model_fixed_joint_excluded():
     """Fixed joints are not counted in dof() from Python."""
     robot = cb.RobotModel()
@@ -98,7 +177,7 @@ def test_robot_model_fixed_joint_excluded():
     j_rev.type = cb.JointType.Revolute
     robot.joints.append(j_fixed)
     robot.joints.append(j_rev)
-    robot.joints.append(j_rev)  # Note: appends same object — that's fine for DOF count
+    robot.joints.append(j_rev)
     assert robot.dof() == 2
 
 
@@ -107,6 +186,8 @@ def test_robot_model_json_round_trip():
     robot = cb.RobotModel()
     robot.metadata.name = "Puma560"
     robot.metadata.version = "2.0.0"
+    robot.convention = cb.DHConvention.Modified
+    robot.base.xyz = [0.1, 0.2, 0.3]
 
     for i in range(6):
         j = cb.Joint()
@@ -121,9 +202,20 @@ def test_robot_model_json_round_trip():
 
     loaded = cb.RobotModel.from_json(json_str)
     assert loaded.metadata.name == "Puma560"
+    assert loaded.convention == cb.DHConvention.Modified
+    assert abs(loaded.base.xyz[0] - 0.1) < 1e-9
     assert loaded.dof() == 6
     for i in range(6):
         assert abs(loaded.joints[i].dh.a - robot.joints[i].dh.a) < 1e-9
+
+
+def test_from_json_bad_json_raises_runtime_error():
+    """from_json raises RuntimeError on malformed JSON or unknown type."""
+    with pytest.raises(RuntimeError):
+        cb.RobotModel.from_json("{bad json")
+
+    with pytest.raises(RuntimeError):
+        cb.RobotModel.from_json('{"joints": [{"name": "j", "type": "bad_type"}]}')
 
 
 def test_urm_repr():

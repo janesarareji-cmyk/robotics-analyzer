@@ -1,7 +1,7 @@
 /**
  * bindings/urm_bindings.cpp
  * pybind11 bindings for the URM (Unified Robot Model) C++ types.
- * R2.2: Exposes Joint, Link, RobotModel, DHParams, MDHParams, JointLimits.
+ * R2.4: Exposes Joint, Link, RobotModel, DHParams, MDHParams, JointLimits, Pose, DHConvention.
  */
 
 #include <pybind11/pybind11.h>
@@ -28,6 +28,24 @@ void bind_urm(py::module_& m) {
         .value("Prismatic", urm::JointType::Prismatic)
         .value("Fixed",     urm::JointType::Fixed)
         .export_values();
+
+    // DHConvention enum
+    py::enum_<urm::DHConvention>(m, "DHConvention")
+        .value("Standard", urm::DHConvention::Standard)
+        .value("Modified", urm::DHConvention::Modified)
+        .export_values();
+
+    // Pose
+    py::class_<urm::Pose>(m, "Pose")
+        .def(py::init<>())
+        .def_readwrite("xyz", &urm::Pose::xyz)
+        .def_readwrite("rpy", &urm::Pose::rpy)
+        .def("__repr__", [](const urm::Pose& p) {
+            return "<Pose xyz=[" + std::to_string(p.xyz[0]) + ", " +
+                   std::to_string(p.xyz[1]) + ", " + std::to_string(p.xyz[2]) + "] rpy=[" +
+                   std::to_string(p.rpy[0]) + ", " + std::to_string(p.rpy[1]) + ", " +
+                   std::to_string(p.rpy[2]) + "]>";
+        });
 
     // DHParams
     py::class_<urm::DHParams>(m, "DHParams")
@@ -79,7 +97,6 @@ void bind_urm(py::module_& m) {
         .def_readwrite("type",    &urm::Joint::type)
         .def_readwrite("dh",      &urm::Joint::dh)
         .def_readwrite("mdh",     &urm::Joint::mdh)
-        .def_readwrite("use_mdh", &urm::Joint::use_mdh)
         .def_readwrite("limits",  &urm::Joint::limits)
         .def_readwrite("q",       &urm::Joint::q)
         .def("__repr__", [](const urm::Joint& j) {
@@ -107,15 +124,21 @@ void bind_urm(py::module_& m) {
     // RobotModel
     py::class_<urm::RobotModel>(m, "RobotModel")
         .def(py::init<>())
-        .def_readwrite("metadata", &urm::RobotModel::metadata)
-        .def_readwrite("links",    &urm::RobotModel::links)
-        .def_readwrite("joints",   &urm::RobotModel::joints)
+        .def_readwrite("schema_version", &urm::RobotModel::schema_version)
+        .def_readwrite("convention",     &urm::RobotModel::convention)
+        .def_readwrite("metadata",       &urm::RobotModel::metadata)
+        .def_readwrite("base",           &urm::RobotModel::base)
+        .def_readwrite("tool",           &urm::RobotModel::tool)
+        .def_readwrite("links",          &urm::RobotModel::links)
+        .def_readwrite("joints",         &urm::RobotModel::joints)
         .def("dof",     &urm::RobotModel::dof,
              "Return the number of actuated (non-Fixed) DOF.")
         .def("get_q",   &urm::RobotModel::get_q,
              "Return current joint values as a list of floats.")
         .def("set_q",   &urm::RobotModel::set_q, py::arg("q"),
              "Set joint values from a list of floats.")
+        .def("validate", &urm::RobotModel::validate,
+             "Validate model consistency. Returns human-readable error messages.")
         .def("to_json", [](const urm::RobotModel& m, int indent) {
             return urm::to_json(m, indent);
         }, py::arg("indent") = 2,
@@ -130,6 +153,8 @@ void bind_urm(py::module_& m) {
         });
 
     // Free functions
-    m.def("urm_to_json",   &urm::to_json,   py::arg("model"), py::arg("indent") = 2);
-    m.def("urm_from_json", &urm::from_json, py::arg("json_str"));
+    m.def("default_limits", &urm::default_limits, py::arg("type"),
+          "Return default JointLimits for a given JointType.");
+    m.def("urm_to_json",    &urm::to_json,        py::arg("model"), py::arg("indent") = 2);
+    m.def("urm_from_json",  &urm::from_json,      py::arg("json_str"));
 }

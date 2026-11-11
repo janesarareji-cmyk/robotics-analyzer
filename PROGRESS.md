@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.4 --- URM hardening (spec below)
--   **Owner now:** Builder
+-   **Substage:** R2.4 --- URM hardening (ready for review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -46,7 +46,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.1  | URM schema + JSON round-trip              | tests/cpp/test_urm.cpp             | approved (follow-ups → R2.4) |
 | R2.2  | URM pybind11 bindings                     | tests/python/test_urm_bridge.py    | approved |
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
-| R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | planned |
+| R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | ready-for-review |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | planned |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | planned |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
@@ -121,6 +121,14 @@ Tests (all must pass, plus all old tests):
 
 Done when: `.\run_tests.ps1` all green, `graphify update .` run, row set
 to `ready-for-review`, commit `R2.4: URM hardening`.
+
+Changed files:
+- `core/urm/joint.hpp`
+- `core/urm/robot_model.hpp`
+- `core/urm/robot_model.cpp`
+- `bindings/urm_bindings.cpp`
+- `tests/cpp/test_urm.cpp`
+- `tests/python/test_urm_bridge.py`
 
 ### R2.5 onward
 
