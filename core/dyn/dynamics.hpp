@@ -78,6 +78,21 @@ std::vector<double> bias_torque(const DynModel& dm, const std::vector<double>& q
 std::vector<double> coriolis_torque(const DynModel& dm, const std::vector<double>& q,
                                     const std::vector<double>& qd, const Eigen::Vector3d& gravity_world);
 
+/// Joint-space kinetic energy 0.5 * qd^T M(q) qd (uses mass_matrix).
+double kinetic_energy(const DynModel& dm, const std::vector<double>& q, const std::vector<double>& qd);
+
+/// Potential energy V = -sum_k m_k g . p_com,k. p_com,k is the world COM of link k
+/// from dyn_frames(q). `gravity_world` is the gravity VECTOR (e.g. (0,0,-9.81)).
+/// Zero reference at the world origin. Massless links contribute 0.
+double potential_energy(const DynModel& dm, const std::vector<double>& q, const Eigen::Vector3d& gravity_world);
+
+/// kinetic_energy + potential_energy.
+double total_energy(const DynModel& dm, const std::vector<double>& q, const std::vector<double>& qd,
+                    const Eigen::Vector3d& gravity_world);
+
+/// Elementwise power tau_i * qd_i. Sizes must match, else std::invalid_argument.
+std::vector<double> joint_power(const std::vector<double>& tau, const std::vector<double>& qd);
+
 /// Test hook: world frames of all links built from the dynamics transforms.
 std::vector<Eigen::Isometry3d> dyn_frames(const DynModel& dm, const std::vector<double>& q);
 

@@ -90,6 +90,26 @@ void bind_dyn(py::module_& m) {
     }, py::arg("dm"), py::arg("q"),
        "Test hook: world frames from the dynamics transforms (must equal fk).");
 
+    m.def("kinetic_energy", [](const dyn::DynModel& dm, const std::vector<double>& q,
+                               const std::vector<double>& qd) {
+        return dyn::kinetic_energy(dm, q, qd);
+    }, py::arg("dm"), py::arg("q"), py::arg("qd"), "KE = 0.5 qd^T M(q) qd.");
+
+    m.def("potential_energy", [](const dyn::DynModel& dm, const std::vector<double>& q,
+                                 const std::array<double, 3>& gravity) {
+        return dyn::potential_energy(dm, q, to_vec3(gravity));
+    }, py::arg("dm"), py::arg("q"), py::arg("gravity") = g0,
+       "V = -sum m_k g . p_com,k (gravity is the world vector; zero at world origin).");
+
+    m.def("total_energy", [](const dyn::DynModel& dm, const std::vector<double>& q,
+                             const std::vector<double>& qd, const std::array<double, 3>& gravity) {
+        return dyn::total_energy(dm, q, qd, to_vec3(gravity));
+    }, py::arg("dm"), py::arg("q"), py::arg("qd"), py::arg("gravity") = g0, "KE + PE.");
+
+    m.def("joint_power", [](const std::vector<double>& tau, const std::vector<double>& qd) {
+        return dyn::joint_power(tau, qd);
+    }, py::arg("tau"), py::arg("qd"), "Elementwise tau * qd per DOF.");
+
     m.def("dyn_kinetic_energy_spatial", [](const dyn::DynModel& dm, const std::vector<double>& q,
                                            const std::vector<double>& qd) {
         return dyn::kinetic_energy_spatial(dm, q, qd);

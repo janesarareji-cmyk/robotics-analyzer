@@ -278,4 +278,40 @@ double kinetic_energy_spatial(const DynModel& dm, const std::vector<double>& q,
     return ke;
 }
 
+double kinetic_energy(const DynModel& dm, const std::vector<double>& q, const std::vector<double>& qd) {
+    check_size(dm, qd, "qd");
+    const Eigen::MatrixXd M = mass_matrix(dm, q);
+    Eigen::VectorXd v(dm.n_dof);
+    for (int i = 0; i < dm.n_dof; ++i) v[i] = qd[i];
+    return 0.5 * v.dot(M * v);
+}
+
+double potential_energy(const DynModel& dm, const std::vector<double>& q, const Vector3d& g) {
+    const std::vector<Eigen::Isometry3d> fr = dyn_frames(dm, q);
+    double V = 0.0;
+    for (int k = 0; k < dm.n_links; ++k) {
+        // dm.I[k] layout: bottom-right = m * 1, top-right = m * skew(c_k) (COM in link frame).
+        const double m = dm.I[k](3, 3);
+        if (m == 0.0) continue;
+        const Matrix3d S = dm.I[k].topRightCorner<3, 3>();
+        const Vector3d mc(-S(1, 2), S(0, 2), -S(0, 1));   // m * c_k, link frame
+        // m * p_world = R * (m c) + m * t
+        const Vector3d mp = fr[k].linear() * mc + m * fr[k].translation();
+        V -= g.dot(mp);
+    }
+    return V;
+}
+
+double total_energy(const DynModel& dm, const std::vector<double>& q, const std::vector<double>& qd,
+                    const Vector3d& g) {
+    return kinetic_energy(dm, q, qd) + potential_energy(dm, q, g);
+}
+
+std::vector<double> joint_power(const std::vector<double>& tau, const std::vector<double>& qd) {
+    if (tau.size() != qd.size()) throw std::invalid_argument("joint_power: tau and qd sizes differ");
+    std::vector<double> p(tau.size());
+    for (size_t i = 0; i < tau.size(); ++i) p[i] = tau[i] * qd[i];
+    return p;
+}
+
 } // namespace dyn
