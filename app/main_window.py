@@ -24,6 +24,7 @@ from app.panels.joint_panel import JointPanel
 from app.panels.physical_panel import PhysicalPropertiesPanel
 from app.panels.ik_panel import IKPanel
 from app.panels.analysis_panel import AnalysisPanel
+from app.panels.performance_panel import PerformancePanel
 from app.panels.workspace_panel import WorkspacePanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
@@ -196,6 +197,11 @@ class MainWindow(QMainWindow):
         self._action_view_workspace.setCheckable(True)
         self._action_view_workspace.setChecked(False)
         view_menu.addAction(self._action_view_workspace)
+
+        self._action_view_performance = QAction("&Performance", self)
+        self._action_view_performance.setCheckable(True)
+        self._action_view_performance.setChecked(False)
+        view_menu.addAction(self._action_view_performance)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -410,6 +416,18 @@ class MainWindow(QMainWindow):
         self._workspace_panel.display_changed.connect(self._on_workspace_display)
         self._workspace_panel.log_requested.connect(self.log)
 
+        # Performance dock (R5.6) - tabbed with Joints. Hidden by default.
+        self._performance_panel = PerformancePanel(self._task_runner, self._settings)
+        self._performance_dock = QDockWidget("Performance", self)
+        self._performance_dock.setObjectName("performance_dock")
+        self._performance_dock.setWidget(self._performance_panel)
+        self._performance_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._performance_dock)
+        self.tabifyDockWidget(self._joint_dock, self._performance_dock)
+        self._performance_dock.hide()
+        self._action_view_performance.toggled.connect(self._performance_dock.setVisible)
+        self._performance_dock.visibilityChanged.connect(self._action_view_performance.setChecked)
+
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
@@ -446,6 +464,7 @@ class MainWindow(QMainWindow):
             self._ik_panel.set_model(project.robot_model)
             self._analysis_panel.set_model(project.robot_model)
             self._workspace_panel.set_model(project.robot_model)
+            self._performance_panel.set_model(project.robot_model)
             self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
@@ -468,6 +487,7 @@ class MainWindow(QMainWindow):
         self._ik_panel.set_model(None)
         self._analysis_panel.set_model(None)
         self._workspace_panel.set_model(None)
+        self._performance_panel.set_model(None)
         self._refresh_tree(None)
         self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
@@ -549,6 +569,7 @@ class MainWindow(QMainWindow):
         self._ik_panel.set_model(model)
         self._analysis_panel.set_model(model)
         self._workspace_panel.set_model(model)
+        self._performance_panel.set_model(model)
         self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
@@ -819,6 +840,15 @@ class MainWindow(QMainWindow):
     def workspace_panel(self) -> WorkspacePanel:
         """Workspace panel (R5.5)."""
         return self._workspace_panel
+
+    @property
+    def performance_panel(self) -> PerformancePanel:
+        """Performance panel (R5.6)."""
+        return self._performance_panel
+
+    @property
+    def performance_dock(self) -> QDockWidget:
+        return self._performance_dock
 
     @property
     def workspace_dock(self) -> QDockWidget:

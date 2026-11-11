@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- GPU compute (status: `in-progress`)
--   **Next substage:** R5.6 --- Performance dashboard (spec `docs/specs/R5-spec.md`). R5.5 committed: app/compute backend (CPU/GPU, auto fallback, budget), Workspace panel. Tests after R5.5: CTest 9/9, pytest 652 passed. R5.4 committed: CPU batch IK + GPU IK prototype, GPU IK NO-GO.
+-   **Next substage:** R5.7 --- R5 milestone + stage gate (spec `docs/specs/R5-spec.md`). R5.6 committed: performance dashboard (app/compute/benchmark.py, app/compute/last_run.py, PerformancePanel). Tests after R5.6: CTest 9/9, pytest 664 passed. R5.5 committed: app/compute backend (CPU/GPU, auto fallback, budget), Workspace panel. R5.4 committed: CPU batch IK + GPU IK prototype, GPU IK NO-GO.
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
@@ -100,7 +100,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R5.3 | Workspace sampling | test_workspace.py | committed |
 | R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | committed |
 | R5.5 | Python backend, fallback, Workspace panel | test_compute_backend.py, test_ui_workspace.py | committed |
-| R5.6 | Performance dashboard | test_performance.py | planned |
+| R5.6 | Performance dashboard | test_performance.py | committed |
 | R5.7 | R5 milestone | test_milestone_r5.py | planned |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has

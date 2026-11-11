@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 import core_bridge as cb
+from app.compute import last_run
 from app.compute.backend import PREFERENCES, estimate_reach, get_backend
 from app.compute.budget import MAX_VRAM_BUDGET_MB, MIN_VRAM_BUDGET_MB, vram_budget_bytes
 from app.logger import log
@@ -261,6 +262,8 @@ class WorkspacePanel(QWidget):
         info = res.get("info", {})
         self.last_info = info
         self.last_backend_name = backend.name
+        if not res.get("cancelled"):
+            last_run.set_last_run(backend.name, self.last_options, info)
         done = int(res.get("n_samples_done", 0))
         total = int(res.get("n_samples", 0))
         if res.get("cancelled"):
