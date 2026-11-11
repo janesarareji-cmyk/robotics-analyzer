@@ -68,6 +68,9 @@ class ProjectMetadata:
         )
 
 
+INTEGRATORS = ("euler", "rk4", "rk45")
+
+
 @dataclass
 class SimulationSettings:
     """Simulation configuration. Populated fully in R6."""
@@ -76,6 +79,15 @@ class SimulationSettings:
     physics_timestep: float = 0.001       # seconds
     render_framerate: float = 60.0        # Hz
     gravity: list[float] = field(default_factory=lambda: [0.0, 0.0, -9.81])
+    # RK45 (Dormand-Prince) controls, used when integrator == "rk45" (R6.2)
+    rk45_atol: float = 1e-9
+    rk45_rtol: float = 1e-7
+    rk45_dt_min: float = 1e-7
+    rk45_dt_max: float = 0.01
+
+    def __post_init__(self) -> None:
+        if self.integrator not in INTEGRATORS:
+            raise ValueError(f"unknown integrator {self.integrator!r}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +95,10 @@ class SimulationSettings:
             "physics_timestep": self.physics_timestep,
             "render_framerate": self.render_framerate,
             "gravity": self.gravity,
+            "rk45_atol": self.rk45_atol,
+            "rk45_rtol": self.rk45_rtol,
+            "rk45_dt_min": self.rk45_dt_min,
+            "rk45_dt_max": self.rk45_dt_max,
         }
 
     @classmethod
@@ -92,6 +108,10 @@ class SimulationSettings:
             physics_timestep=float(data.get("physics_timestep", 0.001)),
             render_framerate=float(data.get("render_framerate", 60.0)),
             gravity=list(data.get("gravity", [0.0, 0.0, -9.81])),
+            rk45_atol=float(data.get("rk45_atol", 1e-9)),
+            rk45_rtol=float(data.get("rk45_rtol", 1e-7)),
+            rk45_dt_min=float(data.get("rk45_dt_min", 1e-7)),
+            rk45_dt_max=float(data.get("rk45_dt_max", 0.01)),
         )
 
 

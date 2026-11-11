@@ -7,7 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- stage-approved (Sonnet review 2026-11-11)
--   **Next substage:** R6.2 --- Integrators (spec `docs/specs/R6-spec.md`)
+-   **Next substage:** R6.3 --- Manual mode + UI controls (spec `docs/specs/R6-spec.md`)
+-   **R6.2 committed:** app/sim/integrators.py (euler, rk4, RK45 Dormand-Prince), engine uses make_integrator, lazy engine.refresh() for tau_inv/tcp/energy (step(full=False)), SimulationSettings validates integrator + rk45 fields. RK4 speed 20,500 steps/s on six_dof fixture (no C++ needed). Tests after R6.2: pytest 714 passed, CTest 9/9 unchanged. Also fixed R6.1 bug: Friction.eps is scalar.
 -   **R6.1 committed:** app/sim (SimState, SimClock, SimEngine, rk4 placeholder). Tests after R6.1: pytest 690 passed (CTest 9/9 unchanged, no C++ touched). Note for R6.2: SimEngine._finish runs forward dyn + inverse dyn + FK + energy every step; check the speed floor in R6.2 item 5 and make the extra signals lazy/decimated if needed.
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
@@ -108,7 +109,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R5.6 | Performance dashboard | test_performance.py | stage-approved |
 | R5.7 | R5 milestone | test_milestone_r5.py | stage-approved |
 | R6.1 | Simulation core | test_sim_core.py | committed |
-| R6.2 | Integrators | test_integrators.py | planned |
+| R6.2 | Integrators | test_integrators.py | committed |
 | R6.3 | Manual mode + UI | test_sim_panel.py | planned |
 | R6.4 | Trajectory + playback | test_trajectory.py, test_ui_trajectory.py | planned |
 | R6.5 | State tracking | test_recorder.py | planned |
@@ -165,6 +166,7 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: R5.2 precision rule applied mechanically (Opus rule): GPU FK default precision = fp32, fp64 available via precision="fp64". Workspace and GPU IK always fp32.
 -   2026-11-11: R5.4 GPU IK go/no-go = NO-GO (Sonnet applied Opus rule mechanically). 1e5 targets, 6-DOF fixture, RTX 5060 Laptop / Ryzen 9 8940HX 32 threads: CPU fp64 82.8 ms 99.945%; GPU fp32 + fp64 polish 65.8 ms 99.955% (1.26x, rule needs 5x; rate OK). CPU polish ~30 ms caps speedup at 2.7x. GPU IK stays behind GPU_IK_EXPERIMENTAL, backend uses CPU batch IK. See `docs/gpu-ik-decision.md`.
 -   2026-11-11: R5.5 (Sonnet): Backend.solve_ik_batch always CPU (USE_GPU_IK=False, GPU IK NO-GO); workspace cloud/voxel actors in base frame with robot base as user_matrix; get_backend("cuda") without GPU returns CPU with reason.
+-   2026-11-11: R6.2 (Sonnet): integrators stay Python on cb.forward_dynamics; engine computes tau_inv/tcp/energy lazily (refresh at end of advance) to meet the speed floor; no C++ sim_step.
 
 ## Risks
 

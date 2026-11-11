@@ -1,8 +1,7 @@
 """UI-free simulation engine and clock state machine (R6.1).
 
 The step integrator is pluggable: ``integrator(accel, t, q, qd, dt)`` returns
-``(q_new, qd_new, dt_accepted)``. ``rk4_step`` is the fixed-step placeholder;
-R6.2 supplies the real integrator module.
+``(q_new, qd_new, dt_accepted)`` (see ``integrators.py``).
 """
 from __future__ import annotations
 
@@ -12,28 +11,11 @@ import numpy as np
 
 import core_bridge as cb
 
+from .integrators import make_integrator, rk4_step  # noqa: F401
 from .state import SimState
 
 STOPPED, RUNNING, PAUSED = "STOPPED", "RUNNING", "PAUSED"
 MAX_TIME_SCALE = 100.0
-
-
-def rk4_step(accel, t, q, qd, dt):
-    """Fixed-step RK4 placeholder. ``accel(t, q, qd)`` -> qdd. Returns (q, qd, dt)."""
-    k1q = qd
-    k1v = accel(t, q, qd)
-    k2q = qd + 0.5 * dt * k1v
-    k2v = accel(t + 0.5 * dt, q + 0.5 * dt * k1q, k2q)
-    k3q = qd + 0.5 * dt * k2v
-    k3v = accel(t + 0.5 * dt, q + 0.5 * dt * k2q, k3q)
-    k4q = qd + dt * k3v
-    k4v = accel(t + dt, q + dt * k3q, k4q)
-    q_new = q + dt / 6.0 * (k1q + 2 * k2q + 2 * k3q + k4q)
-    qd_new = qd + dt / 6.0 * (k1v + 2 * k2v + 2 * k3v + k4v)
-    return q_new, qd_new, dt
-
-
-_INTEGRATORS = {"rk4": rk4_step}
 
 
 class SimClock:
@@ -85,10 +67,9 @@ class SimEngine:
         if integrator is None:
             integrator = getattr(settings, "integrator", "rk4")
         if isinstance(integrator, str):
-            if integrator not in _INTEGRATORS:
-                raise ValueError(f"unknown integrator {integrator!r}")
-            integrator = _INTEGRATORS[integrator]
+            integrator = make_integrator(integrator, **self._rk45_kwargs(settings))
         self.integrator = integrator
+        self.error = None
         self.max_steps_per_advance = int(max_steps_per_advance)
         self.clock = SimClock()
         self.lag = 0.0
@@ -107,8 +88,18 @@ class SimEngine:
         f.viscous = [float(x) for x in (v if v is not None else [0.0] * n)]
         f.coulomb = [float(x) for x in (c if c is not None else [0.0] * n)]
         e = getattr(settings, "friction_eps", None)
-        f.eps = [float(x) for x in (e if e is not None else [1e-3] * n)]
+        f.eps = float(np.ravel(e)[0]) if e is not None else 1e-3  # binding: one eps
         return f
+
+    @staticmethod
+    def _rk45_kwargs(settings):
+        out = {}
+        for key, attr in (("atol", "rk45_atol"), ("rtol", "rk45_rtol"),
+                          ("dt_min", "rk45_dt_min"), ("dt_max", "rk45_dt_max")):
+            v = getattr(settings, attr, None)
+            if v is not None:
+                out[key] = float(v)
+        return out
 
     @property
     def time_scale(self):
@@ -150,13 +141,18 @@ class SimEngine:
                 self.friction, self.armature), float)
         return f
 
-    def _finish(self, s):
-        """Fill qdd, tau_inv, tcp, energy of a state whose t, q, qd are set."""
+    def _finish(self, s, full=True):
+        """Fill the derived signals of a state whose t, q, qd are set.
+
+        Cheap part always (tau, qdd); ``full`` adds tau_inv, tcp and energy
+        (inverse dynamics + FK + energy, several times the cost of a step).
+        """
         s.tau = self._tau.copy()
         s.qdd = self._accel(s.tau)(s.t, s.q, s.qd)
-        s.tau_inv = np.asarray(cb.inverse_dynamics(
-            self.dm, list(s.q), list(s.qd), list(s.qdd), self.gravity, self.friction), float)
-        self._fill(s)
+        if full:
+            s.tau_inv = np.asarray(cb.inverse_dynamics(
+                self.dm, list(s.q), list(s.qd), list(s.qdd), self.gravity, self.friction), float)
+            self._fill(s)
         return s
 
     def reset(self, q0, qd0=None):
@@ -167,26 +163,55 @@ class SimEngine:
             raise ValueError("q0 and qd0 need n_dof entries")
         s = SimState.zeros(n)
         s.q, s.qd = q0.copy(), qd0.copy()
+        self.error = None
         self._finish(s)
         self._initial = s.copy()
         self._state = s
         self.lag = 0.0
+        if hasattr(self.integrator, "next_dt"):
+            self.integrator.next_dt = None
         if self.clock.state != STOPPED:
             self.clock.stop()
 
-    def step(self, dt=None):
-        """One physics step of ``dt`` (default engine dt). Returns the new state."""
-        dt = self.dt if dt is None else float(dt)
+    def _fail(self, exc):
+        self.error = str(exc)
+        if self.clock.state == RUNNING:
+            self.clock.pause()
+
+    def step(self, dt=None, full=True):
+        """One physics step (default: engine dt, or the suggested dt of an
+        adaptive integrator). Returns the new state.
+
+        ``full=False`` skips tau_inv, tcp and energy (they keep the previous
+        step's values); call ``refresh()`` to fill them. A RuntimeError from
+        the dynamics (M not positive definite, step underflow) is recorded in
+        ``engine.error``, pauses a RUNNING engine and is re-raised; the state
+        is left unchanged.
+        """
+        if dt is None:
+            dt = getattr(self.integrator, "next_dt", None) or self.dt
+        dt = float(dt)
         if dt <= 0.0:
             raise ValueError("dt must be > 0")
         s = self._state
-        q, qd, dt_used = self.integrator(self._accel(self._tau), s.t, s.q, s.qd, dt)
-        new = SimState.zeros(self.n_dof)
-        new.t = s.t + dt_used
-        new.q, new.qd = np.asarray(q, float), np.asarray(qd, float)
-        self._finish(new)
+        try:
+            q, qd, dt_used = self.integrator(self._accel(self._tau), s.t, s.q, s.qd, dt)
+            new = SimState.zeros(self.n_dof)
+            new.t = s.t + dt_used
+            new.q, new.qd = np.asarray(q, float), np.asarray(qd, float)
+            if not full:
+                new.tau_inv, new.tcp, new.energy = s.tau_inv, s.tcp, s.energy
+            self._finish(new, full=full)
+        except RuntimeError as exc:
+            self._fail(exc)
+            raise
         self._state = new
         return new
+
+    def refresh(self):
+        """Fill tau_inv, tcp and energy of the current state."""
+        self._finish(self._state, full=True)
+        return self._state
 
     # --------------------------------------------------------------- clock
     def start(self):
@@ -215,15 +240,32 @@ class SimEngine:
         target = float(wall_dt) * self._time_scale
         if target <= 0.0:
             return 0.0
+        adaptive = hasattr(self.integrator, "next_dt")
         n = max(1, math.ceil(target / self.dt - 1e-9))
         n_run = min(n, self.max_steps_per_advance)
         done = 0.0
-        for _ in range(n_run):
-            h = min(self.dt, target - done)
-            if h <= 1e-12:
-                break
-            before = self._state.t
-            self.step(h)
-            done += self._state.t - before
-        self.lag = max(0.0, target - done) if n > n_run else 0.0
+        steps = 0
+        try:
+            for _ in range(n_run):
+                h = target - done
+                if adaptive:
+                    h = min(h, self.integrator.next_dt or self.dt)
+                else:
+                    h = min(self.dt, h)
+                if h <= 1e-12:
+                    break
+                before = self._state.t
+                self.step(h, full=False)
+                steps += 1
+                done += self._state.t - before
+                if done >= target - 1e-12:
+                    break
+        except RuntimeError:
+            pass  # recorded in self.error, engine paused
+        if steps:
+            self.refresh()
+        if adaptive:
+            self.lag = max(0.0, target - done) if (done < target - 1e-9 and self.error is None) else 0.0
+        else:
+            self.lag = max(0.0, target - done) if n > n_run else 0.0
         return done
