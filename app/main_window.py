@@ -22,6 +22,8 @@ from app.panels.properties_panel import PropertiesPanel
 from app.panels.dh_editor import DHEditorWidget
 from app.panels.joint_panel import JointPanel
 from app.panels.physical_panel import PhysicalPropertiesPanel
+from app.panels.ik_panel import IKPanel
+from app.panels.analysis_panel import AnalysisPanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
@@ -178,6 +180,16 @@ class MainWindow(QMainWindow):
         self._action_view_physical.setCheckable(True)
         self._action_view_physical.setChecked(False)
         view_menu.addAction(self._action_view_physical)
+
+        self._action_view_ik = QAction("&Inverse Kinematics", self)
+        self._action_view_ik.setCheckable(True)
+        self._action_view_ik.setChecked(False)
+        view_menu.addAction(self._action_view_ik)
+
+        self._action_view_analysis = QAction("&Analysis", self)
+        self._action_view_analysis.setCheckable(True)
+        self._action_view_analysis.setChecked(False)
+        view_menu.addAction(self._action_view_analysis)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -350,6 +362,34 @@ class MainWindow(QMainWindow):
         self._physical_panel.edited.connect(self._on_physical_edited)
         self._physical_panel.log_requested.connect(self.log)
 
+        # Inverse kinematics dock — right side, tabbed with Joints. Hidden by default.
+        self._ik_panel = IKPanel(self._task_runner)
+        self._ik_dock = QDockWidget("Inverse Kinematics", self)
+        self._ik_dock.setObjectName("ik_dock")
+        self._ik_dock.setWidget(self._ik_panel)
+        self._ik_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._ik_dock)
+        self.tabifyDockWidget(self._joint_dock, self._ik_dock)
+        self._ik_dock.hide()
+        self._action_view_ik.toggled.connect(self._ik_dock.setVisible)
+        self._ik_dock.visibilityChanged.connect(self._action_view_ik.setChecked)
+        self._ik_panel.target_changed.connect(self._viewport.robot_view.set_target_pose)
+        self._ik_panel.preview_changed.connect(self._on_ik_preview)
+        self._ik_panel.applied.connect(self._on_ik_applied)
+        self._ik_panel.log_requested.connect(self.log)
+
+        # Analysis dock — right side, tabbed with Joints. Hidden by default.
+        self._analysis_panel = AnalysisPanel(gravity_fn=self._project_gravity)
+        self._analysis_dock = QDockWidget("Analysis", self)
+        self._analysis_dock.setObjectName("analysis_dock")
+        self._analysis_dock.setWidget(self._analysis_panel)
+        self._analysis_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._analysis_dock)
+        self.tabifyDockWidget(self._joint_dock, self._analysis_dock)
+        self._analysis_dock.hide()
+        self._action_view_analysis.toggled.connect(self._analysis_dock.setVisible)
+        self._analysis_dock.visibilityChanged.connect(self._action_view_analysis.setChecked)
+
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
@@ -383,6 +423,8 @@ class MainWindow(QMainWindow):
         if project.robot_model is not None:
             self._dh_editor.set_model(project.robot_model)
             self._joint_panel.set_model(project.robot_model, save_baseline=True)
+            self._ik_panel.set_model(project.robot_model)
+            self._analysis_panel.set_model(project.robot_model)
             self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
@@ -402,6 +444,8 @@ class MainWindow(QMainWindow):
         self._dh_editor.set_model(None)
         self._joint_panel.set_model(None)
         self._physical_panel.set_model(None)
+        self._ik_panel.set_model(None)
+        self._analysis_panel.set_model(None)
         self._refresh_tree(None)
         self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
@@ -429,11 +473,41 @@ class MainWindow(QMainWindow):
         if self._dh_editor.get_model() is not None:
             self._dh_editor.refresh_q()
         self._update_robot_view(reset_camera=False)
+        self._ik_panel.notify_q_edited()
+        self._analysis_panel.refresh()
+
+    def _project_gravity(self) -> Any:
+        """Gravity vector of the open project (SimulationSettings.gravity)."""
+        project = self._project_controller.current_project
+        if project is None:
+            return None
+        return project.simulation_settings.gravity
+
+    def _on_ik_preview(self) -> None:
+        """IK preview / cancel: q already written to the model, not committed."""
+        model = self._project_controller.robot
+        if model is None:
+            return
+        self._joint_panel.set_model(model, save_baseline=False)
+        self._update_robot_view(reset_camera=False)
+        self._analysis_panel.refresh()
+
+    def _on_ik_applied(self) -> None:
+        """IK Apply: the previewed q is now the model q."""
+        if not self._project_controller.has_project:
+            return
+        self._project_controller.mark_modified()
+        self._joint_panel.set_model(self._project_controller.robot, save_baseline=False)
+        if self._dh_editor.get_model() is not None:
+            self._dh_editor.refresh_q()
+        self._update_robot_view(reset_camera=False)
+        self._analysis_panel.refresh()
 
     def _on_physical_edited(self) -> None:
         """Mass / COM / inertia edited in the Physical panel."""
         if self._project_controller.has_project:
             self._project_controller.mark_modified()
+        self._analysis_panel.invalidate()
 
     def _on_robot_changed(self, model: Any) -> None:
         """Handle robot model replacement from controller."""
@@ -441,6 +515,8 @@ class MainWindow(QMainWindow):
             self._dh_editor.set_model(model)
         self._joint_panel.set_model(model, save_baseline=False)
         self._physical_panel.set_model(model)
+        self._ik_panel.set_model(model)
+        self._analysis_panel.set_model(model)
         self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
@@ -691,6 +767,24 @@ class MainWindow(QMainWindow):
     def physical_dock(self) -> QDockWidget:
         """Return the physical properties dock widget."""
         return self._physical_dock
+
+    @property
+    def ik_panel(self) -> IKPanel:
+        """Return the inverse kinematics panel widget."""
+        return self._ik_panel
+
+    @property
+    def ik_dock(self) -> QDockWidget:
+        return self._ik_dock
+
+    @property
+    def analysis_panel(self) -> AnalysisPanel:
+        """Return the analysis panel widget."""
+        return self._analysis_panel
+
+    @property
+    def analysis_dock(self) -> QDockWidget:
+        return self._analysis_dock
 
     @property
     def props_panel(self) -> PropertiesPanel:

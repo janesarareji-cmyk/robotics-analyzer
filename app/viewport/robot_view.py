@@ -64,9 +64,17 @@ class RobotView:
         self._last_scale: float | None = None
         self._visual_links: list[int] = []
 
+        # R4.9 IK target triad (independent of the robot actors)
+        self._target_actor: Any = None
+
     # ------------------------------------------------------------------
     # Properties & Getters
     # ------------------------------------------------------------------
+
+    @property
+    def target_actor(self) -> Any:
+        """IK target triad actor, or None when no target is shown."""
+        return self._target_actor
 
     @property
     def triad_length(self) -> float:
@@ -249,7 +257,28 @@ class RobotView:
         """Remove all robot actors (incl. visuals) from the plotter."""
         self._visuals = []
         self._mesh_cache.clear()
+        self.set_target_pose(None)
         self._clear_actors()
+
+    def set_target_pose(self, iso: Any) -> None:
+        """Show the IK target triad at the 4x4 world pose `iso`; None hides it."""
+        if iso is None:
+            if self._target_actor is not None:
+                try:
+                    self._plotter.remove_actor(self._target_actor)
+                except Exception:
+                    pass
+                self._target_actor = None
+                self._render()
+            return
+        iso = np.asarray(iso, dtype=float)
+        if self._target_actor is None:
+            mesh = self._create_triad_mesh(2.0 * self.triad_length)
+            self._target_actor = self._plotter.add_mesh(
+                mesh, scalars="colors", rgb=True, line_width=5.0, reset_camera=False,
+            )
+        self._target_actor.user_matrix = iso
+        self._render()
 
     def _clear_actors(self) -> None:
         """Remove actors; keep the stored visual data."""
