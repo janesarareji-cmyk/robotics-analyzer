@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -13,6 +14,7 @@
 #include "kin/fk.hpp"
 #include "kin/compiled_model.hpp"
 #include "kin/compiled_arrays.hpp"
+#include "kin/jacobian.hpp"
 #include "urm/robot_model.hpp"
 
 namespace py = pybind11;
@@ -102,6 +104,18 @@ void bind_kin(py::module_& m) {
         return fk_result_to_dict(kin::forward_kinematics(cm, q), active);
     }, py::arg("cm"), py::arg("q"),
        "FK on a compiled model; same dict as fk(model, q).");
+
+    m.def("jacobian", [](const kin::CompiledModel& cm, const std::vector<double>& q, int link,
+                         const std::array<double, 3>& point_local) {
+        return kin::jacobian(cm, q, link, Eigen::Vector3d(point_local[0], point_local[1], point_local[2]));
+    }, py::arg("cm"), py::arg("q"), py::arg("link"),
+       py::arg("point_local") = std::array<double, 3>{0.0, 0.0, 0.0},
+       "World-frame 6 x n_dof Jacobian of a point fixed in link `link` (rows: v, w).");
+
+    m.def("jacobian_tcp", [](const kin::CompiledModel& cm, const std::vector<double>& q) {
+        return kin::jacobian_tcp(cm, q);
+    }, py::arg("cm"), py::arg("q"),
+       "World-frame 6 x n_dof Jacobian at the TCP (angular part of tcp_link).");
 
     m.def("compile_arrays", [](const urm::RobotModel& model) {
         return compiled_arrays_to_dict(kin::to_arrays(kin::compile(model)));
