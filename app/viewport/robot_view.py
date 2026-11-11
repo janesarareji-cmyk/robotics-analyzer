@@ -67,6 +67,13 @@ class RobotView:
         # R4.9 IK target triad (independent of the robot actors)
         self._target_actor: Any = None
 
+        # R5.5 workspace point cloud / voxels (independent of the robot actors)
+        self._ws_points_actor: Any = None
+        self._ws_voxel_actor: Any = None
+        self._ws_points_count = 0
+        self._ws_voxel_count = 0
+        self._ws_voxel_note = ""
+
     # ------------------------------------------------------------------
     # Properties & Getters
     # ------------------------------------------------------------------
@@ -75,6 +82,31 @@ class RobotView:
     def target_actor(self) -> Any:
         """IK target triad actor, or None when no target is shown."""
         return self._target_actor
+
+    @property
+    def workspace_points_actor(self) -> Any:
+        """Workspace point cloud actor, or None."""
+        return self._ws_points_actor
+
+    @property
+    def workspace_voxel_actor(self) -> Any:
+        """Workspace voxel (glyph cubes) actor, or None."""
+        return self._ws_voxel_actor
+
+    @property
+    def workspace_points_count(self) -> int:
+        """Number of drawn workspace points (after the cap)."""
+        return self._ws_points_count
+
+    @property
+    def workspace_voxel_count(self) -> int:
+        """Number of drawn workspace voxels (after the cap)."""
+        return self._ws_voxel_count
+
+    @property
+    def workspace_voxel_note(self) -> str:
+        """Note set when the voxel count was capped, else ''."""
+        return self._ws_voxel_note
 
     @property
     def triad_length(self) -> float:
@@ -258,6 +290,7 @@ class RobotView:
         self._visuals = []
         self._mesh_cache.clear()
         self.set_target_pose(None)
+        self.clear_workspace()
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -279,6 +312,87 @@ class RobotView:
             )
         self._target_actor.user_matrix = iso
         self._render()
+
+    # ------------------------------------------------------------------
+    # Workspace (R5.5)
+    # ------------------------------------------------------------------
+
+    MAX_WORKSPACE_POINTS = 2_000_000
+    MAX_WORKSPACE_VOXELS = 200_000
+
+    def _remove_ws_actor(self, actor: Any) -> None:
+        if actor is not None:
+            try:
+                self._plotter.remove_actor(actor)
+            except Exception:
+                pass
+
+    def set_workspace_points(self, points: Any, transform: Any = None) -> None:
+        """Draw a point cloud (P,3) (cap 2e6, evenly thinned); None removes it.
+
+        `transform` is an optional 4x4 (the robot base) applied as the actor matrix.
+        """
+        import pyvista as pv
+
+        self._remove_ws_actor(self._ws_points_actor)
+        self._ws_points_actor = None
+        self._ws_points_count = 0
+        if points is None or len(points) == 0:
+            self._render()
+            return
+        pts = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+        if len(pts) > self.MAX_WORKSPACE_POINTS:
+            step = int(np.ceil(len(pts) / self.MAX_WORKSPACE_POINTS))
+            pts = pts[::step][: self.MAX_WORKSPACE_POINTS]
+        self._ws_points_actor = self._plotter.add_mesh(
+            pv.PolyData(pts), color="#4fc3f7", point_size=2.0, opacity=0.5,
+            render_points_as_spheres=False, reset_camera=False)
+        if transform is not None:
+            self._ws_points_actor.user_matrix = np.asarray(transform, dtype=float)
+        self._ws_points_count = len(pts)
+        self._render()
+
+    def set_workspace_voxels(self, centers: Any, voxel_size: float | None,
+                             transform: Any = None) -> None:
+        """Draw occupied voxels (M,3 centers) as cubes (cap 200 000); None removes them."""
+        import pyvista as pv
+
+        self._remove_ws_actor(self._ws_voxel_actor)
+        self._ws_voxel_actor = None
+        self._ws_voxel_count = 0
+        self._ws_voxel_note = ""
+        if centers is None or voxel_size is None or len(centers) == 0:
+            self._render()
+            return
+        c = np.asarray(centers, dtype=np.float32).reshape(-1, 3)
+        total = len(c)
+        if total > self.MAX_WORKSPACE_VOXELS:
+            step = int(np.ceil(total / self.MAX_WORKSPACE_VOXELS))
+            c = c[::step][: self.MAX_WORKSPACE_VOXELS]
+            self._ws_voxel_note = (f"showing {len(c)} of {total} occupied voxels "
+                                   f"(cap {self.MAX_WORKSPACE_VOXELS})")
+        cube = pv.Cube(x_length=float(voxel_size), y_length=float(voxel_size),
+                       z_length=float(voxel_size))
+        mesh = pv.PolyData(c).glyph(geom=cube, orient=False, scale=False)
+        self._ws_voxel_actor = self._plotter.add_mesh(
+            mesh, color="#ffb74d", opacity=0.35, reset_camera=False)
+        if transform is not None:
+            self._ws_voxel_actor.user_matrix = np.asarray(transform, dtype=float)
+        self._ws_voxel_count = len(c)
+        self._render()
+
+    def clear_workspace(self) -> None:
+        """Remove the workspace point cloud and voxel actors."""
+        had = self._ws_points_actor is not None or self._ws_voxel_actor is not None
+        self._remove_ws_actor(self._ws_points_actor)
+        self._remove_ws_actor(self._ws_voxel_actor)
+        self._ws_points_actor = None
+        self._ws_voxel_actor = None
+        self._ws_points_count = 0
+        self._ws_voxel_count = 0
+        self._ws_voxel_note = ""
+        if had:
+            self._render()
 
     def _clear_actors(self) -> None:
         """Remove actors; keep the stored visual data."""

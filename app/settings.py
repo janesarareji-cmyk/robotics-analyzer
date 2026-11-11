@@ -29,6 +29,8 @@ class AppSettings:
     KEY_VIEWPORT_BG_COLOR = "viewport/bg_color"
     KEY_SHOW_COORDINATE_FRAMES = "viewport/show_frames"
     KEY_SHOW_GRID = "viewport/show_grid"
+    KEY_COMPUTE_BACKEND = "compute/backend"            # "auto" | "cpu" | "cuda"  (R5.5)
+    KEY_VRAM_BUDGET_MB = "compute/vram_budget_mb"      # 256..7168, default 6144 (R5.5)
 
     def __init__(self):
         self._settings = QSettings(self._ORGANIZATION, self._APPLICATION)
@@ -137,6 +139,30 @@ class AppSettings:
     def set_show_grid(self, visible: bool) -> None:
         """Set grid visibility in the viewport."""
         self._settings.setValue(self.KEY_SHOW_GRID, visible)
+
+    # ------------------------------------------------------------------
+    # Compute (R5.5)
+    # ------------------------------------------------------------------
+
+    def compute_backend(self) -> str:
+        """Return the preferred compute backend: auto, cpu or cuda."""
+        v = str(self._settings.value(self.KEY_COMPUTE_BACKEND, "auto"))
+        return v if v in ("auto", "cpu", "cuda") else "auto"
+
+    def set_compute_backend(self, value: str) -> None:
+        assert value in ("auto", "cpu", "cuda")
+        self._settings.setValue(self.KEY_COMPUTE_BACKEND, value)
+
+    def vram_budget_mb(self) -> int:
+        """Return the VRAM budget in MiB (clamped to 256..7168, default 6144)."""
+        try:
+            v = int(float(self._settings.value(self.KEY_VRAM_BUDGET_MB, 6144)))
+        except (TypeError, ValueError):
+            v = 6144
+        return max(256, min(7168, v))
+
+    def set_vram_budget_mb(self, mb: int) -> None:
+        self._settings.setValue(self.KEY_VRAM_BUDGET_MB, max(256, min(7168, int(mb))))
 
     # ------------------------------------------------------------------
     # Generic access

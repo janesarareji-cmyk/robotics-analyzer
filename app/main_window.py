@@ -24,6 +24,7 @@ from app.panels.joint_panel import JointPanel
 from app.panels.physical_panel import PhysicalPropertiesPanel
 from app.panels.ik_panel import IKPanel
 from app.panels.analysis_panel import AnalysisPanel
+from app.panels.workspace_panel import WorkspacePanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
@@ -190,6 +191,11 @@ class MainWindow(QMainWindow):
         self._action_view_analysis.setCheckable(True)
         self._action_view_analysis.setChecked(False)
         view_menu.addAction(self._action_view_analysis)
+
+        self._action_view_workspace = QAction("&Workspace", self)
+        self._action_view_workspace.setCheckable(True)
+        self._action_view_workspace.setChecked(False)
+        view_menu.addAction(self._action_view_workspace)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -390,6 +396,20 @@ class MainWindow(QMainWindow):
         self._action_view_analysis.toggled.connect(self._analysis_dock.setVisible)
         self._analysis_dock.visibilityChanged.connect(self._action_view_analysis.setChecked)
 
+        # Workspace dock (R5.5) — right side, tabbed with Joints. Hidden by default.
+        self._workspace_panel = WorkspacePanel(self._task_runner, self._settings)
+        self._workspace_dock = QDockWidget("Workspace", self)
+        self._workspace_dock.setObjectName("workspace_dock")
+        self._workspace_dock.setWidget(self._workspace_panel)
+        self._workspace_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._workspace_dock)
+        self.tabifyDockWidget(self._joint_dock, self._workspace_dock)
+        self._workspace_dock.hide()
+        self._action_view_workspace.toggled.connect(self._workspace_dock.setVisible)
+        self._workspace_dock.visibilityChanged.connect(self._action_view_workspace.setChecked)
+        self._workspace_panel.display_changed.connect(self._on_workspace_display)
+        self._workspace_panel.log_requested.connect(self.log)
+
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
@@ -425,6 +445,7 @@ class MainWindow(QMainWindow):
             self._joint_panel.set_model(project.robot_model, save_baseline=True)
             self._ik_panel.set_model(project.robot_model)
             self._analysis_panel.set_model(project.robot_model)
+            self._workspace_panel.set_model(project.robot_model)
             self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
@@ -446,6 +467,7 @@ class MainWindow(QMainWindow):
         self._physical_panel.set_model(None)
         self._ik_panel.set_model(None)
         self._analysis_panel.set_model(None)
+        self._workspace_panel.set_model(None)
         self._refresh_tree(None)
         self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
@@ -453,6 +475,15 @@ class MainWindow(QMainWindow):
         self._action_close.setEnabled(False)
         self._update_title()
         self.set_status("Project closed.")
+
+    def _on_workspace_display(self, data: Any) -> None:
+        """Draw (or clear) the workspace point cloud / voxels."""
+        rv = self._viewport.robot_view
+        if data is None:
+            rv.clear_workspace()
+            return
+        rv.set_workspace_points(data["points"], data["base"])
+        rv.set_workspace_voxels(data["centers"], data["voxel_size"], data["base"])
 
     def _on_dh_editor_changed(self) -> None:
         """Handle edits made directly in the DH editor."""
@@ -517,6 +548,7 @@ class MainWindow(QMainWindow):
         self._physical_panel.set_model(model)
         self._ik_panel.set_model(model)
         self._analysis_panel.set_model(model)
+        self._workspace_panel.set_model(model)
         self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
@@ -674,6 +706,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Save settings and shut down task runner before closing."""
+        self._workspace_panel.cancel()
         self._task_runner.shutdown()
         self._settings.save_window(self)
         self._settings.sync()
@@ -781,6 +814,15 @@ class MainWindow(QMainWindow):
     def analysis_panel(self) -> AnalysisPanel:
         """Return the analysis panel widget."""
         return self._analysis_panel
+
+    @property
+    def workspace_panel(self) -> WorkspacePanel:
+        """Workspace panel (R5.5)."""
+        return self._workspace_panel
+
+    @property
+    def workspace_dock(self) -> QDockWidget:
+        return self._workspace_dock
 
     @property
     def analysis_dock(self) -> QDockWidget:
