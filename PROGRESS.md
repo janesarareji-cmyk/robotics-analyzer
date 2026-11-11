@@ -6,15 +6,17 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R3 --- Import (status: `stage-ready-for-review`)
--   **Next substage:** none (R3 done; waiting for review, then R3.8/R3b per Reviewer)
--   **Owner now:** Sonnet reviewer
+-   **Stage:** R3 --- Import (status: `stage-approved`)
+-   **Next substage:** R4 (spec pack docs/specs/R4-spec.md not written yet: waiting for user go)
+-   **Owner now:** Sonnet orchestrator
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R3 (Builder builds R3.2 to R3.7, runs gate, sets `stage-ready-for-review`, stops)
 -   **Spec pack:** `docs/specs/R3-spec.md`
 -   **Stage R2 gate: PASSED** (Reviewer verified: CTest 5/5, pytest 146/146). Tag `stage-R2-done` = `91a53a0`.
 -   **Last known test count (2026-11-11, R3 gate):** CTest 6/6 passed; pytest 302 passed (6 new in `test_milestone_r3.py`).
 -   **Stage R3 gate (Builder run):** milestone `tests/python/test_milestone_r3.py` PASS (6 tests: 1 fixture-shape, 1 full flow items 1-6, 4 broken-fixture cases item 7). Items 1,2,3,4,5,6,7,9,10 checked. `run_tests.ps1` not used (execution policy), same commands run by hand. `build/` and binaries not tracked. `graphify update .` run, `graph.json` committed. Item 8 (docs per module): only `docs/import-report.md` and `docs/urm-schema-v2.md` exist; no separate one-page docs for compiled model, visuals/assets, physical panel (not done, reviewer decide). Item 5 (GPU) n/a. No product code changed in the milestone. Tag `stage-R3-done`. Milestone commit `d329649`.
+
+-   Stage R3 review (Sonnet, 2026-11-11): APPROVED. Independent run CTest 6/6, pytest 302. Gate item 8 docs fixed in 2d3d304. Tag stage-R3-done = 6249b0e (docs commit 2d3d304 follows the tag). Accepted deviations: R3.2 theta0/d0 in `pre`; legacy 0/0 serial fallback (effective_links); R3.7 multi-link total-mass estimate shared by volume. R4 first item: unify joint_links() with effective_links.
 
 ### New agent? Read in this order
 
@@ -118,6 +120,7 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: Workflow change by user: Gemini retired; Sonnet orchestrates, Builder = Claude subagents (Haiku/Sonnet tiers), Sonnet reviews each substage diff.
 
 -   2026-11-11: R3.2 legacy serial fallback in compile() when all joints 0/0 (Sonnet decision)
+-   2026-11-11: Workflow: Sonnet orchestrates, Claude subagents build (Haiku: R3.3, R3.6; Sonnet: R3.2, R3.4, R3.5, R3.7, milestone). No Opus used in R3.
 
 ## Risks
 
