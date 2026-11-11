@@ -17,6 +17,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import core_bridge as cb
+
 from app.project.project_data import (
     ProjectData,
     ProjectMetadata,
@@ -64,7 +66,12 @@ def save(project: ProjectData, path: str | Path) -> None:
     try:
         with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
             _write_json(zf, _META_FILE, project.metadata.to_dict())
-            _write_json(zf, _ROBOT_FILE, project.robot_model or {})
+            if project.robot_model is not None and hasattr(project.robot_model, "to_json"):
+                zf.writestr(_ROBOT_FILE, project.robot_model.to_json().encode(ENCODING))
+            elif isinstance(project.robot_model, dict):
+                _write_json(zf, _ROBOT_FILE, project.robot_model)
+            else:
+                _write_json(zf, _ROBOT_FILE, {})
             _write_json(zf, _PHYSICS_FILE, project.physical_properties or {})
             _write_json(zf, _SIM_FILE, project.simulation_settings.to_dict())
     except (OSError, zipfile.BadZipFile) as exc:
@@ -100,7 +107,20 @@ def load(path: str | Path) -> ProjectData:
 
             _check_format_version(metadata.format_version)
 
-            robot_model = _read_json(zf, _ROBOT_FILE) if _ROBOT_FILE in names else {}
+            if _ROBOT_FILE in names:
+                raw_robot = zf.read(_ROBOT_FILE).decode(ENCODING).strip()
+                if not raw_robot or raw_robot == "{}":
+                    robot_model = cb.RobotModel()
+                else:
+                    try:
+                        robot_model = cb.RobotModel.from_json(raw_robot)
+                    except Exception as exc:
+                        raise ProjectFormatError(
+                            f"Invalid robot model in project: {exc}"
+                        ) from exc
+            else:
+                robot_model = cb.RobotModel()
+
             physical_properties = (
                 _read_json(zf, _PHYSICS_FILE) if _PHYSICS_FILE in names else {}
             )
@@ -121,7 +141,7 @@ def load(path: str | Path) -> ProjectData:
     return ProjectData(
         metadata=metadata,
         simulation_settings=simulation_settings,
-        robot_model=robot_model if robot_model else None,
+        robot_model=robot_model,
         physical_properties=physical_properties if physical_properties else None,
         file_path=str(path),
     )

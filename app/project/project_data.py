@@ -100,11 +100,10 @@ class ProjectData:
     """
     In-memory representation of one Robotics Analyzer project.
 
-    Fields populated now (R1.5):
-        metadata, simulation_settings, file_path
+    Fields populated now (R1.5, R2.6):
+        metadata, simulation_settings, robot_model, file_path
 
     Fields populated later:
-        robot_model         — R2 (Unified Robot Model)
         physical_properties — R3 (mass, inertia, COM)
     """
 
@@ -112,9 +111,24 @@ class ProjectData:
     simulation_settings: SimulationSettings = field(
         default_factory=SimulationSettings
     )
-    robot_model: dict[str, Any] | None = None          # Populated in R2
+    robot_model: Any = None                            # Populated in R2 (cb.RobotModel)
     physical_properties: dict[str, Any] | None = None  # Populated in R3
     file_path: str | None = None                       # Set after first save
+
+    def __post_init__(self) -> None:
+        """Ensure robot_model is always a valid RobotModel instance."""
+        if self.robot_model is None:
+            import core_bridge as cb
+            self.robot_model = cb.RobotModel()
+
+    @property
+    def robot(self) -> Any:
+        """Alias for robot_model."""
+        return self.robot_model
+
+    @robot.setter
+    def robot(self, value: Any) -> None:
+        self.robot_model = value
 
     @classmethod
     def new(cls, name: str, description: str = "") -> ProjectData:

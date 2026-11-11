@@ -80,7 +80,8 @@ def test_project_data_new():
     proj = ProjectData.new("MyRobot", "Test project")
     assert proj.name == "MyRobot"
     assert proj.metadata.description == "Test project"
-    assert proj.robot_model is None
+    assert proj.robot_model is not None
+    assert len(proj.robot_model.joints) == 0
     assert proj.physical_properties is None
     assert proj.file_path is None
     assert not proj.is_saved
@@ -179,11 +180,15 @@ def test_load_missing_metadata_raises_format_error(tmp_path):
         load(path)
 
 
-def test_save_load_with_robot_model_placeholder(tmp_path):
-    """save/load preserves robot_model placeholder dict."""
+def test_save_load_with_robot_model(tmp_path):
+    """save/load preserves robot_model."""
+    import core_bridge as cb
     proj = ProjectData.new("WithModel")
-    proj.robot_model = {"placeholder": True, "dof": 3}
+    robot = cb.RobotModel()
+    robot.metadata.name = "TestModel"
+    proj.robot_model = robot
     path = tmp_path / "model.robotproj"
     save(proj, path)
     loaded = load(path)
-    assert loaded.robot_model == {"placeholder": True, "dof": 3}
+    assert loaded.robot_model is not None
+    assert loaded.robot_model.metadata.name == "TestModel"

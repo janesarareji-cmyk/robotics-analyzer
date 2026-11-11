@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.6 --- Wire model + DH editor into app/project (planned)
--   **Owner now:** Builder
+-   **Substage:** R2.6 --- Wire model + DH editor into app/project (ready for review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -48,7 +48,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
 | R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
-| R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | planned |
+| R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | ready-for-review |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
@@ -236,7 +236,15 @@ Tests `tests/python/test_robot_in_project.py`: save/load round-trip with 3-joint
 
 Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.6 set to `ready-for-review`, commit `R2.6: wire robot model into project`.
 
-Changed files (expected): `app/` project + controller + main window + dh editor files, `tests/python/test_robot_in_project.py`, `tests/cpp/test_fk.cpp`, `tests/python/test_fk_bridge.py`.
+Changed files:
+- `app/project/project_data.py`
+- `app/project/serializer.py`
+- `app/project/project_controller.py`
+- `app/panels/dh_editor.py`
+- `app/main_window.py`
+- `tests/python/test_robot_in_project.py`
+- `tests/python/test_project.py`
+- `tests/cpp/test_fk.cpp`
 
 ### R2.7 onward
 

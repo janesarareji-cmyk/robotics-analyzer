@@ -112,3 +112,4 @@ FKResult forward_kinematics(const urm::RobotModel& model, const std::vector<doub
 }
 
 } // namespace kin
+

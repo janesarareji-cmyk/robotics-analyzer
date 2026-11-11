@@ -4,6 +4,10 @@ Robotics Analyzer — main application window.
 R1.1: Shell with menu bar, toolbar, status bar, and dockable panels.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QLabel,
     QVBoxLayout, QMenuBar, QStatusBar, QToolBar,
@@ -15,6 +19,7 @@ from PySide6.QtGui import QAction, QKeySequence, QIcon
 from app.panels.log_panel import LogPanel
 from app.panels.model_panel import ModelPanel
 from app.panels.properties_panel import PropertiesPanel
+from app.panels.dh_editor import DHEditorWidget
 from app.settings import AppSettings
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
@@ -124,6 +129,11 @@ class MainWindow(QMainWindow):
         self._action_view_props.setChecked(True)
         view_menu.addAction(self._action_view_props)
 
+        self._action_view_dh = QAction("&DH Parameter Editor", self)
+        self._action_view_dh.setCheckable(True)
+        self._action_view_dh.setChecked(True)
+        view_menu.addAction(self._action_view_dh)
+
         self._action_view_log = QAction("&Log Panel", self)
         self._action_view_log.setCheckable(True)
         self._action_view_log.setChecked(True)
@@ -194,6 +204,19 @@ class MainWindow(QMainWindow):
         self._action_view_props.triggered.connect(props_dock.setVisible)
         props_dock.visibilityChanged.connect(self._action_view_props.setChecked)
 
+        # DH Parameter Editor dock — right side
+        self._dh_editor = DHEditorWidget()
+        self._dh_dock = QDockWidget("DH Parameter Editor", self)
+        self._dh_dock.setObjectName("dh_dock")
+        self._dh_dock.setWidget(self._dh_editor)
+        self._dh_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dh_dock)
+        self._action_view_dh.triggered.connect(
+            lambda: self._dh_dock.setVisible(self._action_view_dh.isChecked())
+        )
+        self._dh_dock.visibilityChanged.connect(self._action_view_dh.setChecked)
+        self._dh_editor.model_changed.connect(self._on_dh_editor_changed)
+
         # Log panel — bottom
         self._log_panel = LogPanel()
         log_dock = QDockWidget("Log", self)
@@ -218,6 +241,7 @@ class MainWindow(QMainWindow):
         pc.project_opened.connect(self._on_project_opened)
         pc.project_saved.connect(self._on_project_saved)
         pc.modified_changed.connect(self._on_modified_changed)
+        pc.robot_changed.connect(self._on_robot_changed)
 
     def _on_project_opened(self, project: ProjectData) -> None:
         """Update UI when a project is opened or created."""
@@ -225,6 +249,32 @@ class MainWindow(QMainWindow):
         self._action_save_as.setEnabled(True)
         self._update_title()
         self.set_status(f"Project '{project.name}' opened.")
+
+        # Load robot model into DH editor
+        if project.robot_model is not None:
+            self._dh_editor.set_model(project.robot_model)
+            robot_name = project.robot_model.metadata.name or "Unnamed Robot"
+            self.log(
+                f"[INFO] Robot model loaded: '{robot_name}' "
+                f"({len(project.robot_model.joints)} joints, {project.robot_model.dof()} DOF)."
+            )
+            errors = project.robot_model.validate()
+            if errors:
+                self.log(f"[WARNING] Validation errors: {'; '.join(errors)}")
+
+    def _on_dh_editor_changed(self) -> None:
+        """Handle edits made directly in the DH editor."""
+        model = self._dh_editor.get_model()
+        if model is not None and self._project_controller.has_project:
+            self._project_controller.set_robot(model)
+            errors = model.validate()
+            if errors:
+                self.log(f"[WARNING] Validation errors: {'; '.join(errors)}")
+
+    def _on_robot_changed(self, model: Any) -> None:
+        """Handle robot model replacement from controller."""
+        if self._dh_editor.get_model() is not model:
+            self._dh_editor.set_model(model)
 
     def _on_project_saved(self, project: ProjectData) -> None:
         """Update UI when a project is saved."""
@@ -332,3 +382,13 @@ class MainWindow(QMainWindow):
     def props_panel(self) -> PropertiesPanel:
         """Return the properties panel widget."""
         return self._props_panel
+
+    @property
+    def dh_editor(self) -> DHEditorWidget:
+        """Return the DH parameter editor widget."""
+        return self._dh_editor
+
+    @property
+    def dh_dock(self) -> QDockWidget:
+        """Return the DH editor dock widget."""
+        return self._dh_dock

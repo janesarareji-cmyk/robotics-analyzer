@@ -43,3 +43,4 @@ FKResult forward_kinematics(const urm::RobotModel& model);
 FKResult forward_kinematics(const urm::RobotModel& model, const std::vector<double>& q);
 
 } // namespace kin
+

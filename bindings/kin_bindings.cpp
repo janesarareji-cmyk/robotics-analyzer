@@ -40,3 +40,4 @@ void bind_kin(py::module_& m) {
     }, py::arg("pose"),
        "Convert a 6D urm.Pose to a 4x4 homogeneous transformation matrix.");
 }
+

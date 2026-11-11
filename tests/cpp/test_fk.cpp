@@ -154,6 +154,170 @@ bool test_prismatic() {
     return true;
 }
 
+// 4b. Prismatic under MDH: d=0.2, q=0.3 → TCP z = 0.5
+bool test_prismatic_mdh() {
+    urm::RobotModel model;
+    model.convention = urm::DHConvention::Modified;
+    model.links.push_back(urm::Link{"base_link"});
+    urm::Joint j;
+    j.name = "prism1";
+    j.type = urm::JointType::Prismatic;
+    j.mdh.d = 0.2;
+    j.q = 0.3;
+    model.joints.push_back(j);
+    model.links.push_back(urm::Link{"link1"});
+
+    kin::FKResult res = kin::forward_kinematics(model);
+    Eigen::Vector3d p = res.tcp.translation();
+    if (std::abs(p.x() - 0.0) > 1e-12 || std::abs(p.y() - 0.0) > 1e-12 || std::abs(p.z() - 0.5) > 1e-12) {
+        std::cerr << "Prismatic MDH position mismatch: (" << p.x() << ", " << p.y() << ", " << p.z() << ")\n";
+        return false;
+    }
+
+    std::cout << "PASS: test_prismatic_mdh\n";
+    return true;
+}
+
+// 4c. Known-answer 3D case, standard DH:
+// 2-link arm, link1: a=0, alpha=π/2, d=0.5; link2: a=0.4, alpha=0, d=0; q=(π/2, 0).
+// Derivation by hand:
+// Standard DH transform A = Rz(θ) · Tz(d) · Tx(a) · Rx(α)
+// Joint 1: θ=π/2, d=0.5, a=0, α=π/2
+//   Rz(π/2) rotates x->y, y->-x, z->z.
+//   Tz(0.5) translates along z by 0.5.
+//   Rx(π/2) rotates y->z, z->-y.
+//   A1 = [  0  0  1    0  ]
+//        [  1  0  0    0  ]
+//        [  0  1  0   0.5 ]
+//        [  0  0  0    1  ]
+// Joint 2: θ=0, d=0, a=0.4, α=0
+//   A2 = [  1  0  0   0.4 ]
+//        [  0  1  0    0  ]
+//        [  0  0  1    0  ]
+//        [  0  0  0    1  ]
+// Overall TCP = A1 · A2 =
+//   [ 0  0  1   0.0 ]
+//   [ 1  0  0   0.4 ]
+//   [ 0  1  0   0.5 ]
+//   [ 0  0  0   1.0 ]
+// Expected TCP translation = (0.0, 0.4, 0.5).
+// Hard-coded expected matrix; does NOT call dh_transform or mdh_transform.
+bool test_3d_known_answer_standard_dh() {
+    urm::RobotModel model;
+    model.convention = urm::DHConvention::Standard;
+    model.links.push_back(urm::Link{"base_link"});
+
+    urm::Joint j1;
+    j1.name = "j1";
+    j1.type = urm::JointType::Revolute;
+    j1.dh.a = 0.0;
+    j1.dh.alpha = M_PI / 2.0;
+    j1.dh.d = 0.5;
+    j1.q = M_PI / 2.0;
+    model.joints.push_back(j1);
+    model.links.push_back(urm::Link{"link1"});
+
+    urm::Joint j2;
+    j2.name = "j2";
+    j2.type = urm::JointType::Revolute;
+    j2.dh.a = 0.4;
+    j2.dh.alpha = 0.0;
+    j2.dh.d = 0.0;
+    j2.q = 0.0;
+    model.joints.push_back(j2);
+    model.links.push_back(urm::Link{"link2"});
+
+    kin::FKResult res = kin::forward_kinematics(model);
+
+    Eigen::Matrix4d expected;
+    expected << 0.0, 0.0, 1.0, 0.0,
+                1.0, 0.0, 0.0, 0.4,
+                0.0, 1.0, 0.0, 0.5,
+                0.0, 0.0, 0.0, 1.0;
+
+    double diff = (res.tcp.matrix() - expected).norm();
+    if (diff > 1e-12) {
+        std::cerr << "3D standard DH known-answer mismatch. Diff norm: " << diff << "\n"
+                  << "Got:\n" << res.tcp.matrix() << "\nExpected:\n" << expected << "\n";
+        return false;
+    }
+    std::cout << "PASS: test_3d_known_answer_standard_dh\n";
+    return true;
+}
+
+// 4d. Known-answer 3D case, modified DH (Craig):
+// Arm specification: j1 α=0, a=0, d=0.5; j2 α=π/2, a=0, d=0; tool xyz=(0.4, 0, 0); q=(π/2, 0).
+// Craig convention: A = Rx(α_{i-1}) · Tx(a_{i-1}) · Rz(θ_i) · Tz(d_i)
+// Joint 1: α_0=0, a_0=0, θ_1=π/2, d_1=0.5
+//   A1 = Rz(π/2) · Tz(0.5)
+//   A1 = [  0 -1  0    0  ]
+//        [  1  0  0    0  ]
+//        [  0  0  1   0.5 ]
+//        [  0  0  0    1  ]
+// Joint 2: α_1=π/2, a_1=0, θ_2=0, d_2=0
+//   A2 = Rx(π/2) = [ 1  0  0  0 ]
+//                  [ 0  0 -1  0 ]
+//                  [ 0  1  0  0 ]
+//                  [ 0  0  0  1 ]
+// Frame 2 = A1 · A2 =
+//   [ 0  0  1   0.0 ]
+//   [ 1  0  0   0.0 ]
+//   [ 0  1  0   0.5 ]
+//   [ 0  0  0   1.0 ]
+// Tool offset: xyz = (0.4, 0, 0)
+//   TCP = Frame 2 · T_tool
+//   TCP col 3 = Frame 2 * [0.4, 0, 0, 1]^T = (0.0, 0.4, 0.5)
+// Overall expected TCP matrix:
+//   [ 0  0  1   0.0 ]
+//   [ 1  0  0   0.4 ]
+//   [ 0  1  0   0.5 ]
+//   [ 0  0  0   1.0 ]
+// Hard-coded expected matrix; does NOT call dh_transform or mdh_transform.
+bool test_3d_known_answer_mdh() {
+    urm::RobotModel model;
+    model.convention = urm::DHConvention::Modified;
+    model.links.push_back(urm::Link{"base_link"});
+
+    urm::Joint j1;
+    j1.name = "j1";
+    j1.type = urm::JointType::Revolute;
+    j1.mdh.alpha = 0.0;
+    j1.mdh.a = 0.0;
+    j1.mdh.d = 0.5;
+    j1.q = M_PI / 2.0;
+    model.joints.push_back(j1);
+    model.links.push_back(urm::Link{"link1"});
+
+    urm::Joint j2;
+    j2.name = "j2";
+    j2.type = urm::JointType::Revolute;
+    j2.mdh.alpha = M_PI / 2.0;
+    j2.mdh.a = 0.0;
+    j2.mdh.d = 0.0;
+    j2.q = 0.0;
+    model.joints.push_back(j2);
+    model.links.push_back(urm::Link{"link2"});
+
+    model.tool.xyz = {0.4, 0.0, 0.0};
+
+    kin::FKResult res = kin::forward_kinematics(model);
+
+    Eigen::Matrix4d expected;
+    expected << 0.0, 0.0, 1.0, 0.0,
+                1.0, 0.0, 0.0, 0.4,
+                0.0, 1.0, 0.0, 0.5,
+                0.0, 0.0, 0.0, 1.0;
+
+    double diff = (res.tcp.matrix() - expected).norm();
+    if (diff > 1e-12) {
+        std::cerr << "3D MDH known-answer mismatch. Diff norm: " << diff << "\n"
+                  << "Got:\n" << res.tcp.matrix() << "\nExpected:\n" << expected << "\n";
+        return false;
+    }
+    std::cout << "PASS: test_3d_known_answer_mdh\n";
+    return true;
+}
+
 // 5. Fixed joint: contributes transform, dof() unchanged, q ignored
 bool test_fixed_joint() {
     urm::RobotModel model;
@@ -377,15 +541,26 @@ bool test_fk_api_contracts() {
         return false;
     }
 
-    // Wrong-size q throws
-    bool threw = false;
+    // Wrong-size q throws (too short and too long)
+    bool threw_short = false;
     try {
         kin::forward_kinematics(model, {0.1});
     } catch (const std::invalid_argument&) {
-        threw = true;
+        threw_short = true;
     }
-    if (!threw) {
-        std::cerr << "Expected invalid_argument on 1 q for 2 DOF model\n";
+    if (!threw_short) {
+        std::cerr << "Expected invalid_argument on 1 q for 2 DOF model (too short)\n";
+        return false;
+    }
+
+    bool threw_long = false;
+    try {
+        kin::forward_kinematics(model, {0.1, 0.2, 0.3});
+    } catch (const std::invalid_argument&) {
+        threw_long = true;
+    }
+    if (!threw_long) {
+        std::cerr << "Expected invalid_argument on 3 q for 2 DOF model (too long)\n";
         return false;
     }
 
@@ -408,6 +583,9 @@ int main() {
     if (!test_2r_planar())             { ++failures; }
     if (!test_3r_planar_random())      { ++failures; }
     if (!test_prismatic())             { ++failures; }
+    if (!test_prismatic_mdh())         { ++failures; }
+    if (!test_3d_known_answer_standard_dh()) { ++failures; }
+    if (!test_3d_known_answer_mdh())   { ++failures; }
     if (!test_fixed_joint())           { ++failures; }
     if (!test_dh_vs_mdh())             { ++failures; }
     if (!test_base_and_tool())         { ++failures; }
@@ -423,3 +601,4 @@ int main() {
         return 1;
     }
 }
+

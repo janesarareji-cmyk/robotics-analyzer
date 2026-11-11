@@ -38,12 +38,14 @@ class ProjectController(QObject):
         project_saved(ProjectData)   — Active project was written to disk.
         project_closed()             — Active project was closed.
         modified_changed(bool)       — Unsaved-changes flag changed.
+        robot_changed(RobotModel)    — Active robot model changed.
     """
 
     project_opened = Signal(object)   # ProjectData
     project_saved = Signal(object)    # ProjectData
     project_closed = Signal()
     modified_changed = Signal(bool)
+    robot_changed = Signal(object)    # cb.RobotModel
 
     def __init__(self, settings: AppSettings, parent: QObject | None = None):
         super().__init__(parent)
@@ -69,6 +71,21 @@ class ProjectController(QObject):
     def is_modified(self) -> bool:
         """Return True if the project has unsaved changes."""
         return self._is_modified
+
+    @property
+    def robot(self) -> Any:
+        """Return the current robot model, or None if no project is open."""
+        if self._project is None:
+            return None
+        return self._project.robot_model
+
+    def set_robot(self, model: Any) -> None:
+        """Set the robot model for the active project and mark dirty."""
+        if self._project is None:
+            return
+        self._project.robot_model = model
+        self.mark_modified()
+        self.robot_changed.emit(model)
 
     # ------------------------------------------------------------------
     # Project actions
