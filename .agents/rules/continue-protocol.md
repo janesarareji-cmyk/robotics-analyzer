@@ -1,9 +1,11 @@
 ---
 trigger: always_on
-description: What the Builder (Gemini) does when the user says "continue" (or "go", "next", "proceed").
+description: What the Sonnet orchestrator does when the user says "continue" (or "go", "next", "proceed"). It runs the loop by launching Builder subagents.
 ---
 
-## Continue Protocol (Builder)
+## Continue Protocol (Sonnet orchestrator + Builder subagents)
+
+The Sonnet orchestrator runs this loop. It launches Builder subagents (Agent tool, haiku or sonnet tier per substage) with the spec section pasted in. Gemini is retired.
 
 From Stage R3 the project uses the **stage-batch loop** below.
 Authority: `docs/MASTER_PLAN.md` section 1. The old per-substage protocol
@@ -41,6 +43,7 @@ instruction:
    If the spec is unclear or contradicts the code: do not guess. Write the
    question in `PROGRESS.md` → "Blockers", set the row `blocked`, stop,
    tell the user.
+   Sonnet reviews the substage diff before the next substage starts.
 5. Build if C++ changed: `cmake --build build --config Release`.
    Run `.\run_tests.ps1`. All tests must pass.
    A failure you fix in the same substage is normal. If the same substage

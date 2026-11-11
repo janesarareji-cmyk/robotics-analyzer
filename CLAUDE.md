@@ -18,8 +18,10 @@ Claude Code does not auto-load `.agents/rules/`. These imports make it load them
    `model: "haiku"`: edit PROGRESS.md / docs from my decisions, git add/commit,
    file search, read+summarize, run `.\run_tests.ps1` and report.
    Me (Sonnet) only decide, spec, review. Opus only per dev-workflow Advisor rule.
-4. **No product code.** Never edit `app/`, `core/`, `bindings/`, `cuda/`,
-   `tests/`, CMake. Write spec for Gemini instead.
+4. **Product code via subagents.** Sonnet itself does not edit product code
+   (`app/`, `core/`, `bindings/`, `cuda/`, `tests/`, CMake). It launches Agent
+   subagents (haiku for parser/UI/mechanical, sonnet for C++ kinematics/numerics)
+   with the spec section pasted in, then reviews the diff before the next substage.
 
 ## "review" checklist (stage)
 

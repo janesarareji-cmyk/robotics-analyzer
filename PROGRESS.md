@@ -1,6 +1,6 @@
 # Progress and Handoff
 
-Shared status file between the Builder (Gemini, Antigravity) and the
+Shared status file between the Builder (Claude subagents launched by Sonnet) and the
 Reviewer (Claude Sonnet, Claude Code). Read this file first. Update it at
 every handoff. Keep it short.
 
@@ -8,7 +8,7 @@ every handoff. Keep it short.
 
 -   **Stage:** R3 --- Import (status: `in-progress`)
 -   **Next substage:** R3.2 --- Compiled kinematic model + tree FK
--   **Owner now:** Builder
+-   **Owner now:** Sonnet orchestrator + Builder subagents
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R3 (Builder builds R3.2 to R3.7, runs gate, sets `stage-ready-for-review`, stops)
 -   **Spec pack:** `docs/specs/R3-spec.md`
@@ -113,6 +113,7 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: R2.7 scale formula changed in R2.9 (adds tool offset, floor 0.05 → 0.01). Accepted.
 -   2026-11-11: URDF parsing uses Python stdlib `xml.etree` in `app/` (no new C++ dependency). Importer builds URM through bindings.
 -   2026-11-11: Plan audit (Sonnet, no Opus). R3 spec pack fixed for a fresh Builder: (1) compiled joints sorted by child_link (URM joint order is not topological); (2) mimic chains flattened at compile time to the root master; mimic of a fixed joint is invalid; (3) URDF import emits canonical order `joints[i].child_link == i+1`; returns `ImportResult(model, report, visuals, collisions)`; full report-code table; (4) tree UI reuses `ModelPanel`/`PropertiesPanel`, `polyline_points` keeps R2 meaning for the active chain, new `branch_segments`; (5) R3.7 reuses existing `Link.inertia` (defaults → mass 0 = not set), physical checks in separate `validate_physical()` (warnings); (6) project format 1.0.0 → 1.1.0 for `visuals.json` + `assets/`; (7) R3.1 counted `committed` under stage-batch, reviewed with stage R3.
+-   2026-11-11: Workflow change by user: Gemini retired; Sonnet orchestrates, Builder = Claude subagents (Haiku/Sonnet tiers), Sonnet reviews each substage diff.
 
 ## Risks
 

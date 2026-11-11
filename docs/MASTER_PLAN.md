@@ -1,5 +1,7 @@
 # Master Plan: Stages R3 to R8
 
+Note 2026-11-11: 'Gemini'/'Builder' now means Builder subagents launched by Sonnet.
+
 Owner: Reviewer (Claude Sonnet 5.5). Builder: Gemini. Written 2026-11-11
 after Stage R2 gate passed. Stages R0 to R2 are DONE and not repeated.
 

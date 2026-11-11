@@ -1,5 +1,7 @@
 # Stage R3 spec pack: Import
 
+Note 2026-11-11: 'Gemini'/'Builder' now means Builder subagents launched by Sonnet.
+
 Authority: `docs/MASTER_PLAN.md` (workflow, gate, push). Stage review is
 BLOCKING (do not start R4 before `stage-approved`).
 
