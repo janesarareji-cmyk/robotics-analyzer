@@ -177,8 +177,10 @@ def test_import_with_errors_keeps_old_project(win):
         win.import_urdf_file(str(FX / "bad_xml.urdf"))
         win.task_runner.wait_all(5000)
         QApplication.processEvents()
-    assert warn.call_count == 1
-    assert "URDF_BAD_XML" in warn.call_args[0][2]
+    assert warn.call_count == 0  # R3.6: report goes to the dock, not a popup
+    assert [i.code for i in win.import_report_panel.report.by_severity("error")] == [
+        "URDF_BAD_XML"
+    ]
     assert win.project_controller.current_project is proj
     assert win.project_controller.current_project.name == "Keep"
 

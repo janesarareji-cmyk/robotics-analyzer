@@ -22,6 +22,8 @@ from app.panels.properties_panel import PropertiesPanel
 from app.panels.dh_editor import DHEditorWidget
 from app.panels.joint_panel import JointPanel
 from app.importers import import_urdf
+from app.importers.import_report import SEV_WARNING
+from app.panels.import_report_panel import ImportReportPanel, find_element
 from app.settings import AppSettings
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
@@ -166,6 +168,11 @@ class MainWindow(QMainWindow):
         self._action_view_log.setChecked(True)
         view_menu.addAction(self._action_view_log)
 
+        self._action_view_import_report = QAction("Import &Report", self)
+        self._action_view_import_report.setCheckable(True)
+        self._action_view_import_report.setChecked(False)
+        view_menu.addAction(self._action_view_import_report)
+
         # Robot submenu in View menu
         view_menu.addSeparator()
         self._menu_robot = view_menu.addMenu("&Robot")
@@ -308,6 +315,21 @@ class MainWindow(QMainWindow):
         self._action_view_log.triggered.connect(log_dock.setVisible)
         log_dock.visibilityChanged.connect(self._action_view_log.setChecked)
 
+        # Import report dock — bottom, tabbed with the log. Hidden until an import.
+        self._import_report_panel = ImportReportPanel()
+        self._import_report_dock = QDockWidget("Import Report", self)
+        self._import_report_dock.setObjectName("import_report_dock")
+        self._import_report_dock.setWidget(self._import_report_panel)
+        self._import_report_dock.setMinimumHeight(160)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._import_report_dock)
+        self.tabifyDockWidget(log_dock, self._import_report_dock)
+        self._import_report_dock.hide()
+        self._action_view_import_report.triggered.connect(self._import_report_dock.setVisible)
+        self._import_report_dock.visibilityChanged.connect(
+            self._action_view_import_report.setChecked
+        )
+        self._import_report_panel.element_clicked.connect(self._on_report_element_clicked)
+
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
@@ -430,6 +452,7 @@ class MainWindow(QMainWindow):
         """Run the URDF import in a worker task; result handled on the GUI thread."""
         self.set_status(f"Importing {path} ...")
         roots = self._settings.mesh_search_roots()
+        self._import_path = path
         task = self._task_runner.submit_fn(lambda: import_urdf(path, roots))
         task.signals.result.connect(self._on_urdf_import_result)
         task.signals.error.connect(self._on_urdf_import_failed)
@@ -439,19 +462,36 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "URDF Import", f"Import failed.\n\n{message}")
 
     def _on_urdf_import_result(self, result: Any) -> None:
+        """Show the report in the dock, then load the model unless errors."""
+        path = getattr(self, "_import_path", "")
         report = result.report
+        self._import_report_panel.set_report(report)
+        if report.has_errors():
+            self._import_report_dock.show()
+            self._import_report_dock.raise_()
+        elif report.by_severity(SEV_WARNING):
+            self._import_report_dock.show()
+
+        where = f"{path}: " if path else ""
         if result.model is None:
-            self.log("[ERROR] URDF import failed.")
-            QMessageBox.warning(self, "URDF Import Failed", report.to_text())
+            self.log(f"[ERROR] URDF import failed: {where}{report.summary()}")
             return
         name = result.model.metadata.name or "Imported Robot"
         if not self._project_controller.import_robot(
             self, result.model, name, result.visuals, result.collisions
         ):
+            self.log(
+                f"[WARNING] URDF import not loaded (cancelled): {where}{report.summary()}"
+            )
             return
-        self.log(f"[INFO] URDF imported: '{name}'.")
-        if report.by_severity("warning"):
-            QMessageBox.warning(self, "URDF Import Warnings", report.to_text())
+        prefix = "[WARNING]" if report.by_severity(SEV_WARNING) else "[INFO]"
+        self.log(f"{prefix} URDF imported: {where}{report.summary()}")
+
+    def _on_report_element_clicked(self, name: str) -> None:
+        """Import report row click -> select the joint or link in the tree."""
+        hit = find_element(self._project_controller.robot, name)
+        if hit is not None:
+            self._model_panel.select(*hit)
 
     def _on_mesh_search_paths(self) -> None:
         """Handle File > Import > Mesh search paths."""
@@ -602,6 +642,16 @@ class MainWindow(QMainWindow):
     def model_panel(self) -> ModelPanel:
         """Return the robot model panel widget."""
         return self._model_panel
+
+    @property
+    def import_report_panel(self) -> ImportReportPanel:
+        """Return the import report panel widget."""
+        return self._import_report_panel
+
+    @property
+    def import_report_dock(self) -> QDockWidget:
+        """Return the import report dock widget."""
+        return self._import_report_dock
 
     @property
     def props_panel(self) -> PropertiesPanel:

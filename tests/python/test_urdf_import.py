@@ -56,7 +56,8 @@ def test_report_add_query_and_text():
     rep.add(ir.SEV_ERROR, ir.URDF_CYCLE, "loop")
     assert rep.has_errors()
     text = rep.to_text()
-    assert ir.URDF_MISSING_LIMIT in text and "[j1]" in text
+    assert ir.URDF_MISSING_LIMIT in text and "(j1)" in text
+    assert text.splitlines()[-1] == "1 errors, 1 warnings, 1 info"
     assert ir.URDF_CYCLE in text
 
 

@@ -1,0 +1,4 @@
+[ERROR] URDF_CYCLE: loop found (j1)
+[WARNING] URDF_MISSING_LIMIT: no limit (j2)
+[INFO] URDF_TCP_CHOSEN: tcp chosen: l2
+1 errors, 1 warnings, 1 info

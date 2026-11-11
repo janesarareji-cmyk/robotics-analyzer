@@ -294,7 +294,9 @@ def test_too_large_mesh_not_drawn(win, tmp_path, monkeypatch):
 
 def test_missing_mesh_draws_fallback_cube(win, tmp_path):
     w = _import(win, _mesh_urdf(tmp_path, "gone.stl"))
-    assert w.called                       # warnings dialog
+    assert not w.called                   # R3.6: no popup, report in the dock
+    assert ir.URDF_MESH_MISSING in [i.code for i in win.import_report_panel.report.issues]
+    assert win.import_report_dock.isVisible()
     assert len(win.robot_view.visual_actors) == 1
 
 

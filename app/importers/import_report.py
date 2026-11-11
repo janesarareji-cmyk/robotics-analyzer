@@ -80,13 +80,21 @@ class ImportReport:
     def by_code(self, code: str) -> List[ImportIssue]:
         return [i for i in self.issues if i.code == code]
 
+    def summary(self) -> str:
+        """Fixed summary line: 'N errors, M warnings, K info'."""
+        return (
+            f"{len(self.by_severity(SEV_ERROR))} errors, "
+            f"{len(self.by_severity(SEV_WARNING))} warnings, "
+            f"{len(self.by_severity(SEV_INFO))} info"
+        )
+
     def to_text(self) -> str:
-        if not self.issues:
-            return "No issues."
+        """One line per issue: '[SEVERITY] CODE: message (element)', then the summary line."""
         lines = []
         for i in self.issues:
-            where = f" [{i.element}]" if i.element else ""
-            lines.append(f"{i.severity.upper()} {i.code}{where}: {i.message}")
+            where = f" ({i.element})" if i.element else ""
+            lines.append(f"[{i.severity.upper()}] {i.code}: {i.message}{where}")
+        lines.append(self.summary())
         return "\n".join(lines)
 
 
