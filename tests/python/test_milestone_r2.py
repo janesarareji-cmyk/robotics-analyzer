@@ -305,6 +305,16 @@ def test_milestone_r2_end_to_end(qapp, tmp_path):
         # --------------------------------------------------------------
         # Step 5: Save project to temp .robotproj, close, open again
         # --------------------------------------------------------------
+        def _dh_cells():
+            t = win.dh_editor._table
+            return [
+                [float(t.item(r, c).text()) for c in (COL_A, COL_ALPHA, COL_D, COL_THETA, COL_Q)]
+                for r in range(t.rowCount())
+            ]
+
+        cells_before = _dh_cells()
+        assert len(cells_before) == 3
+
         save_file = str(tmp_path / "test_arm.robotproj")
         saved = win.project_controller.save_project_as(win, save_file)
         assert saved
@@ -328,6 +338,8 @@ def test_milestone_r2_end_to_end(qapp, tmp_path):
         assert win.joint_panel.rows[1].spinbox.value() == pytest.approx(-45.0, abs=0.01)
         assert win.joint_panel.rows[2].spinbox.value() == pytest.approx(60.0, abs=0.01)
         assert win.joint_panel.tcp_text == tcp_text
+        # R2.9 open item: DH table cells identical after save/close/reopen
+        np.testing.assert_allclose(_dh_cells(), cells_before, atol=1e-6)
         np.testing.assert_allclose(win.robot_view.polyline_points, expected_origins, atol=1e-9)
 
         # --------------------------------------------------------------

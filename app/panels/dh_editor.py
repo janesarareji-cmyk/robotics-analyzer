@@ -20,6 +20,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
 import core_bridge as cb
+from app.panels.model_panel import is_plain_chain
+
+TREE_READONLY_TEXT = "Tree robots are not editable here"
+IMPORTED_TOOLTIP = "Imported joint: not DH"
 
 
 # Column indices for the DH table
@@ -154,6 +158,25 @@ class DHEditorWidget(QWidget):
         self._error_label.setVisible(False)
         main_layout.addWidget(self._error_label)
 
+        # Status text (e.g. refusal on tree robots); empty = hidden
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet("color: #ffaa00; font-size: 11px;")
+        self._status_label.setVisible(False)
+        main_layout.addWidget(self._status_label)
+
+    @property
+    def status_text(self) -> str:
+        """Return the current status text (empty when none)."""
+        return self._status_label.text()
+
+    def _set_status(self, text: str) -> None:
+        self._status_label.setText(text)
+        self._status_label.setVisible(bool(text))
+
+    @staticmethod
+    def _is_origin_axis(joint: Any) -> bool:
+        return joint.kinematics == cb.JointKinematics.OriginAxis
+
     def _create_spinbox(self, min_val: float, max_val: float, decimals: int, step: float) -> QDoubleSpinBox:
         sb = QDoubleSpinBox()
         sb.setRange(min_val, max_val)
@@ -170,6 +193,7 @@ class DHEditorWidget(QWidget):
         self._updating = True
         try:
             self._model = model
+            self._set_status("")
             if self._model is None:
                 self._table.setRowCount(0)
                 self._error_label.setText("")
@@ -233,6 +257,8 @@ class DHEditorWidget(QWidget):
         if self._model is None or row < 0 or row >= len(self._model.joints):
             return
         joint = self._model.joints[row]
+        if self._is_origin_axis(joint):
+            return
         joint.type = joint_type
         joint.limits = cb.default_limits(joint_type)
         widget = self._table.cellWidget(row, COL_TYPE)
@@ -312,6 +338,18 @@ class DHEditorWidget(QWidget):
         self._table.setItem(row, COL_THETA, QTableWidgetItem(f"{theta_val:.6f}"))
         self._table.setItem(row, COL_Q,     QTableWidgetItem(f"{joint.q:.6f}"))
 
+        if self._is_origin_axis(joint):
+            tint = QColor(70, 70, 40)
+            type_combo.setEnabled(False)
+            type_combo.setToolTip(IMPORTED_TOOLTIP)
+            for col in range(COL_COUNT):
+                it = self._table.item(row, col)
+                if it is None:
+                    continue
+                it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                it.setBackground(tint)
+                it.setToolTip(IMPORTED_TOOLTIP)
+
     def _on_type_combo_changed(self, row: int, combo: QComboBox) -> None:
         """Handle joint type change from cell widget combobox."""
         if self._updating or self._model is None:
@@ -326,6 +364,8 @@ class DHEditorWidget(QWidget):
         new_type = type_map.get(combo.currentText())
         if new_type is not None:
             joint = self._model.joints[row]
+            if self._is_origin_axis(joint):
+                return
             joint.type = new_type
             joint.limits = cb.default_limits(new_type)
             # Update background item text as well
@@ -346,6 +386,8 @@ class DHEditorWidget(QWidget):
             return
 
         joint = self._model.joints[row]
+        if self._is_origin_axis(joint):
+            return
         text = item.text().strip()
 
         try:
@@ -440,6 +482,10 @@ class DHEditorWidget(QWidget):
         """Add a new revolute joint and link to the model."""
         if self._model is None:
             return
+        if not is_plain_chain(self._model):
+            self._set_status(TREE_READONLY_TEXT)
+            return
+        self._set_status("")
         idx = len(self._model.joints)
         j = cb.Joint()
         j.name = f"joint{idx + 1}"
@@ -458,20 +504,31 @@ class DHEditorWidget(QWidget):
         self._validate_and_notify()
 
     def _on_remove_joint(self) -> None:
-        """Remove selected joint(s) from the model."""
+        """Remove selected joint(s) (and their child links) from a plain-chain model."""
         if self._model is None:
+            return
+        if not is_plain_chain(self._model):
+            self._set_status(TREE_READONLY_TEXT)
             return
         rows = self._table.selectionModel().selectedRows()
         if not rows:
             return
-        indices = sorted([r.row() for r in rows], reverse=True)
-        joints_list = list(self._model.joints)
-        for idx in indices:
-            if 0 <= idx < len(joints_list):
-                joints_list.pop(idx)
-        self._model.joints.clear()
-        for j in joints_list:
-            self._model.joints.append(j)
+        self._set_status("")
+        remove = {r.row() for r in rows if 0 <= r.row() < len(self._model.joints)}
+        if not remove:
+            return
+        # Delete in place (elements are not copyable from Python); highest index first.
+        # Child link of joint i is link i + 1 on a plain chain.
+        for idx in sorted(remove, reverse=True):
+            if idx + 1 < len(self._model.links):
+                del self._model.links[idx + 1]
+            del self._model.joints[idx]
+        for k, j in enumerate(self._model.joints):
+            j.parent_link = k
+            j.child_link = k + 1
+        n_links = len(self._model.links)
+        if self._model.tcp_link >= n_links:
+            self._model.tcp_link = -1
 
         self._refresh_table()
         self._validate_and_notify()

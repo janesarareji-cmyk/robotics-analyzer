@@ -87,6 +87,19 @@ class ProjectController(QObject):
         self.mark_modified()
         self.robot_changed.emit(model)
 
+    def import_robot(self, parent_widget: QWidget, model: Any, name: str) -> bool:
+        """
+        Create a NEW unsaved project holding an imported robot model.
+        Asks to discard if the current project is modified (Cancel -> False, nothing changes).
+        """
+        if not self._confirm_discard(parent_widget):
+            return False
+        project = ProjectData.new((name or "").strip() or "Imported Robot")
+        project.robot_model = model
+        self._set_project(project, modified=True)
+        log.info("Robot imported into new project: %s", project.name)
+        return True
+
     # ------------------------------------------------------------------
     # Project actions
     # ------------------------------------------------------------------

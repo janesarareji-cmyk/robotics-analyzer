@@ -7,13 +7,13 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R3 --- Import (status: `in-progress`)
--   **Next substage:** R3.4 --- UI for tree and origin_axis joints
+-   **Next substage:** R3.5 --- Meshes and assets
 -   **Owner now:** Sonnet orchestrator + Builder subagents
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R3 (Builder builds R3.2 to R3.7, runs gate, sets `stage-ready-for-review`, stops)
 -   **Spec pack:** `docs/specs/R3-spec.md`
 -   **Stage R2 gate: PASSED** (Reviewer verified: CTest 5/5, pytest 146/146). Tag `stage-R2-done` = `91a53a0`.
--   **Last known test count (2026-11-11, after R3.1):** CTest 5 targets; pytest 152 test functions.
+-   **Last known test count (2026-11-11, after R3.4):** CTest 5 targets; pytest 216 passed.
 
 ### New agent? Read in this order
 
@@ -75,7 +75,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R3.1  | URM schema v2: tree + origin/axis joints  | test_urm.cpp, test_urm_bridge.py   | committed        |
 | R3.2  | Compiled kinematic model + tree FK        | test_fk.cpp, test_compiled.cpp, test_fk_tree.py | committed |
 | R3.3  | URDF parser → URM (no meshes)             | test_urdf_import.py                | committed |
-| R3.4  | UI for tree/origin_axis joints            | test_ui_tree.py                    | planned  |
+| R3.4  | UI for tree/origin_axis joints            | test_ui_tree.py                    | committed |
 | R3.5  | Mesh/asset resolution + visual meshes     | test_urdf_meshes.py                | planned  |
 | R3.6  | Import validation + error report          | test_import_report.py              | planned  |
 | R3.7  | Physical properties (import/estimate/manual) | test_physical_props.py          | planned  |
@@ -99,8 +99,8 @@ Specs do not live in this file. Find them here:
     (`model.base.xyz = [...]`); element assignment is silently lost.
 -   (info) R2.5 weak tests (no 3D known-answer) → follow-ups at top of R2.6.
 -   (resolved) URM serial chain → tree in R3.1 (see Decisions, Opus).
--   (info) R2.9 test does not assert DH table cells after project reopen → scheduled: R3-spec R3.4 item 9.
--   (bug, scheduled R3.4 item 0) DH editor remove-joint leaves stale parent_link/child_link and extra links → validate() fails.
+-   (resolved R3.4) R2.9 test now asserts DH table cells after reopen.
+-   (resolved R3.4 item 0) DH editor remove-joint leaves stale parent_link/child_link and extra links → validate() fails.
 
 ## Decisions
 

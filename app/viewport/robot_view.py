@@ -11,6 +11,11 @@ from typing import Any
 import numpy as np
 
 import core_bridge as cb
+from app.panels.model_panel import joint_links, resolved_tcp_link
+
+BRANCH_COLOR = "#777777"
+BRANCH_OPACITY = 0.6
+HIGHLIGHT_SCALE = 1.6
 
 
 class RobotView:
@@ -41,6 +46,11 @@ class RobotView:
         self._tcp_actor: Any = None
         self._polyline_actor: Any = None
         self._marker_actors: list[Any] = []
+        self._marker_joints: list[int] = []     # joint index of each marker actor
+        self._branch_actor: Any = None
+        self._branch_mesh: Any = None
+        self._current_topology: Any = None
+        self._highlighted: int | None = None
 
         self._polyline_mesh: Any = None
         self._last_points: np.ndarray | None = None
@@ -95,6 +105,23 @@ class RobotView:
         return None
 
     @property
+    def branch_actor(self) -> Any:
+        """Return the off-active-chain branch line actor, or None."""
+        return self._branch_actor
+
+    @property
+    def branch_segments(self) -> np.ndarray | None:
+        """Return branch segments as array (n, 2, 3): parent origin -> child origin, or None."""
+        if self._branch_mesh is None:
+            return None
+        return np.array(self._branch_mesh.points).reshape(-1, 2, 3)
+
+    @property
+    def marker_joint_indices(self) -> list[int]:
+        """Joint index of each marker actor (same order as marker_actors)."""
+        return list(self._marker_joints)
+
+    @property
     def marker_actors(self) -> list[Any]:
         """Return list of joint marker actors."""
         return list(self._marker_actors)
@@ -108,6 +135,8 @@ class RobotView:
             res.append(self._tcp_actor)
         if self._polyline_actor is not None:
             res.append(self._polyline_actor)
+        if self._branch_actor is not None:
+            res.append(self._branch_actor)
         res.extend(self._marker_actors)
         return res
 
@@ -128,6 +157,8 @@ class RobotView:
         self._show_links = bool(show)
         if self._polyline_actor is not None:
             self._polyline_actor.visibility = self._show_links
+        if self._branch_actor is not None:
+            self._branch_actor.visibility = self._show_links
         for actor in self._marker_actors:
             if actor is not None:
                 actor.visibility = self._show_links
@@ -157,6 +188,11 @@ class RobotView:
         self._tcp_actor = None
         self._polyline_actor = None
         self._marker_actors.clear()
+        self._marker_joints.clear()
+        self._branch_actor = None
+        self._branch_mesh = None
+        self._current_topology = None
+        self._highlighted = None
         self._polyline_mesh = None
         self._current_joint_count = None
         self._current_joint_types.clear()
@@ -183,8 +219,10 @@ class RobotView:
         )
 
         joint_types = [j.type for j in model.joints]
+        topology = self._topology(model, fk_result)
         needs_rebuild = (
             scale_changed
+            or self._current_topology != topology
             or self._current_joint_count != len(model.joints)
             or self._current_joint_types != joint_types
             or self._current_convention != model.convention
@@ -194,11 +232,65 @@ class RobotView:
         )
 
         if needs_rebuild:
-            self._rebuild_actors(model, frames, tcp)
+            self._rebuild_actors(model, frames, tcp, fk_result)
         else:
-            self._update_in_place(model, frames, tcp)
+            self._update_in_place(model, frames, tcp, fk_result)
 
         self._render()
+
+    def highlight_joint(self, index: int | None) -> None:
+        """Draw the marker of joint `index` 1.6x larger; reset the previous one."""
+        self._highlighted = index
+        self._apply_highlight()
+        self._render()
+
+    def _apply_highlight(self) -> None:
+        for actor, jidx in zip(self._marker_actors, self._marker_joints):
+            on = self._highlighted is not None and jidx == self._highlighted
+            f = HIGHLIGHT_SCALE if on else 1.0
+            actor.scale = (f, f, f)
+
+    # ------------------------------------------------------------------
+    # Topology helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _active_joints(model: Any, fk_result: dict[str, Any]) -> list[int]:
+        act = fk_result.get("active_joints")
+        if act is None:
+            return list(range(len(model.joints)))
+        return [int(k) for k in act]
+
+    def _topology(self, model: Any, fk_result: dict[str, Any]) -> Any:
+        return (
+            tuple(joint_links(model)),
+            resolved_tcp_link(model),
+            tuple(self._active_joints(model, fk_result)),
+        )
+
+    def _path_links(self, model: Any, fk_result: dict[str, Any]) -> list[int]:
+        """Links on the active chain, in order: link 0 then child link of each active joint."""
+        pairs = joint_links(model)
+        return [0] + [pairs[k][1] for k in self._active_joints(model, fk_result)]
+
+    def _branch_pairs(self, model: Any, fk_result: dict[str, Any]) -> list[tuple[int, int]]:
+        pairs = joint_links(model)
+        active = set(self._active_joints(model, fk_result))
+        return [pairs[k] for k in range(len(pairs)) if k not in active]
+
+    def _polyline_pts(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray,
+                      fk_result: dict[str, Any]) -> np.ndarray:
+        path = self._path_links(model, fk_result)
+        pts_list = [frames[k][:3, 3] for k in path] + [tcp[:3, 3]]
+        return np.array(pts_list, dtype=float)
+
+    def _branch_pts(self, model: Any, frames: list[np.ndarray],
+                    fk_result: dict[str, Any]) -> np.ndarray:
+        pts = []
+        for p, c in self._branch_pairs(model, fk_result):
+            pts.append(frames[p][:3, 3])
+            pts.append(frames[c][:3, 3])
+        return np.array(pts, dtype=float).reshape(-1, 3)
 
     # ------------------------------------------------------------------
     # Internal Helpers
@@ -208,7 +300,9 @@ class RobotView:
         """Compute visual scale based on total robot reach."""
         total_reach = 0.0
         for j in model.joints:
-            if model.convention == cb.DHConvention.Modified:
+            if j.kinematics == cb.JointKinematics.OriginAxis:
+                total_reach += sum(abs(v) for v in j.origin.xyz)
+            elif model.convention == cb.DHConvention.Modified:
                 total_reach += abs(j.mdh.a) + abs(j.mdh.d)
             else:
                 total_reach += abs(j.dh.a) + abs(j.dh.d)
@@ -240,7 +334,8 @@ class RobotView:
         triad.cell_data["colors"] = colors
         return triad
 
-    def _rebuild_actors(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray) -> None:
+    def _rebuild_actors(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray,
+                        fk_result: dict[str, Any]) -> None:
         """Recreate all PyVista actors for the robot."""
         import pyvista as pv
 
@@ -282,8 +377,7 @@ class RobotView:
         # If model has joints, build polyline and markers
         if len(model.joints) > 0:
             # (b) Polyline through origins of all frames, then to TCP
-            pts_list = [f[:3, 3] for f in frames] + [tcp[:3, 3]]
-            pts = np.array(pts_list, dtype=float)
+            pts = self._polyline_pts(model, frames, tcp, fk_result)
             self._polyline_mesh = pv.lines_from_points(pts)
             self._polyline_actor = self._plotter.add_mesh(
                 self._polyline_mesh,
@@ -294,11 +388,30 @@ class RobotView:
             self._polyline_actor.visibility = self._show_links
             self._last_points = pts
 
-            # (c) Joint markers at non-fixed joint frame origins (frames[i+1])
+            # (b2) Branch segments for joints off the active chain
+            bpts = self._branch_pts(model, frames, fk_result)
+            if len(bpts) > 0:
+                n_seg = len(bpts) // 2
+                lines = np.empty(n_seg * 3, dtype=int)
+                lines[0::3] = 2
+                lines[1::3] = np.arange(0, 2 * n_seg, 2)
+                lines[2::3] = np.arange(1, 2 * n_seg, 2)
+                self._branch_mesh = pv.PolyData(bpts, lines=lines)
+                self._branch_actor = self._plotter.add_mesh(
+                    self._branch_mesh,
+                    color=BRANCH_COLOR,
+                    opacity=BRANCH_OPACITY,
+                    line_width=2,
+                    reset_camera=False,
+                )
+                self._branch_actor.visibility = self._show_links
+
+            # (c) Joint markers at non-fixed joint child-frame origins
+            pairs = joint_links(model)
             for i, j in enumerate(model.joints):
                 if j.type == cb.JointType.Fixed:
                     continue
-                frame_mat = frames[i + 1]
+                frame_mat = frames[pairs[i][1]]
                 if j.type == cb.JointType.Revolute:
                     mesh = pv.Sphere(radius=marker_r, center=(0.0, 0.0, 0.0))
                     color = "#e67e22"
@@ -311,36 +424,35 @@ class RobotView:
                 actor.user_matrix = frame_mat
                 actor.visibility = self._show_links
                 self._marker_actors.append(actor)
+                self._marker_joints.append(i)
+            self._apply_highlight()
 
+        self._current_topology = self._topology(model, fk_result)
         self._current_joint_count = len(model.joints)
         self._current_joint_types = [j.type for j in model.joints]
         self._current_convention = model.convention
         self._last_scale = scale
 
-    def _update_in_place(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray) -> None:
+    def _update_in_place(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray,
+                         fk_result: dict[str, Any]) -> None:
         """Update existing actor transforms and polyline points in place."""
-        # 1. Update frame triads
         for i, frame_mat in enumerate(frames):
             self._frame_actors[i].user_matrix = frame_mat
 
-        # 2. Update TCP triad
         if self._tcp_actor is not None:
             self._tcp_actor.user_matrix = tcp
 
-        # 3. Update polyline points
         if self._polyline_mesh is not None:
-            pts_list = [f[:3, 3] for f in frames] + [tcp[:3, 3]]
-            pts = np.array(pts_list, dtype=float)
+            pts = self._polyline_pts(model, frames, tcp, fk_result)
             self._polyline_mesh.points = pts
             self._last_points = pts
 
-        # 4. Update markers
-        marker_idx = 0
-        for i, j in enumerate(model.joints):
-            if j.type != cb.JointType.Fixed:
-                if marker_idx < len(self._marker_actors):
-                    self._marker_actors[marker_idx].user_matrix = frames[i + 1]
-                    marker_idx += 1
+        if self._branch_mesh is not None:
+            self._branch_mesh.points = self._branch_pts(model, frames, fk_result)
+
+        pairs = joint_links(model)
+        for actor, jidx in zip(self._marker_actors, self._marker_joints):
+            actor.user_matrix = frames[pairs[jidx][1]]
 
     def _render(self) -> None:
         """Trigger viewport render if available."""

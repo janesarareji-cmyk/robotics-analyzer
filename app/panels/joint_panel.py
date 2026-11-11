@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 import core_bridge as cb
+from app.panels.model_panel import joint_links, resolved_tcp_link
 
 # Multiplier for mapping continuous angles/displacements to integer QSlider
 SLIDER_SCALE = 100.0
@@ -174,10 +175,11 @@ class JointPanel(QWidget):
         super().__init__(parent)
         self._model: Any = None
         self._updating: bool = False
-        self._rows: list[JointRow] = []
+        self._rows: list[JointRow] = []          # active-chain rows (top section)
+        self._branch_rows: list[JointRow] = []   # "Other branches" rows
         self._baseline_q: list[float] = []
 
-        self._current_joint_signature: list[tuple[str, Any, float, float]] = []
+        self._current_joint_signature: list[Any] = []
 
         self._setup_ui()
 
@@ -201,6 +203,22 @@ class JointPanel(QWidget):
         self._rows_layout.setSpacing(4)
         scroll.setWidget(self._rows_container)
         joints_vbox.addWidget(scroll)
+
+        # Other branches: collapsible group (hidden when empty)
+        self._branch_group = QGroupBox("Other branches")
+        self._branch_group.setCheckable(True)
+        self._branch_group.setChecked(False)  # collapsed
+        branch_vbox = QVBoxLayout(self._branch_group)
+        branch_vbox.setContentsMargins(4, 4, 4, 4)
+        self._branch_container = QWidget()
+        self._branch_layout = QGridLayout(self._branch_container)
+        self._branch_layout.setContentsMargins(2, 2, 2, 2)
+        self._branch_layout.setSpacing(4)
+        branch_vbox.addWidget(self._branch_container)
+        self._branch_container.setVisible(False)
+        self._branch_group.toggled.connect(self._branch_container.setVisible)
+        self._branch_group.setVisible(False)
+        joints_vbox.addWidget(self._branch_group)
 
         # Buttons row
         btn_layout = QHBoxLayout()
@@ -240,8 +258,20 @@ class JointPanel(QWidget):
 
     @property
     def rows(self) -> list[JointRow]:
-        """Return list of active JointRow control objects."""
+        """Return JointRow objects of the active chain (top section)."""
         return self._rows
+
+    @property
+    def branch_rows(self) -> list[JointRow]:
+        """Return JointRow objects of the "Other branches" group."""
+        return self._branch_rows
+
+    @property
+    def branch_group(self) -> QGroupBox:
+        return self._branch_group
+
+    def _all_rows(self) -> list[JointRow]:
+        return self._rows + self._branch_rows
 
     @property
     def tcp_text(self) -> str:
@@ -259,17 +289,39 @@ class JointPanel(QWidget):
         if save_baseline or not self._baseline_q:
             self._baseline_q = [j.q for j in model.joints]
 
-        # Signature: [(name, type, lower, upper), ...]
-        new_sig = [
-            (j.name, j.type, j.limits.lower, j.limits.upper)
-            for j in model.joints
-            if j.type != cb.JointType.Fixed
-        ]
+        chain, others = self._split_joints(model)
+        new_sig = (
+            tuple(
+                (j.name, j.type, j.limits.lower, j.limits.upper,
+                 j.mimic is not None, j.parent_link, j.child_link)
+                for j in model.joints
+            ),
+            resolved_tcp_link(model),
+            tuple(chain),
+            tuple(others),
+        )
 
         if new_sig != self._current_joint_signature:
-            self._rebuild_rows(new_sig)
+            self._rebuild_rows(new_sig, chain, others)
         else:
             self._sync_values_to_ui()
+
+    @staticmethod
+    def _split_joints(model: Any) -> tuple[list[int], list[int]]:
+        """Return (active-chain row joints, other-branch row joints): non-fixed, non-mimic."""
+        try:
+            active = list(cb.active_chain(model))
+        except Exception:
+            active = list(range(len(model.joints)))
+        aset = set(active)
+
+        def eligible(k: int) -> bool:
+            j = model.joints[k]
+            return j.type != cb.JointType.Fixed and j.mimic is None
+
+        chain = [k for k in active if eligible(k)]
+        others = [k for k in range(len(model.joints)) if k not in aset and eligible(k)]
+        return chain, others
 
     def update_tcp_readout(self, tcp: np.ndarray) -> None:
         """Update live TCP pose readout labels from a 4x4 transform."""
@@ -296,47 +348,48 @@ class JointPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _clear_rows(self) -> None:
-        """Remove all row widgets from the layout."""
-        while self._rows_layout.count():
-            item = self._rows_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        """Remove all row widgets from the layouts."""
+        for layout in (self._rows_layout, self._branch_layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
         self._rows.clear()
-        self._current_joint_signature.clear()
+        self._branch_rows.clear()
+        self._branch_group.setVisible(False)
+        self._current_joint_signature = []
 
-    def _rebuild_rows(self, signature: list[tuple[str, Any, float, float]]) -> None:
-        """Reconstruct rows layout for non-fixed joints."""
+    def _make_row(self, i: int, layout: QGridLayout, row_idx: int) -> JointRow:
+        j = self._model.joints[i]
+        row = JointRow(
+            joint_index=i,
+            joint_name=j.name,
+            joint_type=j.type,
+            lower=j.limits.lower,
+            upper=j.limits.upper,
+            on_change_callback=self._on_joint_value_edited,
+        )
+        row.set_value(j.q)
+        layout.addWidget(row.name_label, row_idx, 0)
+        layout.addWidget(row.slider, row_idx, 1)
+        layout.addWidget(row.spinbox, row_idx, 2)
+        layout.addWidget(row.unit_label, row_idx, 3)
+        layout.addWidget(row.warning_label, row_idx, 4)
+        return row
+
+    def _rebuild_rows(self, signature: Any, chain: list[int], others: list[int]) -> None:
+        """Reconstruct row layouts: active chain on top, other branches below."""
         self._updating = True
         try:
             self._clear_rows()
             if self._model is None:
                 return
-
-            row_idx = 0
-            for i, j in enumerate(self._model.joints):
-                if j.type == cb.JointType.Fixed:
-                    continue
-
-                row = JointRow(
-                    joint_index=i,
-                    joint_name=j.name,
-                    joint_type=j.type,
-                    lower=j.limits.lower,
-                    upper=j.limits.upper,
-                    on_change_callback=self._on_joint_value_edited,
-                )
-                row.set_value(j.q)
-
-                self._rows_layout.addWidget(row.name_label, row_idx, 0)
-                self._rows_layout.addWidget(row.slider, row_idx, 1)
-                self._rows_layout.addWidget(row.spinbox, row_idx, 2)
-                self._rows_layout.addWidget(row.unit_label, row_idx, 3)
-                self._rows_layout.addWidget(row.warning_label, row_idx, 4)
-
-                self._rows.append(row)
-                row_idx += 1
-
+            for r, i in enumerate(chain):
+                self._rows.append(self._make_row(i, self._rows_layout, r))
+            for r, i in enumerate(others):
+                self._branch_rows.append(self._make_row(i, self._branch_layout, r))
+            self._branch_group.setVisible(bool(others))
             self._current_joint_signature = signature
         finally:
             self._updating = False
@@ -347,7 +400,7 @@ class JointPanel(QWidget):
             return
         self._updating = True
         try:
-            for row in self._rows:
+            for row in self._all_rows():
                 q = self._model.joints[row.joint_index].q
                 row.set_value(q)
         finally:
@@ -360,7 +413,7 @@ class JointPanel(QWidget):
         if 0 <= joint_index < len(self._model.joints):
             self._model.joints[joint_index].q = new_q
             # Re-check warning label for this row
-            for row in self._rows:
+            for row in self._all_rows():
                 if row.joint_index == joint_index:
                     out = (new_q < row.lower_model - 1e-9) or (new_q > row.upper_model + 1e-9)
                     row.warning_label.setVisible(out)
@@ -373,7 +426,7 @@ class JointPanel(QWidget):
             return
         self._updating = True
         try:
-            for row in self._rows:
+            for row in self._all_rows():
                 zero_clamped = min(max(0.0, row.lower_model), row.upper_model)
                 self._model.joints[row.joint_index].q = zero_clamped
                 row.set_value(zero_clamped)
@@ -389,7 +442,7 @@ class JointPanel(QWidget):
             return
         self._updating = True
         try:
-            for row in self._rows:
+            for row in self._all_rows():
                 if row.joint_index < len(self._baseline_q):
                     orig_q = self._baseline_q[row.joint_index]
                     self._model.joints[row.joint_index].q = orig_q

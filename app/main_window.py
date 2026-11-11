@@ -11,7 +11,7 @@ from typing import Any
 from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QLabel,
     QVBoxLayout, QMenuBar, QStatusBar, QToolBar,
-    QMessageBox
+    QMessageBox, QFileDialog, QInputDialog
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QKeySequence, QIcon
@@ -21,6 +21,7 @@ from app.panels.model_panel import ModelPanel
 from app.panels.properties_panel import PropertiesPanel
 from app.panels.dh_editor import DHEditorWidget
 from app.panels.joint_panel import JointPanel
+from app.importers import import_urdf
 from app.settings import AppSettings
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
@@ -119,6 +120,14 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        self._menu_import = file_menu.addMenu("&Import")
+        self._action_import_urdf = QAction("&URDF...", self)
+        self._action_import_urdf.setStatusTip("Import a robot from a URDF file")
+        self._action_import_urdf.triggered.connect(self._on_import_urdf)
+        self._menu_import.addAction(self._action_import_urdf)
+
+        file_menu.addSeparator()
+
         action_quit = QAction("&Quit", self)
         action_quit.setShortcut(QKeySequence.StandardKey.Quit)
         action_quit.setStatusTip("Exit the application")
@@ -171,6 +180,14 @@ class MainWindow(QMainWindow):
         self._action_show_tcp.setCheckable(True)
         self._action_show_tcp.setChecked(True)
         self._menu_robot.addAction(self._action_show_tcp)
+
+        # Robot menu (top-level)
+        robot_menu = menubar.addMenu("&Robot")
+        self._action_set_tcp = QAction("Set &TCP link...", self)
+        self._action_set_tcp.setStatusTip("Choose the link that carries the tool pose")
+        self._action_set_tcp.triggered.connect(self._on_set_tcp_link)
+        self._action_set_tcp.setEnabled(False)
+        robot_menu.addAction(self._action_set_tcp)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -269,6 +286,7 @@ class MainWindow(QMainWindow):
         self._joint_dock.visibilityChanged.connect(self._action_view_joints.setChecked)
         self._joint_panel.q_changed.connect(self._on_joint_q_changed)
         self._joint_panel.log_requested.connect(self.log)
+        self._model_panel.selection_changed.connect(self._on_tree_selection)
 
         # Log panel — bottom
         self._log_panel = LogPanel()
@@ -302,6 +320,7 @@ class MainWindow(QMainWindow):
         self._action_save.setEnabled(True)
         self._action_save_as.setEnabled(True)
         self._action_close.setEnabled(True)
+        self._action_set_tcp.setEnabled(True)
         self._update_title()
         self.set_status(f"Project '{project.name}' opened.")
 
@@ -309,6 +328,7 @@ class MainWindow(QMainWindow):
         if project.robot_model is not None:
             self._dh_editor.set_model(project.robot_model)
             self._joint_panel.set_model(project.robot_model, save_baseline=True)
+            self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
                 f"[INFO] Robot model loaded: '{robot_name}' "
@@ -326,6 +346,8 @@ class MainWindow(QMainWindow):
         self._viewport.robot_view.clear()
         self._dh_editor.set_model(None)
         self._joint_panel.set_model(None)
+        self._refresh_tree(None)
+        self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
         self._action_save_as.setEnabled(False)
         self._action_close.setEnabled(False)
@@ -357,8 +379,88 @@ class MainWindow(QMainWindow):
         if self._dh_editor.get_model() is not model:
             self._dh_editor.set_model(model)
         self._joint_panel.set_model(model, save_baseline=False)
+        self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
+
+    def _refresh_tree(self, model: Any) -> None:
+        """Rebuild the robot tree and clear the selection-dependent views."""
+        active = None
+        if model is not None:
+            try:
+                import core_bridge as cb
+                active = list(cb.active_chain(model))
+            except Exception:
+                active = None
+        self._model_panel.set_model(model, active)
+        self._props_panel.clear()
+        self._viewport.robot_view.highlight_joint(None)
+
+    def _on_tree_selection(self, kind: str, index: int) -> None:
+        """Tree selection -> marker highlight + properties."""
+        model = self._project_controller.robot
+        self._props_panel.show_item(model, kind, index)
+        self._viewport.robot_view.highlight_joint(index if kind == "joint" else None)
+
+    # ------------------------------------------------------------------
+    # Import / Robot menu
+    # ------------------------------------------------------------------
+
+    def _on_import_urdf(self) -> None:
+        """Handle File > Import > URDF."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import URDF", self._settings.last_project_dir(), "URDF (*.urdf)"
+        )
+        if path:
+            self.import_urdf_file(path)
+
+    def import_urdf_file(self, path: str) -> None:
+        """Run the URDF import in a worker task; result handled on the GUI thread."""
+        self.set_status(f"Importing {path} ...")
+        task = self._task_runner.submit_fn(lambda: import_urdf(path))
+        task.signals.result.connect(self._on_urdf_import_result)
+        task.signals.error.connect(self._on_urdf_import_failed)
+
+    def _on_urdf_import_failed(self, message: str) -> None:
+        self.log(f"[ERROR] URDF import failed: {message}")
+        QMessageBox.warning(self, "URDF Import", f"Import failed.\n\n{message}")
+
+    def _on_urdf_import_result(self, result: Any) -> None:
+        report = result.report
+        if result.model is None:
+            self.log("[ERROR] URDF import failed.")
+            QMessageBox.warning(self, "URDF Import Failed", report.to_text())
+            return
+        name = result.model.metadata.name or "Imported Robot"
+        if not self._project_controller.import_robot(self, result.model, name):
+            return
+        self.log(f"[INFO] URDF imported: '{name}'.")
+        if report.by_severity("warning"):
+            QMessageBox.warning(self, "URDF Import Warnings", report.to_text())
+
+    def _on_set_tcp_link(self) -> None:
+        """Handle Robot > Set TCP link."""
+        model = self._project_controller.robot
+        if model is None or len(model.links) == 0:
+            return
+        from app.panels.model_panel import resolved_tcp_link
+        names = [lk.name or f"link{i}" for i, lk in enumerate(model.links)]
+        current = resolved_tcp_link(model)
+        current = current if 0 <= current < len(names) else len(names) - 1
+        item, ok = QInputDialog.getItem(
+            self, "Set TCP link", "TCP link:", names, current, False
+        )
+        if not ok or item not in names:
+            return
+        self.set_tcp_link(names.index(item))
+
+    def set_tcp_link(self, index: int) -> None:
+        """Set model.tcp_link, mark dirty, refresh everything."""
+        model = self._project_controller.robot
+        if model is None or not (0 <= index < len(model.links)):
+            return
+        model.tcp_link = index
+        self._project_controller.set_robot(model)
 
     def _update_robot_view(self, reset_camera: bool = False) -> None:
         """Compute FK and update the viewport robot visualization and TCP readout."""
