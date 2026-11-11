@@ -122,3 +122,29 @@ def random_inertias(model, rng, skip=()):
         i.inertia_tensor = [float(I[0, 0]), float(I[0, 1]), float(I[0, 2]),
                             float(I[1, 1]), float(I[1, 2]), float(I[2, 2])]
         lk.inertia = i
+
+
+def fk_test_robots():
+    """Robots for the batch FK tests (R5.2): name -> RobotModel (all compile)."""
+    from pathlib import Path
+    from app.importers import import_urdf
+
+    out = {}
+    six = import_urdf(str(Path(__file__).parent / "fixtures" / "urdf" / "six_dof_with_gripper.urdf")).model
+    six.tcp_link = [i for i, lk in enumerate(six.links) if lk.name == "l6"][0]
+    out["six_dof_fixture"] = six
+    out["dh_6r"] = random_robot(11, 6, kinds="dh")
+    out["origin_axis_12r"] = random_robot(12, 12)
+    tree = random_robot(13, 8, kinds=("origin_axis", "dh"), prismatic=0.25, branch=True, mimic=True)
+    tree.joints[2].type = cb.JointType.Fixed
+    tree.joints[5].type = cb.JointType.Fixed
+    out["tree_mimic_fixed"] = tree
+    return out
+
+
+def sample_q(model, n, seed=42):
+    """Uniform random q (n, dof) inside the DOF limits."""
+    from app.kin_utils import dof_limits
+    lo, hi = dof_limits(model)
+    rng = np.random.default_rng(seed)
+    return rng.uniform(lo, hi, size=(n, len(lo)))

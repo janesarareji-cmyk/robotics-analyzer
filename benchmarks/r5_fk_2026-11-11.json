@@ -1,0 +1,87 @@
+{
+  "benchmark": "r5_fk",
+  "date": "2026-11-11",
+  "n_samples": 1000000,
+  "n_joints": 12,
+  "repeats": 5,
+  "robot": "random_robot(seed=12, n=12), origin_axis revolute",
+  "versions": {
+    "gpu_name": "NVIDIA GeForce RTX 5060 Laptop GPU",
+    "gpu_sm": "12.0",
+    "gpu_total_bytes": 8546484224,
+    "nvidia_smi": "592.19, NVIDIA GeForce RTX 5060 Laptop GPU, 8151 MiB",
+    "driver_cuda_version": 13010,
+    "cuda_runtime_version": 13010,
+    "cuda_toolkit": "13.5 (V13.5.37)",
+    "msvc": "19.44.35229.0",
+    "numpy": "2.5.4",
+    "python": "3.13.15",
+    "os": "Windows-11-10.0.26300-SP0",
+    "cpu": "AMD Ryzen 9 8940HX with Radeon Graphics",
+    "cpu_threads": 32,
+    "git_commit": "83dc126d3ebb86bc7139cbf470e5cc76e36d64e0"
+  },
+  "results": {
+    "gpu_fp32": {
+      "kernel_ms_median": 0.5842880010604858,
+      "e2e_ms_median": 37.607299997034715,
+      "kernel_ms_all": [
+        0.5900160074234009,
+        0.5772479772567749,
+        0.5908160209655762,
+        0.5842880010604858,
+        0.5826879739761353
+      ],
+      "e2e_ms_all": [
+        34.96189999714261,
+        37.635800003045006,
+        37.607299997034715,
+        36.94570000152453,
+        40.803500000038184
+      ],
+      "backend": "cuda",
+      "chunks": 1,
+      "chunk": 1000192
+    },
+    "gpu_fp64": {
+      "kernel_ms_median": 15.026944160461426,
+      "e2e_ms_median": 68.54680000105873,
+      "kernel_ms_all": [
+        15.027839660644531,
+        15.013983726501465,
+        15.012895584106445,
+        15.026944160461426,
+        15.031647682189941
+      ],
+      "e2e_ms_all": [
+        68.54680000105873,
+        67.67670000044745,
+        68.867499998305,
+        69.19919999927515,
+        67.5413999997545
+      ],
+      "backend": "cuda",
+      "chunks": 1,
+      "chunk": 1000192
+    },
+    "cpu_all_threads": {
+      "e2e_ms_median": 127.33769999977085,
+      "e2e_ms_all": [
+        127.33769999977085,
+        130.09120000060648,
+        125.07689999983995,
+        146.35640000051353,
+        123.11330000011367
+      ]
+    }
+  },
+  "decision": {
+    "rule": "default fp64 only if e2e_fp64 <= 2 * e2e_fp32 AND e2e_fp64 <= 50 ms (N = 1e6, 12 joints)",
+    "e2e_fp32_ms": 37.607299997034715,
+    "e2e_fp64_ms": 68.54680000105873,
+    "ratio_fp64_over_fp32": 1.8226993165280025,
+    "cond_ratio": true,
+    "cond_abs_50ms": false,
+    "default_precision": "fp32"
+  }
+}

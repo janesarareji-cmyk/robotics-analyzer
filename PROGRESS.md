@@ -6,9 +6,9 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R5 --- GPU compute (status: `planned`, spec pack written, ready for Builder)
--   **Next substage:** R5.2 --- Batch FK kernel + precision decision (Builder STOPS after R5.2 for the precision decision). R5.1 committed: CTest 9/9, pytest 476.
--   **Owner now:** Builder subagents (Sonnet orchestrates)
+-   **Stage:** R5 --- GPU compute (status: `stage-ready-for-review`, note: R5.2 precision decision)
+-   **Next substage:** R5.3 --- Workspace sampling (Builder waits: Sonnet reviewer checks the R5.2 precision decision first, then sets status back to `in-progress` or writes an `R5-fix` list). R5.2 committed: CTest 9/9, pytest 519 (476 + 13 `test_fk_batch_cpu.py` + 30 `test_gpu_fk.py`). Precision rule outcome: FK default = **fp32** (e2e fp32 37.6 ms, fp64 68.5 ms; ratio 1.82 ok but 68.5 > 50 ms). Kernel fp32 0.58 ms, fp64 15.0 ms, CPU 32 threads e2e 127.3 ms (N = 1e6, 12 joints). Numbers: `docs/gpu-precision-decision.md`, `benchmarks/r5_fk_2026-11-11.json`. Open point for reviewer: the fp32 SASS holds one DMUL in the sincosf large-angle slow path (|angle| > 105615 rad), no DADD; see the doc.
+-   **Owner now:** Sonnet reviewer (R5.2 precision decision)
 -   **Blockers:** none
 -   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
 -   **Spec pack:** `docs/specs/R5-spec.md`
@@ -96,7 +96,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R4.9 | IK + analysis panels | test_ui_kin_dyn.py | stage-approved |
 | R4.10 | R4 milestone | test_milestone_r4.py | stage-approved |
 | R5.1 | GPU Compute Manager | test_budget.cpp, test_gpu_manager.py | committed |
-| R5.2 | Batch FK kernel + precision decision (STOP after) | test_gpu_fk.py | planned |
+| R5.2 | Batch FK kernel + precision decision (STOP after) | test_gpu_fk.py, test_fk_batch_cpu.py | committed |
 | R5.3 | Workspace sampling | test_workspace.py | planned |
 | R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | planned |
 | R5.5 | Python backend, fallback, Workspace panel | test_compute_backend.py, test_ui_workspace.py | planned |

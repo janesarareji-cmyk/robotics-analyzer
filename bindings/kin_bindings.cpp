@@ -14,6 +14,8 @@
 #include "kin/fk.hpp"
 #include "kin/compiled_model.hpp"
 #include "kin/compiled_arrays.hpp"
+#include "kin/fk_batch.hpp"
+#include "compute/parallel.hpp"
 #include "kin/jacobian.hpp"
 #include "kin/ik.hpp"
 #include "kin/ik_multi.hpp"
@@ -158,6 +160,55 @@ void bind_kin(py::module_& m) {
         return fk_result_to_dict(kin::forward_kinematics(cm, q), active);
     }, py::arg("cm"), py::arg("q"),
        "FK on a compiled model; same dict as fk(model, q).");
+
+    m.def("fk_batch", [](const kin::CompiledModel& cm,
+                         py::array_t<double, py::array::c_style | py::array::forcecast> q,
+                         const std::string& frame, int n_threads) {
+        if (frame != "world" && frame != "base")
+            throw std::invalid_argument("fk_batch: frame must be 'world' or 'base'");
+        if (q.ndim() != 2 || q.shape(1) != cm.n_dof)
+            throw std::invalid_argument("fk_batch: q must have shape (N, " +
+                                        std::to_string(cm.n_dof) + ")");
+        kin::active_path(cm);  // validates the tcp link before any work
+        const std::size_t N = static_cast<std::size_t>(q.shape(0));
+        const std::size_t dof = static_cast<std::size_t>(cm.n_dof);
+        py::array_t<double> pos(std::vector<py::ssize_t>{static_cast<py::ssize_t>(N), 3});
+        py::array_t<double> rot(std::vector<py::ssize_t>{static_cast<py::ssize_t>(N), 3, 3});
+        const double* qp = q.data();
+        double* pp = pos.mutable_data();
+        double* rp = rot.mutable_data();
+        const bool world = (frame == "world");
+        const Eigen::Matrix4d Mb = cm.base.matrix();
+        {
+            py::gil_scoped_release nogil;
+            std::vector<double> soa(dof * N);
+            compute::parallel_for(N, n_threads, 8192, [&](std::size_t b, std::size_t e) {
+                for (std::size_t i = b; i < e; ++i)
+                    for (std::size_t d = 0; d < dof; ++d) soa[d * N + i] = qp[i * dof + d];
+            });
+            kin::FkBatchResult r = kin::fk_batch_cpu(cm, soa.data(), N, N, n_threads);
+            compute::parallel_for(N, n_threads, 8192, [&](std::size_t b, std::size_t e) {
+                for (std::size_t i = b; i < e; ++i) {
+                    Eigen::Matrix3d R;
+                    for (int a = 0; a < 3; ++a)
+                        for (int c = 0; c < 3; ++c) R(a, c) = r.rotation[(a * 3 + c) * N + i];
+                    Eigen::Vector3d p(r.position[i], r.position[N + i], r.position[2 * N + i]);
+                    if (world) {
+                        p = Mb.topLeftCorner<3, 3>() * p + Mb.topRightCorner<3, 1>();
+                        R = Mb.topLeftCorner<3, 3>() * R;
+                    }
+                    for (int a = 0; a < 3; ++a) pp[i * 3 + a] = p[a];
+                    for (int a = 0; a < 3; ++a)
+                        for (int c = 0; c < 3; ++c) rp[i * 9 + a * 3 + c] = R(a, c);
+                }
+            });
+        }
+        py::dict d;
+        d["position"] = pos;
+        d["rotation"] = rot;
+        return d;
+    }, py::arg("cm"), py::arg("q"), py::arg("frame") = "world", py::arg("n_threads") = 0,
+       "Batch TCP FK (double, multi-threaded). q (N, n_dof) -> dict position (N,3), rotation (N,3,3).");
 
     m.def("jacobian", [](const kin::CompiledModel& cm, const std::vector<double>& q, int link,
                          const std::array<double, 3>& point_local) {

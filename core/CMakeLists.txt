@@ -4,6 +4,7 @@ add_library(core_lib STATIC
     kin/fk.cpp
     kin/compiled_model.cpp
     kin/compiled_arrays.cpp
+    kin/fk_batch.cpp
     kin/jacobian.cpp
     kin/ik.cpp
     kin/ik_multi.cpp
