@@ -107,8 +107,10 @@ R4.2, R4.3, R4.4, R4.6, R4.7, R4.9, R4.10 Sonnet.
     formulas written in the helper), but the maths never calls `cb.fk`.
 -   `numpy_dynamics(spec, inertias, q, qd, g)` (R4.6): independent
     Lagrangian reference: `M = Σ m Jv^T Jv + Jw^T Iw Jw` with `Jv, Jw`
-    from `numeric_jacobian` at each link COM, `Iw = R I R^T`; `g(q)` =
-    `-dV/dq` by central difference (`V = -Σ m g·p_com`); `C·qd` from the
+    from `numeric_jacobian` at each link COM, `Iw = R I R^T`; the gravity
+    torque `g(q)` = `+dV/dq` by central difference (`V = -Σ m g·p_com`, `g`
+    the gravity vector; the actuator torque that holds the pose is +dV/dq;
+    corrected 2026-11-11, R4.6 report); `C·qd` from the
     Christoffel form with `dM/dq` by central difference.
 -   Random test models: helper `random_robot(seed, n, kinds)` returning a
     `RobotModel` (origin_axis and DH, revolute and prismatic, one with a
