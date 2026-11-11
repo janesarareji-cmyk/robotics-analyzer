@@ -258,3 +258,52 @@ def test_view_robot_submenu_actions(qapp):
             assert a.isChecked()
     finally:
         win.close()
+
+
+def test_scale_rebuild_when_link_length_changes():
+    """Scale changes by > 1% trigger rebuild of actors and triad size grows."""
+    plotter = pv.Plotter(off_screen=True)
+    try:
+        rv = RobotView(plotter)
+        robot = cb.RobotModel()
+        for i in range(2):
+            lk = cb.Link()
+            lk.name = f"link{i}"
+            robot.links.append(lk)
+        j = cb.Joint()
+        j.name = "j1"
+        j.type = cb.JointType.Revolute
+        j.dh.a = 0.1
+        robot.joints.append(j)
+
+        fk1 = cb.fk(robot)
+        rv.update(robot, fk1)
+        initial_scale = rv.triad_length
+
+        # Increase link length to 2.0 m
+        robot.joints[0].dh.a = 2.0
+        fk2 = cb.fk(robot)
+        rv.update(robot, fk2)
+
+        new_scale = rv.triad_length
+        assert new_scale > initial_scale * 1.5
+    finally:
+        plotter.close()
+
+
+def test_project_closed_clears_viewport(qapp):
+    """Closing project triggers RobotView.clear() leaving viewport empty."""
+    win = MainWindow()
+    try:
+        proj = ProjectData.new("CloseClearTest")
+        robot = make_3r_planar_robot()
+        proj.robot_model = robot
+        win.project_controller._set_project(proj, modified=False)
+
+        assert len(win.robot_view.actors) > 0
+
+        win.project_controller.close_project()
+
+        assert len(win.robot_view.actors) == 0
+    finally:
+        win.close()

@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.8 --- Joint control panel + TCP pose readout (planned)
--   **Owner now:** Builder
+-   **Substage:** R2.8 --- Joint control panel + TCP pose readout (ready-for-review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -50,7 +50,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | approved (follow-ups → R2.8) |
-| R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
+| R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | ready-for-review |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
@@ -313,7 +313,7 @@ Tests `tests/python/test_joint_panel.py`:
 
 Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.8 set to `ready-for-review`, commit `R2.8: joint panel + TCP readout`.
 
-Changed files (expected): `app/panels/joint_panel.py`, `app/main_window.py`, `app/viewport/robot_view.py`, `tests/python/test_joint_panel.py`, `tests/python/test_viewport_robot.py`.
+Changed files: `app/panels/joint_panel.py`, `app/main_window.py`, `app/project/project_controller.py`, `app/viewport/robot_view.py`, `tests/python/test_joint_panel.py`, `tests/python/test_viewport_robot.py`.
 
 ### R2.9 onward
 

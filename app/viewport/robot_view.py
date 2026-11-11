@@ -44,10 +44,16 @@ class RobotView:
 
         self._polyline_mesh: Any = None
         self._last_points: np.ndarray | None = None
+        self._last_scale: float | None = None
 
     # ------------------------------------------------------------------
     # Properties & Getters
     # ------------------------------------------------------------------
+
+    @property
+    def triad_length(self) -> float:
+        """Return the current triad length scale."""
+        return self._last_scale if self._last_scale is not None else 0.05
 
     @property
     def show_frames(self) -> bool:
@@ -156,11 +162,13 @@ class RobotView:
         self._current_joint_types.clear()
         self._current_convention = None
         self._last_points = None
+        self._last_scale = None
 
     def update(self, model: Any, fk_result: dict[str, Any]) -> None:
         """
         Update the robot visualization from FK results.
-        Rebuilds actors only when joint count or joint types change.
+        Rebuilds actors only when joint count or joint types change,
+        or scale changes by > 1%.
         Updates transforms and polyline points in place otherwise.
         """
         import pyvista as pv
@@ -168,9 +176,16 @@ class RobotView:
         frames = fk_result["frames"]
         tcp = fk_result["tcp"]
 
+        current_scale = self._calculate_scale(model)
+        scale_changed = (
+            self._last_scale is None
+            or abs(current_scale - self._last_scale) / max(self._last_scale, 1e-6) > 0.01
+        )
+
         joint_types = [j.type for j in model.joints]
         needs_rebuild = (
-            self._current_joint_count != len(model.joints)
+            scale_changed
+            or self._current_joint_count != len(model.joints)
             or self._current_joint_types != joint_types
             or self._current_convention != model.convention
             or len(self._frame_actors) != len(frames)
@@ -297,6 +312,7 @@ class RobotView:
         self._current_joint_count = len(model.joints)
         self._current_joint_types = [j.type for j in model.joints]
         self._current_convention = model.convention
+        self._last_scale = scale
 
     def _update_in_place(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray) -> None:
         """Update existing actor transforms and polyline points in place."""

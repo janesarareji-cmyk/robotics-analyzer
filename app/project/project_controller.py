@@ -156,6 +156,24 @@ class ProjectController(QObject):
         log.info("Project opened: %s (%s)", project.name, path)
         return True
 
+    def close_project(self, parent_widget: QWidget | None = None) -> bool:
+        """
+        Close the active project.
+        Prompts to save if modified.
+        Returns True if closed, False if cancelled.
+        """
+        if self._project is None:
+            return True
+        if parent_widget is not None and not self._confirm_discard(parent_widget):
+            return False
+
+        self._project = None
+        self._is_modified = False
+        self.project_closed.emit()
+        self.modified_changed.emit(False)
+        log.info("Project closed.")
+        return True
+
     def save_project(self, parent_widget: QWidget) -> bool:
         """
         Save the current project.

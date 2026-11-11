@@ -20,6 +20,7 @@ from app.panels.log_panel import LogPanel
 from app.panels.model_panel import ModelPanel
 from app.panels.properties_panel import PropertiesPanel
 from app.panels.dh_editor import DHEditorWidget
+from app.panels.joint_panel import JointPanel
 from app.settings import AppSettings
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
@@ -108,6 +109,14 @@ class MainWindow(QMainWindow):
         self._action_save_as.setEnabled(False)
         file_menu.addAction(self._action_save_as)
 
+        self._action_close = QAction("&Close Project", self)
+        self._action_close.setStatusTip("Close the active project")
+        self._action_close.triggered.connect(
+            lambda: self._project_controller.close_project(self)
+        )
+        self._action_close.setEnabled(False)
+        file_menu.addAction(self._action_close)
+
         file_menu.addSeparator()
 
         action_quit = QAction("&Quit", self)
@@ -133,6 +142,11 @@ class MainWindow(QMainWindow):
         self._action_view_dh.setCheckable(True)
         self._action_view_dh.setChecked(True)
         view_menu.addAction(self._action_view_dh)
+
+        self._action_view_joints = QAction("&Joints Panel", self)
+        self._action_view_joints.setCheckable(True)
+        self._action_view_joints.setChecked(True)
+        view_menu.addAction(self._action_view_joints)
 
         self._action_view_log = QAction("&Log Panel", self)
         self._action_view_log.setCheckable(True)
@@ -241,6 +255,21 @@ class MainWindow(QMainWindow):
         self._dh_dock.visibilityChanged.connect(self._action_view_dh.setChecked)
         self._dh_editor.model_changed.connect(self._on_dh_editor_changed)
 
+        # Joint Control Panel dock — right side (tabbed with DH dock)
+        self._joint_panel = JointPanel()
+        self._joint_dock = QDockWidget("Joints", self)
+        self._joint_dock.setObjectName("joint_dock")
+        self._joint_dock.setWidget(self._joint_panel)
+        self._joint_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._joint_dock)
+        self.tabifyDockWidget(self._dh_dock, self._joint_dock)
+        self._action_view_joints.triggered.connect(
+            lambda: self._joint_dock.setVisible(self._action_view_joints.isChecked())
+        )
+        self._joint_dock.visibilityChanged.connect(self._action_view_joints.setChecked)
+        self._joint_panel.q_changed.connect(self._on_joint_q_changed)
+        self._joint_panel.log_requested.connect(self.log)
+
         # Log panel — bottom
         self._log_panel = LogPanel()
         log_dock = QDockWidget("Log", self)
@@ -264,6 +293,7 @@ class MainWindow(QMainWindow):
         pc = self._project_controller
         pc.project_opened.connect(self._on_project_opened)
         pc.project_saved.connect(self._on_project_saved)
+        pc.project_closed.connect(self._on_project_closed)
         pc.modified_changed.connect(self._on_modified_changed)
         pc.robot_changed.connect(self._on_robot_changed)
 
@@ -271,12 +301,14 @@ class MainWindow(QMainWindow):
         """Update UI when a project is opened or created."""
         self._action_save.setEnabled(True)
         self._action_save_as.setEnabled(True)
+        self._action_close.setEnabled(True)
         self._update_title()
         self.set_status(f"Project '{project.name}' opened.")
 
-        # Load robot model into DH editor
+        # Load robot model into DH editor and Joint panel
         if project.robot_model is not None:
             self._dh_editor.set_model(project.robot_model)
+            self._joint_panel.set_model(project.robot_model, save_baseline=True)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
                 f"[INFO] Robot model loaded: '{robot_name}' "
@@ -289,24 +321,47 @@ class MainWindow(QMainWindow):
             # Update 3D viewport and reset camera on project open
             self._update_robot_view(reset_camera=True)
 
+    def _on_project_closed(self) -> None:
+        """Clear viewport and disable actions on project close."""
+        self._viewport.robot_view.clear()
+        self._dh_editor.set_model(None)
+        self._joint_panel.set_model(None)
+        self._action_save.setEnabled(False)
+        self._action_save_as.setEnabled(False)
+        self._action_close.setEnabled(False)
+        self._update_title()
+        self.set_status("Project closed.")
+
     def _on_dh_editor_changed(self) -> None:
         """Handle edits made directly in the DH editor."""
         model = self._dh_editor.get_model()
         if model is not None and self._project_controller.has_project:
             self._project_controller.set_robot(model)
+            self._joint_panel.set_model(model, save_baseline=False)
+            self._joint_panel.save_baseline()
             errors = model.validate()
             if errors:
                 self.log(f"[WARNING] Validation errors: {'; '.join(errors)}")
+
+    def _on_joint_q_changed(self) -> None:
+        """Handle live joint value changes from slider/spinbox."""
+        if not self._project_controller.has_project:
+            return
+        self._project_controller.mark_modified()
+        if self._dh_editor.get_model() is not None:
+            self._dh_editor.set_model(self._project_controller.robot)
+        self._update_robot_view(reset_camera=False)
 
     def _on_robot_changed(self, model: Any) -> None:
         """Handle robot model replacement from controller."""
         if self._dh_editor.get_model() is not model:
             self._dh_editor.set_model(model)
+        self._joint_panel.set_model(model, save_baseline=False)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
 
     def _update_robot_view(self, reset_camera: bool = False) -> None:
-        """Compute FK and update the viewport robot visualization."""
+        """Compute FK and update the viewport robot visualization and TCP readout."""
         if not self._project_controller.has_project:
             return
         model = self._project_controller.robot
@@ -316,6 +371,7 @@ class MainWindow(QMainWindow):
             import core_bridge as cb
             fk_res = cb.fk(model)
             self._viewport.robot_view.update(model, fk_res)
+            self._joint_panel.update_tcp_readout(fk_res["tcp"])
             if reset_camera:
                 self._viewport.reset_camera()
         except Exception as exc:
@@ -437,6 +493,16 @@ class MainWindow(QMainWindow):
     def dh_dock(self) -> QDockWidget:
         """Return the DH editor dock widget."""
         return self._dh_dock
+
+    @property
+    def joint_panel(self) -> JointPanel:
+        """Return the JointPanel widget."""
+        return self._joint_panel
+
+    @property
+    def joint_dock(self) -> QDockWidget:
+        """Return the joint control dock widget."""
+        return self._joint_dock
 
     @property
     def robot_view(self) -> Any:

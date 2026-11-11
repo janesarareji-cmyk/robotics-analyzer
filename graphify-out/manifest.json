@@ -174,9 +174,9 @@
     "semantic_hash": ""
   },
   "app/main_window.py": {
-    "mtime": 1794390191.2371507,
-    "seen": 1794390372.583004,
-    "ast_hash": "ae3788a594f0177fc28bd81091e54b40",
+    "mtime": 1794391304.942898,
+    "seen": 1794391467.2659698,
+    "ast_hash": "369c71d3d975a3f833413219824e71b5",
     "semantic_hash": ""
   },
   "app/panels/__init__.py": {
@@ -264,9 +264,9 @@
     "semantic_hash": ""
   },
   "app/project/project_controller.py": {
-    "mtime": 1794388477.229422,
-    "seen": 1794388978.6907084,
-    "ast_hash": "fd2363e86dd34d004b5f515ddf27d646",
+    "mtime": 1794391042.5179884,
+    "seen": 1794391467.2659826,
+    "ast_hash": "1c212953e79d9bda1d583b4422d80149",
     "semantic_hash": ""
   },
   "tests/python/test_project_controller.py": {
@@ -354,9 +354,9 @@
     "semantic_hash": ""
   },
   "PROGRESS.md": {
-    "mtime": 1794390411.4376962,
-    "seen": 1794390418.721079,
-    "ast_hash": "3fae01b6cb40ea53063f1534c2ec21a9",
+    "mtime": 1794391491.4508388,
+    "seen": 1794391504.345656,
+    "ast_hash": "46da179e98a9cc599ee0ddc746b3f86c",
     "semantic_hash": ""
   },
   "bindings/kin_bindings.cpp": {
@@ -402,9 +402,9 @@
     "semantic_hash": ""
   },
   "app/viewport/robot_view.py": {
-    "mtime": 1794390106.0528266,
-    "seen": 1794390372.5830202,
-    "ast_hash": "a86831ded3bd72cfe6eb09388a8439e3",
+    "mtime": 1794391018.3192582,
+    "seen": 1794391467.265989,
+    "ast_hash": "533824a99dde62133ba11570d76a4bda",
     "semantic_hash": ""
   },
   "app/viewport/viewport_widget.py": {
@@ -414,9 +414,21 @@
     "semantic_hash": ""
   },
   "tests/python/test_viewport_robot.py": {
-    "mtime": 1794390244.7790527,
-    "seen": 1794390372.5830538,
-    "ast_hash": "64afe8e324897b00ad9fe25e0b6d73a7",
+    "mtime": 1794391101.771571,
+    "seen": 1794391467.2660272,
+    "ast_hash": "b61951239ceae770f34c2c8e8fed753c",
+    "semantic_hash": ""
+  },
+  "app/panels/joint_panel.py": {
+    "mtime": 1794391194.9010687,
+    "seen": 1794391467.265976,
+    "ast_hash": "1b334d768d7b6f3131293729cdf9eba2",
+    "semantic_hash": ""
+  },
+  "tests/python/test_joint_panel.py": {
+    "mtime": 1794391432.6729977,
+    "seen": 1794391467.2660172,
+    "ast_hash": "1e7883d9585fb6d3a549f3130b37abdb",
     "semantic_hash": ""
   }
 }
