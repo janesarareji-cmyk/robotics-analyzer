@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- GPU compute (status: `in-progress`)
--   **Next substage:** R5.3 --- Workspace sampling. R5.2 decision CONFIRMED by Sonnet 2026-11-11: fp32 default for GPU FK (medians at 1e6, 12 joints: fp32 e2e 37.6 ms, fp64 e2e 68.5 ms (ratio 1.82 but over the 50 ms limit), CPU 32 threads 127.3 ms; fp32 max errors 1.6e-6 m / 7.1e-7 rad vs tolerances 6e-6..7.3e-5 m / 5.7e-6..1.1e-5 rad). Accepted: one DMUL in the sincosf large-angle slow path (|angle| > 105615 rad); pooled buffers; CPU fallback inside fk_batch. Numbers: `docs/gpu-precision-decision.md`, `benchmarks/r5_fk_2026-11-11.json`.
+-   **Next substage:** R5.4 --- CPU batch IK + GPU IK go/no-go. R5.3 committed: workspace sampling (`docs/workspace-sampling.md`). Tests after R5.3: CTest 9/9, pytest 592 passed.
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
@@ -97,7 +97,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R4.10 | R4 milestone | test_milestone_r4.py | stage-approved |
 | R5.1 | GPU Compute Manager | test_budget.cpp, test_gpu_manager.py | committed |
 | R5.2 | Batch FK kernel + precision decision (STOP after) | test_gpu_fk.py, test_fk_batch_cpu.py | committed |
-| R5.3 | Workspace sampling | test_workspace.py | planned |
+| R5.3 | Workspace sampling | test_workspace.py | committed |
 | R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | planned |
 | R5.5 | Python backend, fallback, Workspace panel | test_compute_backend.py, test_ui_workspace.py | planned |
 | R5.6 | Performance dashboard | test_performance.py | planned |

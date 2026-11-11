@@ -16,6 +16,9 @@
 #include "kin/compiled_arrays.hpp"
 #include "kin/fk_batch.hpp"
 #include "compute/parallel.hpp"
+#include "compute/philox.hpp"
+#include "compute/workspace.hpp"
+#include "compute/workspace_py.hpp"
 #include "kin/jacobian.hpp"
 #include "kin/ik.hpp"
 #include "kin/ik_multi.hpp"
@@ -209,6 +212,55 @@ void bind_kin(py::module_& m) {
         return d;
     }, py::arg("cm"), py::arg("q"), py::arg("frame") = "world", py::arg("n_threads") = 0,
        "Batch TCP FK (double, multi-threaded). q (N, n_dof) -> dict position (N,3), rotation (N,3,3).");
+
+    // R5.3: workspace sampling (CPU reference), Philox, CancelToken
+    compute::register_cancel_token(m);
+    m.def("philox4x32_10", [](const std::array<std::uint32_t, 4>& ctr,
+                              const std::array<std::uint32_t, 2>& key) {
+        std::uint32_t out[4];
+        compute::philox4x32_10(ctr.data(), key.data(), out);
+        return std::array<std::uint32_t, 4>{out[0], out[1], out[2], out[3]};
+    }, py::arg("counter"), py::arg("key"), "Philox4x32-10 block: 4 counter words, 2 key words -> 4 words.");
+
+    m.def("sample_q", [](const std::vector<double>& lo, const std::vector<double>& hi,
+                         const py::object& options, long long start, long long n) {
+        compute::WorkspaceOptions o = compute::parse_workspace_options(options);
+        if (lo.size() != hi.size()) throw std::invalid_argument("sample_q: lo/hi size mismatch");
+        if (start < 0 || n < 0) throw std::invalid_argument("sample_q: start and n must be >= 0");
+        if (o.mode != "random" && o.mode != "grid")
+            throw std::invalid_argument("sample_q: mode must be 'random' or 'grid'");
+        if (o.mode == "grid" && o.divisions.size() != lo.size())
+            throw std::invalid_argument("sample_q: divisions must have n_dof entries");
+        for (int dv : o.divisions)
+            if (dv < 1) throw std::invalid_argument("sample_q: every division must be >= 1");
+        const compute::SamplerTables s = compute::make_sampler(lo, hi, o);
+        py::array_t<float> out(std::vector<py::ssize_t>{static_cast<py::ssize_t>(n),
+                                                        static_cast<py::ssize_t>(lo.size())});
+        compute::sample_q_host(s, static_cast<std::size_t>(start), static_cast<std::size_t>(n),
+                               out.mutable_data());
+        return out;
+    }, py::arg("lo"), py::arg("hi"), py::arg("options") = py::none(), py::arg("start") = 0,
+       py::arg("n") = 0,
+       "Float32 q (n, n_dof) of the workspace sampler for global samples start..start+n "
+       "(options: mode, seed, divisions).");
+
+    m.def("sample_workspace", [](const kin::CompiledModel& cm, const std::vector<double>& lo,
+                                 const std::vector<double>& hi, const py::object& options,
+                                 const py::object& cancel, const py::object& progress) {
+        compute::WorkspaceOptions o = compute::parse_workspace_options(options);
+        compute::RunControl rc(cancel, progress);
+        compute::WorkspaceResult r;
+        {
+            py::gil_scoped_release nogil;
+            r = compute::sample_workspace_cpu(cm, lo, hi, o, rc.flag(), rc.progress_fn());
+        }
+        rc.rethrow_if_failed();
+        return compute::workspace_result_to_dict(r, o);
+    }, py::arg("cm"), py::arg("lo"), py::arg("hi"), py::arg("options"),
+       py::arg("cancel") = py::none(), py::arg("progress") = py::none(),
+       "Workspace sampling on the CPU (double FK, Philox float q). Returns dict: occupied "
+       "(bitset words), counts (nx,ny,nz) or None, occupied_voxels (M,3), points (P,3) or None, "
+       "grid_dims, origin, voxel_size, n_samples_done, n_outside, cancelled, info.");
 
     m.def("jacobian", [](const kin::CompiledModel& cm, const std::vector<double>& q, int link,
                          const std::array<double, 3>& point_local) {

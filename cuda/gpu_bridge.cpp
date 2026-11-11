@@ -19,6 +19,9 @@
 #include "gpu_manager.cuh"
 #include "kin/compiled_arrays.hpp"
 #include "kin/fk_batch.hpp"
+#include "compute/workspace.hpp"
+#include "compute/workspace_py.hpp"
+#include "workspace_gpu.hpp"
 
 namespace py = pybind11;
 
@@ -437,6 +440,44 @@ py::dict fk_batch_py(const py::dict& arrays,
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// R5.3 workspace sampling (GPU, CPU fallback with the same result dict)
+// ---------------------------------------------------------------------------
+
+std::mutex g_ws_mutex;
+
+py::dict sample_workspace_py(const py::dict& arrays, const std::vector<double>& lo,
+                             const std::vector<double>& hi, const py::object& options,
+                             const py::object& cancel, const py::object& progress) {
+    kin::CompiledArrays a = parse_arrays(arrays);
+    if (a.n_joints > gpu::FK_MAX_JOINTS || a.n_links > gpu::FK_MAX_JOINTS ||
+        a.n_dof > gpu::FK_MAX_JOINTS)
+        throw std::invalid_argument(
+            "sample_workspace: more than 64 joints/links/dof is not supported");
+    kin::CompiledModel cm = kin::from_arrays(a);
+    compute::WorkspaceOptions o = compute::parse_workspace_options(options);
+    const compute::WorkspaceGrid grid = compute::resolve_grid(cm, lo, hi, o);  // ValueError
+    const compute::SamplerTables smp = compute::make_sampler(lo, hi, o);
+    const std::size_t total = compute::total_samples(o, cm.n_dof);
+    const gpu::FkPathTables tables = build_tables(cm, kin::active_path(cm));
+    compute::RunControl rc(cancel, progress);
+
+    compute::WorkspaceResult r;
+    {
+        py::gil_scoped_release nogil;
+        std::lock_guard<std::mutex> lk(g_ws_mutex);
+        std::string reason;
+        const bool ok = gpu::workspace_gpu(tables, smp, grid, o, total, rc.flag(),
+                                           rc.progress_fn(), r, reason);
+        if (!ok) {  // CPU reference with the same Philox samples
+            r = compute::sample_workspace_cpu(cm, lo, hi, o, rc.flag(), rc.progress_fn());
+            r.fallback_reason = reason;
+        }
+    }
+    rc.rethrow_if_failed();
+    return compute::workspace_result_to_dict(r, o);
+}
+
 }  // namespace
 
 PYBIND11_MODULE(gpu_bridge, m) {
@@ -480,6 +521,35 @@ PYBIND11_MODULE(gpu_bridge, m) {
           "Batch TCP FK on the GPU (CPU double fallback). arrays = core_bridge.compile_arrays(model), "
           "q (N, n_dof). Returns dict position (N,3), rotation (N,3,3), info. chunk (multiple of 256) "
           "is a test hook that forces the launch size.");
+    compute::register_cancel_token(m);
+    m.def("sample_workspace", &sample_workspace_py, py::arg("arrays"), py::arg("lo"), py::arg("hi"),
+          py::arg("options"), py::arg("cancel") = py::none(), py::arg("progress") = py::none(),
+          "Workspace sampling on the GPU (fp32, Philox q on the device); CPU reference fallback. "
+          "Same result dict as core_bridge.sample_workspace.");
+    m.def("sample_q", [](const std::vector<double>& lo, const std::vector<double>& hi,
+                         const py::object& options, long long start, long long n) {
+        compute::WorkspaceOptions o = compute::parse_workspace_options(options);
+        if (lo.size() != hi.size() || lo.size() > 64)
+            throw std::invalid_argument("sample_q: lo/hi size mismatch or more than 64 DOF");
+        if (start < 0 || n < 0) throw std::invalid_argument("sample_q: start and n must be >= 0");
+        if (o.mode != "random" && o.mode != "grid")
+            throw std::invalid_argument("sample_q: mode must be 'random' or 'grid'");
+        if (o.mode == "grid" && o.divisions.size() != lo.size())
+            throw std::invalid_argument("sample_q: divisions must have n_dof entries");
+        for (int dv : o.divisions)
+            if (dv < 1) throw std::invalid_argument("sample_q: every division must be >= 1");
+        const compute::SamplerTables s = compute::make_sampler(lo, hi, o);
+        py::array_t<float> out(std::vector<py::ssize_t>{static_cast<py::ssize_t>(n),
+                                                        static_cast<py::ssize_t>(lo.size())});
+        {
+            py::gil_scoped_release nogil;
+            std::lock_guard<std::mutex> lk(g_ws_mutex);
+            gpu::sample_q_gpu(s, static_cast<std::size_t>(start), static_cast<std::size_t>(n),
+                              out.mutable_data());
+        }
+        return out;
+    }, py::arg("lo"), py::arg("hi"), py::arg("options") = py::none(), py::arg("start") = 0,
+       py::arg("n") = 0, "Debug: float32 q (n, n_dof) generated on the device (same as core_bridge.sample_q).");
     m.def("release_buffers", [] {
         std::lock_guard<std::mutex> lk(g_fk_mutex);
         cudaDeviceSynchronize();
