@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.5 --- FK engine (ready for review)
--   **Owner now:** Reviewer
+-   **Substage:** R2.6 --- Wire model + DH editor into app/project (planned)
+-   **Owner now:** Builder
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -47,7 +47,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.2  | URM pybind11 bindings                     | tests/python/test_urm_bridge.py    | approved |
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
 | R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
-| R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | ready-for-review |
+| R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | planned |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
@@ -208,15 +208,45 @@ Changed files:
 - `tests/cpp/CMakeLists.txt`
 - `tests/python/test_fk_bridge.py`
 
-### R2.6 onward
+### R2.5 follow-ups (do first, inside R2.6 commit, small)
 
-Spec written by Reviewer when R2.5 is approved.
+Reviewer found tests weak. Add to `tests/cpp/test_fk.cpp`:
+-   Known-answer 3D case, standard DH: 2-link arm, link1 a=0 alpha=π/2 d=0.5, link2 a=0.4 alpha=0 d=0; q=(π/2, 0). Compute expected TCP by hand and hard-code it (document the derivation in a comment). Must NOT call `dh_transform`/`mdh_transform` to build the expected value.
+-   Same arm in MDH with nonzero alpha (j1 alpha=0 a=0 d=0.5; j2 alpha=π/2 a=0 d=0, tool xyz=(0.4,0,0)): hard-coded expected value, different from DH one if physically different arm — state in comment which arm it is.
+-   Prismatic joint under MDH: d=0.2, q=0.3 → z=0.5.
+-   Wrong-size q too LONG also throws `std::invalid_argument`.
+
+Also Python: `fk(model, q)` with q too long → `ValueError`.
+
+### R2.6 --- Wire model + DH editor into app/project
+
+Goal: RobotModel lives in the project; DH editor is visible in MainWindow and edits it. No 3D drawing yet (R2.7).
+
+Builder: run `graphify query` on ProjectData, ProjectController, MainWindow, DH editor first. Reuse existing classes.
+
+1.  `ProjectData` holds one `urm.RobotModel` (default empty, convention Standard). Serializer saves/loads it via URM JSON (`to_json`/`from_json`) inside the project file. Old project files without robot → empty model. Bad robot JSON → project load fails with clear error, no crash.
+2.  `ProjectController`: `robot` getter; `set_robot(model)`; `robot_changed` Qt signal; marks project dirty; undo not required.
+3.  MainWindow shows DH editor in a dock (right side, toggle in View menu). Editor loads from controller on project open/new, and writes back to controller on every edit.
+4.  Editor applies `urm.default_limits(type)` when user changes joint type. Editor assigns whole lists to `Pose.xyz`/`rpy` (see Open review items).
+5.  Editor shows `model.validate()` errors in a label under the table (empty = hidden). Invalid model is still allowed to be edited and saved.
+6.  Editor shows/edit robot `convention` (Standard/Modified combobox) and base/tool pose (6 spinboxes each).
+7.  Log panel gets one line on robot load and on validate errors.
+
+Tests `tests/python/test_robot_in_project.py`: save/load round-trip with 3-joint robot; old file without robot loads empty; bad robot JSON → error not crash; editing in editor changes controller robot + dirty flag; `robot_changed` emitted; joint type change applies default limits; validate errors shown; convention + base/tool edits persist through save/load; dock toggle in View menu.
+
+Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.6 set to `ready-for-review`, commit `R2.6: wire robot model into project`.
+
+Changed files (expected): `app/` project + controller + main window + dh editor files, `tests/python/test_robot_in_project.py`, `tests/cpp/test_fk.cpp`, `tests/python/test_fk_bridge.py`.
+
+### R2.7 onward
+
+Spec written by Reviewer when R2.6 is approved.
 
 ## Open review items
 
 -   (info) R2.6 DH editor: assign whole lists to `Pose.xyz`/`rpy`
     (`model.base.xyz = [...]`); element assignment is silently lost.
--   (info) DH editor is not shown in MainWindow yet → handled in R2.6.
+-   (info) R2.5 weak tests (no 3D known-answer) → follow-ups at top of R2.6.
 -   (info) URM is a serial chain (vector), not a tree. OK for R2. Revisit
     before R3 URDF import (branching robots).
 
