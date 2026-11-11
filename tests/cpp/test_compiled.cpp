@@ -257,12 +257,18 @@ static void test_legacy_fallback() {
     CHECK(leg.joints[2].parent_link == 0 && leg.joints[2].child_link == 0);
     // wrong link count in legacy
     leg.links.pop_back();
+    CHECK(kin::is_legacy_serial(leg));
     CHECK(throws([&] { kin::compile(leg); }));
-    CHECK(throws([&] { kin::active_chain(leg); }));
+    // effective_links is pure: no link-count check, legacy pairs (i, i+1).
+    CHECK(!throws([&] { kin::effective_links(leg); }));
+    CHECK((kin::effective_links(leg)[2] == std::pair<int, int>{2, 3}));
+    // active_chain uses effective_links only; tcp 2 reachable -> chain {0, 1}.
+    CHECK((kin::active_chain(leg) == std::vector<int>{0, 1}));
     // mixed: not legacy -> parent >= child rule
     auto mixed = legacy_model(false);
     mixed.joints[0].parent_link = 0; mixed.joints[0].child_link = 1;
     CHECK(throws([&] { kin::compile(mixed); }));
+    CHECK(!kin::is_legacy_serial(mixed));
 }
 
 int main() {

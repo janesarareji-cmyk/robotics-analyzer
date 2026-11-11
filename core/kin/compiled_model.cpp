@@ -10,18 +10,18 @@ namespace kin {
 using urm::JointKinematics;
 using urm::JointType;
 
+bool is_legacy_serial(const urm::RobotModel& model) {
+    if (model.joints.empty()) return false;
+    for (const auto& j : model.joints) {
+        if (j.parent_link != 0 || j.child_link != 0) return false;
+    }
+    return true;
+}
+
 std::vector<std::pair<int, int>> effective_links(const urm::RobotModel& model) {
     const size_t n = model.joints.size();
     std::vector<std::pair<int, int>> out(n);
-    bool legacy = n >= 1;
-    for (const auto& j : model.joints) {
-        if (j.parent_link != 0 || j.child_link != 0) { legacy = false; break; }
-    }
-    if (legacy) {
-        if (model.links.size() != n + 1) {
-            throw std::invalid_argument(
-                "legacy serial model: links.size() must equal joints.size() + 1");
-        }
+    if (is_legacy_serial(model)) {
         for (size_t i = 0; i < n; ++i) {
             out[i] = {static_cast<int>(i), static_cast<int>(i) + 1};
         }
@@ -56,6 +56,10 @@ static int resolve_tcp(const urm::RobotModel& model, int n_links) {
 
 CompiledModel compile(const urm::RobotModel& model) {
     const int nj = static_cast<int>(model.joints.size());
+    if (is_legacy_serial(model) && model.links.size() != model.joints.size() + 1) {
+        throw std::invalid_argument(
+            "legacy serial model: links.size() must equal joints.size() + 1");
+    }
     const auto eff = effective_links(model);
 
     CompiledModel cm;

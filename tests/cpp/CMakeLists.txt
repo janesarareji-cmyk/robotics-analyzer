@@ -35,3 +35,9 @@ add_executable(test_compiled test_compiled.cpp)
 target_link_libraries(test_compiled PRIVATE core_lib Eigen3::Eigen)
 target_compile_features(test_compiled PUBLIC cxx_std_20)
 add_test(NAME test_compiled COMMAND test_compiled)
+
+# test_compiled_arrays - R4.1
+add_executable(test_compiled_arrays test_compiled_arrays.cpp)
+target_link_libraries(test_compiled_arrays PRIVATE core_lib Eigen3::Eigen)
+target_compile_features(test_compiled_arrays PUBLIC cxx_std_20)
+add_test(NAME test_compiled_arrays COMMAND test_compiled_arrays)

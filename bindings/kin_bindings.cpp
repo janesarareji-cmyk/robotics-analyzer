@@ -5,12 +5,14 @@
  */
 
 #include <algorithm>
+#include <cstring>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
 
 #include "kin/fk.hpp"
 #include "kin/compiled_model.hpp"
+#include "kin/compiled_arrays.hpp"
 #include "urm/robot_model.hpp"
 
 namespace py = pybind11;
@@ -24,6 +26,40 @@ static py::dict fk_result_to_dict(const kin::FKResult& res, const std::vector<in
     d["frames"] = frames_list;
     d["tcp"] = Eigen::Matrix4d(res.tcp.matrix());
     d["active_joints"] = active;
+    return d;
+}
+
+/// Copy a vector into a new numpy array of the given shape (copy, not view).
+template <typename T>
+static py::array_t<T> to_np(const std::vector<T>& v, std::vector<py::ssize_t> shape) {
+    py::array_t<T> arr(shape);
+    if (!v.empty()) {
+        std::memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(T));
+    }
+    return arr;
+}
+
+static py::dict compiled_arrays_to_dict(const kin::CompiledArrays& a) {
+    const py::ssize_t n = a.n_joints;
+    py::dict d;
+    d["n_joints"] = a.n_joints;
+    d["n_links"] = a.n_links;
+    d["n_dof"] = a.n_dof;
+    d["tcp_link"] = a.tcp_link;
+    d["layout_version"] = a.layout_version;
+    d["joint_index"] = to_np(a.joint_index, {n});
+    d["parent_link"] = to_np(a.parent_link, {n});
+    d["child_link"] = to_np(a.child_link, {n});
+    d["type"] = to_np(a.type, {n});
+    d["q_index"] = to_np(a.q_index, {n});
+    d["src_q_index"] = to_np(a.src_q_index, {n});
+    d["pre"] = to_np(a.pre, {n, 4, 4});
+    d["post"] = to_np(a.post, {n, 4, 4});
+    d["axis"] = to_np(a.axis, {n, 3});
+    d["mult"] = to_np(a.mult, {n});
+    d["offset"] = to_np(a.offset, {n});
+    d["base"] = to_np(a.base, {4, 4});
+    d["tool"] = to_np(a.tool, {4, 4});
     return d;
 }
 
@@ -66,6 +102,16 @@ void bind_kin(py::module_& m) {
         return fk_result_to_dict(kin::forward_kinematics(cm, q), active);
     }, py::arg("cm"), py::arg("q"),
        "FK on a compiled model; same dict as fk(model, q).");
+
+    m.def("compile_arrays", [](const urm::RobotModel& model) {
+        return compiled_arrays_to_dict(kin::to_arrays(kin::compile(model)));
+    }, py::arg("model"),
+       "Flat frozen-layout arrays of the compiled model (see docs/compiled-model-layout.md).");
+
+    m.def("effective_links", [](const urm::RobotModel& model) {
+        return kin::effective_links(model);
+    }, py::arg("model"),
+       "Effective (parent_link, child_link) per URM joint (legacy 0/0 serial rule applied).");
 
     m.def("pose_to_iso", [](const urm::Pose& pose) {
         return Eigen::Matrix4d(kin::pose_to_iso(pose).matrix());

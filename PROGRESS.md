@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R4 --- Kinematics and dynamics (status: `planned`, spec pack written, ready for Builder)
--   **Next substage:** R4.1 --- Compiled model freeze
+-   **Next substage:** R4.2 --- Jacobian
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R4
@@ -83,7 +83,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R3.6  | Import validation + error report          | test_import_report.py              | stage-approved |
 | R3.7  | Physical properties (import/estimate/manual) | test_physical_props.py, test_urm.cpp | stage-approved |
 | R3.8  | CAD import (mini-stage R3b, spec after R3.7) | tbd                | planned  |
-| R4.1 | Compiled model freeze + to_arrays | test_compiled_arrays.py, test_compiled.cpp | planned |
+| R4.1 | Compiled model freeze + to_arrays | test_compiled_arrays.py, test_compiled_arrays.cpp | committed |
 | R4.2 | Jacobian | test_jacobian.py | planned |
 | R4.3 | Numerical IK | test_ik.py | planned |
 | R4.4 | Multiple IK solutions | test_ik_multi.py | planned |
@@ -134,6 +134,8 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: Workflow: Sonnet orchestrates, Claude subagents build (Haiku: R3.3, R3.6; Sonnet: R3.2, R3.4, R3.5, R3.7, milestone). No Opus used in R3.
 -   2026-11-11: OPUS consulted (R4.6 dynamics formulation, planned decision point). Answer: Featherstone RNEA in the link frame with motion subspace S_k = ^kX_post^-1 [a;0] (revolute S=[Rp^T a; Rp^T(a x pp)], prismatic S=[0; Rp^T a]), base acceleration a0=[0; -R_base^T g], mimic via mult on qd/qdd and tau[src]+=mult*S^T f, fixed joints still propagate force, CRBA per DOF with mult_i*mult_j coupling and 2v when si==sj, friction per DOF outside g and C (tanh smoothing), reference tests: planar 2R, cart-pendulum, post-rotation case. Details in R4-spec R4.6/R4.7.
 -   2026-11-11: R4 decisions (Sonnet): friction not stored in URM in R4 (no schema bump); frozen compiled layout covers kinematics only, dynamics in separate dyn::DynModel; no 6R closed-form IK in R4; viewport target dragging moved to R6 backlog.
+
+-   2026-11-11: effective_links is pure; link-count check lives in compile() (Sonnet decision, R4.1).
 
 ## Risks
 

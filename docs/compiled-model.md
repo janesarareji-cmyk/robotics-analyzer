@@ -107,16 +107,24 @@ chain ends on a Fixed joint.
 `q` passed to FK is always indexed by DOF (`n_dof` entries), never by joint
 or link index.
 
-## Legacy serial fallback: `kin::effective_links`
+## Legacy serial fallback: `kin::is_legacy_serial`, `kin::effective_links`
 
-Used by `compile()` and `active_chain()`. If there is at least one joint and
-every joint has `parent_link == 0` and `child_link == 0`, the model is treated
-as R2 serial data. Joint `i` then gets effective `(parent i, child i + 1)`.
-This requires `links.size() == joints.size() + 1`, else `std::invalid_argument`.
+`is_legacy_serial(model)` is true when there is at least one joint and every
+joint has `parent_link == 0` and `child_link == 0`. Such a model is treated as
+R2 serial data. Joint `i` then gets effective `(parent i, child i + 1)`.
+
+`effective_links(model)` is pure. It never throws on link count. It returns
+the legacy pairs for legacy models and the stored pairs otherwise. Model is
+never modified.
+
+The link-count check lives in `compile()` only: a legacy model with
+`links.size() != joints.size() + 1` throws `std::invalid_argument`.
+`active_chain()` uses `effective_links` only, so it does not check the legacy
+link count. It still throws on bad `tcp_link` and unreachable tcp.
 
 A mixed model (some 0/0, some not) is not legacy. It fails the normal
-`parent < child` rule. The model itself is never modified. Schema v2 never
-produces 0/0 joints (child 0 is forbidden), so this path is only for old data.
+`parent < child` rule. Schema v2 never produces 0/0 joints (child 0 is
+forbidden), so this path is only for old data.
 
 ## tcp_link and active_chain
 
@@ -141,7 +149,7 @@ on this.
 `compile()` and `active_chain()` throw `std::invalid_argument` on:
 link index out of range; `parent_link >= child_link`; duplicate child link;
 mimic target missing, cyclic, or ending on a fixed joint; legacy link count
-mismatch; zero axis; `tcp_link` out of range or unreachable.
+mismatch (`compile()` only); zero axis; `tcp_link` out of range or unreachable.
 `forward_kinematics(cm, q)` throws on `q.size() != n_dof`.
 
 pybind11 maps `std::invalid_argument` to Python `ValueError`.

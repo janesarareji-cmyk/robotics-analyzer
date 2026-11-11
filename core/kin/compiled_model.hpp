@@ -39,20 +39,22 @@ struct CompiledModel {
     Eigen::Isometry3d tool = Eigen::Isometry3d::Identity();
 };
 
-/// Legacy serial rule (one shared helper, used by compile() and active_chain()):
-/// if joints.size() >= 1 AND every joint has parent_link == 0 AND child_link == 0,
-/// the model is legacy serial data (R2 models; never valid in schema v2 because
-/// child_link 0 is forbidden). Joint i then gets effective parent i, child i + 1.
-/// Requires links.size() == joints.size() + 1, else std::invalid_argument.
-/// A mixed model (some joints 0/0, some not) is NOT legacy and fails the normal
-/// parent < child rule. The model is never modified; validate() is unchanged.
-/// Returns (parent, child) per joint index.
+/// Legacy serial test: true when joints.size() >= 1 AND every joint has
+/// parent_link == 0 AND child_link == 0 (R2 serial data; never valid in
+/// schema v2 because child_link 0 is forbidden). A mixed model is not legacy.
+bool is_legacy_serial(const urm::RobotModel& model);
+
+/// Effective (parent, child) per joint index. Pure: never throws on link count.
+/// Legacy serial models (see is_legacy_serial) map joint i to (i, i + 1);
+/// all other models return the stored parent_link / child_link.
+/// The link-count check for legacy models lives in compile().
+/// The model is never modified.
 std::vector<std::pair<int, int>> effective_links(const urm::RobotModel& model);
 
 /// Compile a model. Does not call validate(). Throws std::invalid_argument on:
 /// link index out of range, parent >= child, duplicate child, missing mimic
-/// target, mimic cycle, mimic chain ending on a fixed joint, bad legacy link
-/// count, zero axis. tcp_link == -1 -> last link.
+/// target, mimic cycle, mimic chain ending on a fixed joint, legacy model with
+/// links.size() != joints.size() + 1, zero axis. tcp_link == -1 -> last link.
 CompiledModel compile(const urm::RobotModel& model);
 
 /// URM joint indices on the path link 0 -> resolved tcp_link, root to tip

@@ -35,12 +35,9 @@ def joint_type_name(joint: Any) -> str:
 def joint_links(model: Any) -> list[tuple[int, int]]:
     """
     Effective (parent_link, child_link) per joint.
-    Legacy serial models (every joint has parent == child == 0) map to (i, i + 1).
+    Delegates to C++ kin::effective_links (single legacy rule, R4.1).
     """
-    n = len(model.joints)
-    if n >= 1 and all(j.parent_link == 0 and j.child_link == 0 for j in model.joints):
-        return [(i, i + 1) for i in range(n)]
-    return [(j.parent_link, j.child_link) for j in model.joints]
+    return [(int(p), int(c)) for p, c in cb.effective_links(model)]
 
 
 def is_plain_chain(model: Any) -> bool:
