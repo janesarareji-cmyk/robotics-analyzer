@@ -25,6 +25,7 @@ from app.panels.physical_panel import PhysicalPropertiesPanel
 from app.panels.ik_panel import IKPanel
 from app.panels.analysis_panel import AnalysisPanel
 from app.panels.performance_panel import PerformancePanel
+from app.panels.sim_panel import SimPanel
 from app.panels.workspace_panel import WorkspacePanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
@@ -202,6 +203,11 @@ class MainWindow(QMainWindow):
         self._action_view_performance.setCheckable(True)
         self._action_view_performance.setChecked(False)
         view_menu.addAction(self._action_view_performance)
+
+        self._action_view_simulation = QAction("&Simulation", self)
+        self._action_view_simulation.setCheckable(True)
+        self._action_view_simulation.setChecked(False)
+        view_menu.addAction(self._action_view_simulation)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -428,6 +434,22 @@ class MainWindow(QMainWindow):
         self._action_view_performance.toggled.connect(self._performance_dock.setVisible)
         self._performance_dock.visibilityChanged.connect(self._action_view_performance.setChecked)
 
+        # Simulation dock (R6.3) - right side, tabbed with Joints. Hidden by default.
+        self._sim_panel = SimPanel()
+        self._sim_dock = QDockWidget("Simulation", self)
+        self._sim_dock.setObjectName("simulation_dock")
+        self._sim_dock.setWidget(self._sim_panel)
+        self._sim_dock.setMinimumWidth(320)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._sim_dock)
+        self.tabifyDockWidget(self._joint_dock, self._sim_dock)
+        self._sim_dock.hide()
+        self._action_view_simulation.toggled.connect(self._sim_dock.setVisible)
+        self._sim_dock.visibilityChanged.connect(self._action_view_simulation.setChecked)
+        self._sim_dock.visibilityChanged.connect(self._sim_panel.on_visibility_changed)
+        self._action_view_simulation.toggled.connect(self._sim_panel.on_visibility_changed)
+        self._sim_panel.state_updated.connect(self._on_sim_state)
+        self._sim_panel.log_requested.connect(self.log)
+
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
@@ -465,6 +487,7 @@ class MainWindow(QMainWindow):
             self._analysis_panel.set_model(project.robot_model)
             self._workspace_panel.set_model(project.robot_model)
             self._performance_panel.set_model(project.robot_model)
+            self._sim_panel.set_model(project.robot_model, project.simulation_settings)
             self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
@@ -488,6 +511,7 @@ class MainWindow(QMainWindow):
         self._analysis_panel.set_model(None)
         self._workspace_panel.set_model(None)
         self._performance_panel.set_model(None)
+        self._sim_panel.set_model(None, None)
         self._refresh_tree(None)
         self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
@@ -526,6 +550,23 @@ class MainWindow(QMainWindow):
         self._update_robot_view(reset_camera=False)
         self._ik_panel.notify_q_edited()
         self._analysis_panel.refresh()
+        self._sim_panel.notify_q_edited()
+
+    def _on_sim_state(self, state: Any) -> None:
+        """Simulation tick / stop: push state.q to model, joint panel, viewport.
+
+        The joint panel sync runs under its own update guard, so no q_changed
+        is emitted and no feedback loop reaches the simulation.
+        """
+        model = self._project_controller.robot
+        if model is None:
+            return
+        from app.kin_utils import write_q
+        write_q(model, state.q)
+        self._joint_panel.set_model(model, save_baseline=False)
+        if self._dh_editor.get_model() is not None:
+            self._dh_editor.refresh_q()
+        self._update_robot_view(reset_camera=False)
 
     def _project_gravity(self) -> Any:
         """Gravity vector of the open project (SimulationSettings.gravity)."""
@@ -570,6 +611,10 @@ class MainWindow(QMainWindow):
         self._analysis_panel.set_model(model)
         self._workspace_panel.set_model(model)
         self._performance_panel.set_model(model)
+        project = self._project_controller.current_project
+        self._sim_panel.set_model(
+            model, project.simulation_settings if project is not None else None,
+            reload_settings=False)
         self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
@@ -728,6 +773,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         """Save settings and shut down task runner before closing."""
         self._workspace_panel.cancel()
+        self._sim_panel.shutdown()
         self._task_runner.shutdown()
         self._settings.save_window(self)
         self._settings.sync()
@@ -849,6 +895,15 @@ class MainWindow(QMainWindow):
     @property
     def performance_dock(self) -> QDockWidget:
         return self._performance_dock
+
+    @property
+    def sim_panel(self) -> SimPanel:
+        """Simulation panel (R6.3)."""
+        return self._sim_panel
+
+    @property
+    def sim_dock(self) -> QDockWidget:
+        return self._sim_dock
 
     @property
     def workspace_dock(self) -> QDockWidget:

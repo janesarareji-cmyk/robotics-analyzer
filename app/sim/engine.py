@@ -73,6 +73,7 @@ class SimEngine:
         self.max_steps_per_advance = int(max_steps_per_advance)
         self.clock = SimClock()
         self.lag = 0.0
+        self.steps = 0
         self._time_scale = 1.0
         self._tau = np.zeros(self.n_dof)
         self.reset(np.zeros(self.n_dof))
@@ -168,6 +169,7 @@ class SimEngine:
         self._initial = s.copy()
         self._state = s
         self.lag = 0.0
+        self.steps = 0
         if hasattr(self.integrator, "next_dt"):
             self.integrator.next_dt = None
         if self.clock.state != STOPPED:
@@ -206,6 +208,7 @@ class SimEngine:
             self._fail(exc)
             raise
         self._state = new
+        self.steps += 1
         return new
 
     def refresh(self):
@@ -228,6 +231,7 @@ class SimEngine:
         self.clock.stop()
         self._state = self._initial.copy()
         self.lag = 0.0
+        self.steps = 0
 
     def advance(self, wall_dt):
         """Advance by ``wall_dt * time_scale`` sim seconds (only when RUNNING).
