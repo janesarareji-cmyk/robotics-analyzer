@@ -6,11 +6,12 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.9 --- 3-DOF end-to-end milestone test (ready-for-review)
--   **Owner now:** Reviewer
+-   **Stage:** R3 --- Import
+-   **Substage:** R3.1 --- URM schema v2: tree + origin/axis joints (planned)
+-   **Owner now:** Builder
 -   **Blockers:** none known
--   **Stage R2 Gate Results:**
+-   **Stage R2 gate: PASSED (Reviewer verified: CTest 5/5, pytest 146/146)**
+    -   Gate results as recorded by Builder:
     -   CTest targets: 5/5 passed.
     -   Pytest tests: 146/146 passed.
     -   FK numerical reference tests: passed (`test_fk.cpp`, `test_fk_bridge.py`, `test_milestone_r2.py` 200-sample randomized verification against independent NumPy DH).
@@ -57,7 +58,15 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | approved (follow-ups → R2.8) |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | approved (follow-up → R2.9) |
-| R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | ready-for-review |
+| R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | approved |
+| R3.1  | URM schema v2: tree + origin/axis joints  | test_urm.cpp, test_urm_bridge.py   | planned  |
+| R3.2  | Compiled kinematic model + tree FK        | test_fk.cpp, test_fk_bridge.py     | planned  |
+| R3.3  | URDF parser → URM (no meshes)             | test_urdf_import.py                | planned  |
+| R3.4  | UI for tree/origin_axis joints            | test_ui_tree.py                    | planned  |
+| R3.5  | Mesh/asset resolution + visual meshes     | test_urdf_meshes.py                | planned  |
+| R3.6  | Import validation + error report          | test_import_report.py              | planned  |
+| R3.7  | Physical properties (import/estimate/manual) | test_physical_props.py          | planned  |
+| R3.8  | CAD import + guided joint assignment (re-plan before start) | tbd                | planned  |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.
@@ -353,17 +362,43 @@ Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.9 set to `re
 
 Changed files: `app/main_window.py`, `app/panels/dh_editor.py`, `app/project/project_controller.py`, `app/viewport/robot_view.py`, `tests/python/test_joint_panel.py`, `tests/python/test_milestone_r2.py`.
 
-### R3 onward
+### R3 plan (outline)
 
-Stage R3 planned by Reviewer after R2 gate passes.
+Order: R3.1 schema → R3.2 compiled FK → R3.3 URDF parse → R3.4 UI → R3.5 meshes → R3.6 import report → R3.7 physical props → R3.8 CAD (re-plan). One spec at a time; Reviewer writes the next after approval. At the start of R3.1, Builder runs `graphify update .` first (R2.9 graph may be a few minutes stale).
+
+### R3.1 --- URM schema v2: tree + origin/axis joints (C++ core + bindings + tests)
+
+Goal: URM can describe a tree and URDF-style joints. Nothing else changes: all DH serial robots, FK, UI, saved projects keep working unchanged. No UI work, no URDF parsing, no FK change (R3.2).
+
+1.  `RobotModel.schema_version` writes 2. Read 1 → migrate in memory: for every joint `parent_link = i`, `child_link = i+1`, `kinematics = dh`, `origin = identity`, `axis = (0,0,1)`, `tcp_link = links.size()-1`. Read >2 → throw (same message style as R2.4). Round-trip v2 exactly.
+2.  `Joint` gains: `int parent_link = 0`, `int child_link = 0`, `enum class JointKinematics { DH, OriginAxis } kinematics = DH`, `Pose origin` (default identity), `std::array<double,3> axis = {0,0,1}`, `struct Mimic { std::string joint; double multiplier = 1.0; double offset = 0.0; }` and `std::optional<Mimic> mimic`. JSON keys: `parent_link`, `child_link`, `kinematics` ("dh"|"origin_axis"), `origin`, `axis`, `mimic`. Unknown `kinematics` string → throw.
+3.  `RobotModel` gains `int tcp_link = -1` (-1 = last link). JSON `tcp_link`. Bind all new fields/enums to Python (whole-object assignment rules apply, as for Pose).
+4.  `dof()` = joints that are non-fixed AND have no mimic. Add `std::vector<int> RobotModel::q_index_map() const` : size joints.size(); entry = index into the dof vector, or -1 for fixed/mimic joints. Bind to Python as `q_index_map()`. Joint order of dof vector = joint order (unchanged for existing robots).
+5.  `validate()` new rules (each with 1 pass + 1 fail test): parent_link/child_link in range; `parent_link < child_link`; every child_link unique (each link has at most one parent link-joint) and child_link != 0; links.size()==joints.size()+1 still required; tree connected (every link reachable from link 0); `axis` finite and norm within 1e-6 of 1 for origin_axis joints (non-fixed); mimic joint name exists, is not itself, and mimic chains have no cycles; `tcp_link` -1 or in range. For DH robots from schema v1 all rules must pass untouched.
+6.  Fixed joints and mimic joints ignore `q` (document in joint.hpp). `default_limits` unchanged. `from_json` still does not call validate().
+7.  `validate()` keeps all R2.4 rules. DH data (`dh`/`mdh`) stays on every joint even for origin_axis joints (ignored by FK in R3.2).
+8.  Docs: update comments in robot_model.hpp / joint.hpp; add `docs/urm-schema-v2.md` (1 page: fields, JSON example of a 2-joint DH arm and a 3-link branched tree, migration rule, q_index_map, active chain definition = path from link 0 to tcp_link).
+9.  Python app: no behaviour change. If any app/test code breaks because of the new JSON keys, fix minimally. Saved v1 projects must still open (add a test with a stored v1 `robot_model.json` fixture under `tests/python/fixtures/`).
+
+Tests (all old tests must stay green):
+-   C++ `test_urm.cpp`: v1→v2 migration values; v2 round-trip; version 3 throws; unknown kinematics throws; mimic round-trip; `dof()` with fixed + mimic joints; `q_index_map()` for chain [revolute, fixed, revolute, mimic, prismatic] = [0,-1,1,-1,2]; each new validate() rule pass+fail; branched tree (link0→j1→link1, link0→j2→link2, link1→j3→link3) validates clean; disconnected link fails.
+-   Python `test_urm_bridge.py`: new fields read/write; `q_index_map` callable; `kinematics` enum; v1 fixture opens via ProjectData serializer and equals expected migrated values; validate returns strs for new rule failures.
+
+Done when: `.\run_tests.ps1` all green, `graphify update .` run, row R3.1 set to `ready-for-review`, commit `R3.1: URM schema v2`.
+
+Changed files (expected): `core/urm/joint.hpp`, `core/urm/robot_model.hpp`, `core/urm/robot_model.cpp`, `bindings/urm_bindings.cpp`, `docs/urm-schema-v2.md`, `tests/cpp/test_urm.cpp`, `tests/python/test_urm_bridge.py`, `tests/python/fixtures/robot_model_v1.json`.
+
+### R3.2 onward
+
+Spec written by Reviewer when R3.1 is approved.
 
 ## Open review items
 
 -   (info) R2.6 DH editor: assign whole lists to `Pose.xyz`/`rpy`
     (`model.base.xyz = [...]`); element assignment is silently lost.
 -   (info) R2.5 weak tests (no 3D known-answer) → follow-ups at top of R2.6.
--   (info) URM is a serial chain (vector), not a tree. OK for R2. Revisit
-    before R3 URDF import (branching robots).
+-   (resolved) URM serial chain → tree in R3.1 (see Decisions, Opus).
+-   (info) R2.9 test does not assert DH table cells after project reopen; add in R3.4.
 
 ## Decisions
 
@@ -372,6 +407,9 @@ Stage R3 planned by Reviewer after R2 gate passes.
     Opus advises only when absolutely necessary.
 -   2026-11-11: DH/MDH convention is per robot, not per joint (R2.4).
     `from_json` loads without validating; `validate()` is explicit.
+-   2026-11-11: OPUS consulted (tree vs chain for URDF). Answer: B-lite. URM becomes a TREE now (schema v2): `Joint.parent_link`, `child_link` (parent < child, base link 0, links.size()==joints.size()+1 kept), `Joint.kinematics: "dh"|"origin_axis"`, `Joint.origin: Pose`, `Joint.axis`, optional `Joint.mimic {joint,multiplier,offset}` (mimic not counted in dof()), `RobotModel.tcp_link` (default last link; tool pose hangs off it). One precompile step turns every joint into (T_origin, axis, type, parent, q_index); FK/Jacobian/dynamics/CUDA read only compiled form. Never convert origin_axis → DH. DH editor refuses origin_axis joints. UI + IK act on active chain root→tcp_link; other branches drawn and flagged. Risks: (1) joint index vs dof index vs link index confusion → one tested `q_index` map; (2) DH↔origin round trip → one-way only; (3) CUDA layout → flat SoA of compiled form in topological order, freeze in R4 before R5.
+-   2026-11-11: R2.7 scale formula changed in R2.9 (adds tool offset, floor 0.05 → 0.01). Accepted.
+-   2026-11-11: URDF parsing uses Python stdlib `xml.etree` in `app/` (no new C++ dependency). Importer builds URM through bindings.
 
 ## Risks
 
