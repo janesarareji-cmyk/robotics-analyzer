@@ -6,12 +6,12 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R4 --- Kinematics and dynamics (status: `stage-approved`)
--   **Next substage:** R5 (spec pack docs/specs/R5-spec.md not written yet: waiting for user go; driver update before R5.1, see Risks)
--   **Owner now:** Sonnet orchestrator
+-   **Stage:** R5 --- GPU compute (status: `planned`, spec pack written, ready for Builder)
+-   **Next substage:** R5.1 --- GPU Compute Manager (first: verify driver)
+-   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
--   **Review mode:** stage-batch, BLOCKING at end of R4
--   **Spec pack:** `docs/specs/R4-spec.md`
+-   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
+-   **Spec pack:** `docs/specs/R5-spec.md`
 -   **Stage R2 gate: PASSED** (Reviewer verified: CTest 5/5, pytest 146/146). Tag `stage-R2-done` = `91a53a0`.
 -   **Last known test count (2026-11-11, R3 gate):** CTest 6/6 passed; pytest 302 passed (6 new in `test_milestone_r3.py`).
 -   **Stage R3 gate (Builder run):** milestone `tests/python/test_milestone_r3.py` PASS (6 tests: 1 fixture-shape, 1 full flow items 1-6, 4 broken-fixture cases item 7). Items 1,2,3,4,5,6,7,9,10 checked. `run_tests.ps1` not used (execution policy), same commands run by hand. `build/` and binaries not tracked. `graphify update .` run, `graph.json` committed. Item 8 (docs per module): only `docs/import-report.md` and `docs/urm-schema-v2.md` exist; no separate one-page docs for compiled model, visuals/assets, physical panel (not done, reviewer decide). Item 5 (GPU) n/a. No product code changed in the milestone. Tag `stage-R3-done`. Milestone commit `d329649`.
@@ -95,6 +95,13 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R4.8 | Energy and torque tools | test_energy.py | stage-approved |
 | R4.9 | IK + analysis panels | test_ui_kin_dyn.py | stage-approved |
 | R4.10 | R4 milestone | test_milestone_r4.py | stage-approved |
+| R5.1 | GPU Compute Manager | test_budget.cpp, test_gpu_manager.py | planned |
+| R5.2 | Batch FK kernel + precision decision (STOP after) | test_gpu_fk.py | planned |
+| R5.3 | Workspace sampling | test_workspace.py | planned |
+| R5.4 | CPU batch IK + GPU IK go/no-go | test_ik_batch.py | planned |
+| R5.5 | Python backend, fallback, Workspace panel | test_compute_backend.py, test_ui_workspace.py | planned |
+| R5.6 | Performance dashboard | test_performance.py | planned |
+| R5.7 | R5 milestone | test_milestone_r5.py | planned |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.
@@ -104,7 +111,8 @@ not re-run them in this file's first version.
 Specs do not live in this file. Find them here:
 
 -   Stage R3 (current): `docs/specs/R3-spec.md` (R3.2 to R3.7 + stage milestone).
--   Stage R4 (current): `docs/specs/R4-spec.md`.
+-   Stage R5 (current): `docs/specs/R5-spec.md`.
+-   Stage R4 (closed): `docs/specs/R4-spec.md`.
 -   R3.1 (done): `docs/specs/R3.1-spec.md`.
 -   Stage R2 (closed): `docs/specs/R2-spec.md`.
 -   R3.8 CAD: not specified yet. Reviewer writes it as mini-stage `R3b` after R3.7.
@@ -138,7 +146,10 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: R4 decisions (Sonnet): friction not stored in URM in R4 (no schema bump); frozen compiled layout covers kinematics only, dynamics in separate dyn::DynModel; no 6R closed-form IK in R4; viewport target dragging moved to R6 backlog.
 
 -   2026-11-11: effective_links is pure; link-count check lives in compile() (Sonnet decision, R4.1).
+-   2026-11-11: OPUS consulted (R5 GPU design, GPU memory model decision point). Answer: fp32 default with CPU fp64 reference; templated kernel, precision rule at R5.2 (fp64 default for FK only if e2e_fp64 <= 2x e2e_fp32 and <= 50 ms per 1e6); GPU computes in base frame, host applies base in double; thread-per-sample, joint tables in shared memory (3x4 float), SoA q [dof][N] and output [12][N], SASS-only build for sm_120 (driver 13.1 vs toolkit 13.5), own Philox RNG shared by CPU and GPU, chunk size = clamp(floor(budget/(2*bytes_per_sample)),65536,4M) with 0.6 headroom, 50 ms launch target for WDDM TDR, OOM -> halve chunk -> CPU, sticky error -> GPU dead, GPU IK with unrolled fp32 Cholesky plus CPU fp64 polish and a go/no-go rule (>=5x faster, convergence within 1 point). Details in R5-spec.
+-   2026-11-11: R5 decisions (Sonnet): GPU code in a separate optional pybind11 module `gpu_bridge` (core_bridge never links CUDA, so CPU fallback always imports); no CuPy (new dependency, needs Windows proof build); CPU batch FK and CPU batch IK are built in R5 as reference and fallback.
 
 ## Risks
 
 -   CUDA Toolkit 13.5 vs driver max 13.1. Update driver before R5.
+-   Driver 592.19 (CUDA 13.1) with toolkit 13.5: R5.1 verifies; an InsufficientDriver or UnsupportedPtxVersion error means the USER must update the driver (Builder writes a Blocker).
