@@ -57,6 +57,10 @@ static std::vector<double> rnea(const urm::RobotModel& m, const std::vector<doub
     return dyn::inverse_dynamics(dm, q, qd, qdd, g);
 }
 
+static dyn::DynModel dmodel(const urm::RobotModel& m) {
+    return dyn::build_dyn_model(m, kin::compile(m));
+}
+
 // ---------------------------------------------------------------- case A
 static void case_A() {
     const double l1 = 0.7, m1 = 1.3, m2 = 0.9, r1 = 0.31, r2 = 0.22, I1 = 0.05, I2 = 0.03, g0 = 9.81;
@@ -82,6 +86,17 @@ static void case_A() {
         const auto tau = rnea(m, {q1, q2}, {d1, d2}, {a1, a2}, g);
         NEAR(tau[0], M11 * a1 + M12 * a2 + C1 + G1, 1e-10);
         NEAR(tau[1], M12 * a1 + M22 * a2 + C2 + G2, 1e-10);
+        const auto dm = dmodel(m);
+        const Eigen::MatrixXd M = dyn::mass_matrix(dm, {q1, q2});
+        NEAR(M(0, 0), M11, 1e-12); NEAR(M(0, 1), M12, 1e-12);
+        NEAR(M(1, 0), M12, 1e-12); NEAR(M(1, 1), M22, 1e-12);
+        // forward dynamics inverts RNEA, with friction too
+        dyn::Friction fr; fr.viscous = {0.3, 0.2}; fr.coulomb = {0.1, 0.05}; fr.eps = 1e-2;
+        const auto tf = dyn::inverse_dynamics(dm, {q1, q2}, {d1, d2}, {a1, a2}, g, &fr);
+        NEAR(tf[0], tau[0] + 0.3 * d1 + 0.1 * std::tanh(d1 / 1e-2), 1e-12);
+        NEAR(tf[1], tau[1] + 0.2 * d2 + 0.05 * std::tanh(d2 / 1e-2), 1e-12);
+        const auto qdd = dyn::forward_dynamics(dm, {q1, q2}, {d1, d2}, tf, g, &fr);
+        NEAR(qdd[0], a1, 1e-10); NEAR(qdd[1], a2, 1e-10);
     }
     // no trig: q = 0, qd = 0
     const auto tau = rnea(m, {0, 0}, {0, 0}, {1.0, -0.5}, Eigen::Vector3d(0, -g0, 0));
@@ -111,6 +126,9 @@ static void case_B() {
         const auto tau = rnea(m, {x, th}, {dx, dth}, {ax, ath}, Eigen::Vector3d(0, -g0, 0));
         NEAR(tau[0], M11 * ax + M12 * ath + C1, 1e-10);
         NEAR(tau[1], M12 * ax + M22 * ath + G2, 1e-10);
+        const Eigen::MatrixXd M = dyn::mass_matrix(dmodel(m), {x, th});
+        NEAR(M(0, 0), M11, 1e-12); NEAR(M(0, 1), M12, 1e-12);
+        NEAR(M(1, 0), M12, 1e-12); NEAR(M(1, 1), M22, 1e-12);
     }
 }
 
@@ -168,6 +186,7 @@ static void case_C() {
             const double G = mass * g0 * (l * std::cos(q) + d * std::sin(q));
             const auto tau = rnea(m, {q}, {qd}, {qdd}, g);
             NEAR(tau[0], M * qdd + G, 1e-10);   // C = 0 for one DOF
+            NEAR(dyn::mass_matrix(dmodel(m), {q})(0, 0), M, 1e-10);
         }
     }
 }
@@ -195,7 +214,32 @@ static void misc() {
     CHECK(std::abs(t0[0]) < 1e-15 && std::abs(t0[1]) < 1e-15);
 }
 
+// Massless leaf: M singular -> runtime_error; armature fixes it. Wrong sizes throw.
+static void singular_and_sizes() {
+    urm::RobotModel m;
+    m.links.push_back(urm::Link{"base"});
+    m.links.push_back(urm::Link{"massless"});
+    m.joints.push_back(oa("j1", 0, 1, JointType::Revolute, {0, 0, 0}, {0, 0, 1}));
+    const dyn::DynModel dm = dmodel(m);
+    bool thrown = false;
+    try { dyn::forward_dynamics(dm, {0.0}, {0.0}, {0.0}, Eigen::Vector3d::Zero()); }
+    catch (const std::runtime_error&) { thrown = true; }
+    CHECK(thrown);
+    const std::vector<double> arm = {0.5};
+    const auto qdd = dyn::forward_dynamics(dm, {0.0}, {0.0}, {1.0}, Eigen::Vector3d::Zero(), nullptr, &arm);
+    NEAR(qdd[0], 2.0, 1e-14);
+    thrown = false;
+    try { dyn::forward_dynamics(dm, {0.0}, {0.0}, {}, Eigen::Vector3d::Zero()); }
+    catch (const std::invalid_argument&) { thrown = true; }
+    CHECK(thrown);
+    thrown = false;
+    try { dyn::mass_matrix(dm, {}); }
+    catch (const std::invalid_argument&) { thrown = true; }
+    CHECK(thrown);
+}
+
 int main() {
+    singular_and_sizes();
     case_A();
     case_B();
     case_C();

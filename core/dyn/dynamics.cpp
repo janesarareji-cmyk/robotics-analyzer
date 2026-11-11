@@ -1,5 +1,6 @@
 #include "dyn/dynamics.hpp"
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -139,7 +140,7 @@ DynModel build_dyn_model(const urm::RobotModel& model, const kin::CompiledModel&
 
 std::vector<double> inverse_dynamics(const DynModel& dm, const std::vector<double>& q,
                                      const std::vector<double>& qd, const std::vector<double>& qdd,
-                                     const Vector3d& gravity_world, const Friction* /*friction*/) {
+                                     const Vector3d& gravity_world, const Friction* friction) {
     check_size(dm, q, "q");
     check_size(dm, qd, "qd");
     check_size(dm, qdd, "qdd");
@@ -156,7 +157,86 @@ std::vector<double> inverse_dynamics(const DynModel& dm, const std::vector<doubl
         if (j.type != JointType::Fixed) tau[j.src_q_index] += j.mult * j.S.dot(f[c]);
         f[j.parent_link] += k.X[c].transpose() * f[c];
     }
+    if (friction) {
+        const std::vector<double> tf = friction_torque(dm, *friction, qd);
+        for (int i = 0; i < dm.n_dof; ++i) tau[i] += tf[i];
+    }
     return tau;
+}
+
+std::vector<double> friction_torque(const DynModel& dm, const Friction& f, const std::vector<double>& qd) {
+    check_size(dm, qd, "qd");
+    if (!f.viscous.empty() && static_cast<int>(f.viscous.size()) != dm.n_dof)
+        throw std::invalid_argument("dynamics: friction.viscous needs n_dof entries");
+    if (!f.coulomb.empty() && static_cast<int>(f.coulomb.size()) != dm.n_dof)
+        throw std::invalid_argument("dynamics: friction.coulomb needs n_dof entries");
+    if (!(f.eps > 0.0)) throw std::invalid_argument("dynamics: friction.eps must be > 0");
+    std::vector<double> t(dm.n_dof, 0.0);
+    for (int i = 0; i < dm.n_dof; ++i) {
+        if (!f.viscous.empty()) t[i] += f.viscous[i] * qd[i];
+        if (!f.coulomb.empty()) t[i] += f.coulomb[i] * std::tanh(qd[i] / f.eps);
+    }
+    return t;
+}
+
+Eigen::MatrixXd mass_matrix(const DynModel& dm, const std::vector<double>& q) {
+    check_size(dm, q, "q");
+    const int nj = static_cast<int>(dm.joints.size());
+    std::vector<Mat6> X(dm.n_links, Mat6::Identity());
+    std::vector<int> pj(dm.n_links, -1);   // compiled joint index of each link
+    for (int i = 0; i < nj; ++i) {
+        const DynJoint& j = dm.joints[i];
+        X[j.child_link] = motion_xform_inv(joint_transform(j, q));
+        pj[j.child_link] = i;
+    }
+    std::vector<Mat6> Ic = dm.I;
+    for (int i = nj - 1; i >= 0; --i) {
+        const DynJoint& j = dm.joints[i];
+        Ic[j.parent_link] += X[j.child_link].transpose() * Ic[j.child_link] * X[j.child_link];
+    }
+    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(dm.n_dof, dm.n_dof);
+    for (int i = 0; i < nj; ++i) {
+        const DynJoint& ji = dm.joints[i];
+        if (ji.type == JointType::Fixed) continue;
+        const int si = ji.src_q_index;
+        Vec6 F = Ic[ji.child_link] * ji.S;
+        M(si, si) += ji.mult * ji.mult * ji.S.dot(F);
+        int j = i;
+        while (dm.joints[j].parent_link != 0) {
+            F = X[dm.joints[j].child_link].transpose() * F;
+            j = pj[dm.joints[j].parent_link];
+            const DynJoint& jj = dm.joints[j];
+            if (jj.type != JointType::Fixed) {
+                const double v = ji.mult * jj.mult * jj.S.dot(F);
+                M(si, jj.src_q_index) += v;
+                M(jj.src_q_index, si) += v;
+            }
+        }
+    }
+    return M;
+}
+
+std::vector<double> forward_dynamics(const DynModel& dm, const std::vector<double>& q,
+                                     const std::vector<double>& qd, const std::vector<double>& tau,
+                                     const Vector3d& gravity_world, const Friction* friction,
+                                     const std::vector<double>* armature) {
+    check_size(dm, q, "q");
+    check_size(dm, qd, "qd");
+    check_size(dm, tau, "tau");
+    if (armature) check_size(dm, *armature, "armature");
+    Eigen::MatrixXd M = mass_matrix(dm, q);
+    if (armature)
+        for (int i = 0; i < dm.n_dof; ++i) M(i, i) += (*armature)[i];
+    const std::vector<double> b = bias_torque(dm, q, qd, gravity_world);
+    std::vector<double> tf(dm.n_dof, 0.0);
+    if (friction) tf = friction_torque(dm, *friction, qd);
+    Eigen::VectorXd rhs(dm.n_dof);
+    for (int i = 0; i < dm.n_dof; ++i) rhs[i] = tau[i] - tf[i] - b[i];
+    Eigen::LLT<Eigen::MatrixXd> llt(M);
+    if (llt.info() != Eigen::Success)
+        throw std::runtime_error("mass matrix not positive definite: massless link or DOF with no inertia");
+    const Eigen::VectorXd x = llt.solve(rhs);
+    return std::vector<double>(x.data(), x.data() + x.size());
 }
 
 std::vector<double> gravity_torque(const DynModel& dm, const std::vector<double>& q, const Vector3d& g) {

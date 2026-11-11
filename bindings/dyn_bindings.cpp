@@ -4,6 +4,7 @@
  */
 
 #include <array>
+#include <optional>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
@@ -30,12 +31,40 @@ void bind_dyn(py::module_& m) {
     }, py::arg("model"), py::arg("cm"),
        "Build the dynamics model (spatial inertias, motion subspaces) from a model and its compiled form.");
 
+    py::class_<dyn::Friction>(m, "Friction")
+        .def(py::init<>())
+        .def_readwrite("viscous", &dyn::Friction::viscous)
+        .def_readwrite("coulomb", &dyn::Friction::coulomb)
+        .def_readwrite("eps", &dyn::Friction::eps);
+
     m.def("inverse_dynamics", [](const dyn::DynModel& dm, const std::vector<double>& q,
                                  const std::vector<double>& qd, const std::vector<double>& qdd,
-                                 const std::array<double, 3>& gravity) {
-        return dyn::inverse_dynamics(dm, q, qd, qdd, to_vec3(gravity));
+                                 const std::array<double, 3>& gravity,
+                                 const std::optional<dyn::Friction>& friction) {
+        return dyn::inverse_dynamics(dm, q, qd, qdd, to_vec3(gravity), friction ? &*friction : nullptr);
     }, py::arg("dm"), py::arg("q"), py::arg("qd"), py::arg("qdd"), py::arg("gravity") = g0,
-       "RNEA: actuator effort per DOF for (q, qd, qdd). gravity is the world vector.");
+       py::arg("friction") = py::none(),
+       "RNEA: actuator effort per DOF for (q, qd, qdd), plus friction if given. gravity is the world vector.");
+
+    m.def("mass_matrix", [](const dyn::DynModel& dm, const std::vector<double>& q) {
+        return dyn::mass_matrix(dm, q);
+    }, py::arg("dm"), py::arg("q"), "Joint-space mass matrix (n_dof x n_dof).");
+
+    m.def("friction_torque", [](const dyn::DynModel& dm, const dyn::Friction& f,
+                                const std::vector<double>& qd) {
+        return dyn::friction_torque(dm, f, qd);
+    }, py::arg("dm"), py::arg("friction"), py::arg("qd"), "viscous*qd + coulomb*tanh(qd/eps) per DOF.");
+
+    m.def("forward_dynamics", [](const dyn::DynModel& dm, const std::vector<double>& q,
+                                 const std::vector<double>& qd, const std::vector<double>& tau,
+                                 const std::array<double, 3>& gravity,
+                                 const std::optional<dyn::Friction>& friction,
+                                 const std::optional<std::vector<double>>& armature) {
+        return dyn::forward_dynamics(dm, q, qd, tau, to_vec3(gravity), friction ? &*friction : nullptr,
+                                     armature ? &*armature : nullptr);
+    }, py::arg("dm"), py::arg("q"), py::arg("qd"), py::arg("tau"), py::arg("gravity") = g0,
+       py::arg("friction") = py::none(), py::arg("armature") = py::none(),
+       "qdd = M^-1 (tau - friction - bias). RuntimeError if M is not positive definite.");
 
     m.def("gravity_torque", [](const dyn::DynModel& dm, const std::vector<double>& q,
                                const std::array<double, 3>& gravity) {

@@ -11,8 +11,9 @@ namespace dyn {
 using Vec6 = Eigen::Matrix<double, 6, 1>;
 using Mat6 = Eigen::Matrix<double, 6, 6>;
 
-/// Joint friction (R4.7 fills the maths). Arrays are per DOF (size n_dof).
-/// R4.6 only reserves the argument; no friction is applied yet.
+/// Joint friction, applied per DOF (never per mimic joint), outside g and C.
+/// Empty arrays mean zeros; otherwise size n_dof (else std::invalid_argument).
+/// friction_torque = viscous*qd + coulomb*tanh(qd/eps).
 struct Friction {
     std::vector<double> viscous;
     std::vector<double> coulomb;
@@ -47,11 +48,25 @@ DynModel build_dyn_model(const urm::RobotModel& model, const kin::CompiledModel&
 
 /// Inverse dynamics (RNEA, Featherstone). q, qd, qdd have n_dof entries, else
 /// std::invalid_argument. `gravity_world` is the gravity vector in the WORLD frame.
-/// Result: actuator effort per DOF. `friction` is reserved (null: rigid body only).
+/// Result: actuator effort per DOF. With `friction`: RNEA + friction_torque(qd).
 std::vector<double> inverse_dynamics(const DynModel& dm, const std::vector<double>& q,
                                      const std::vector<double>& qd, const std::vector<double>& qdd,
                                      const Eigen::Vector3d& gravity_world,
                                      const Friction* friction = nullptr);
+
+/// Friction torque per DOF for velocity qd.
+std::vector<double> friction_torque(const DynModel& dm, const Friction& f, const std::vector<double>& qd);
+
+/// Joint-space mass matrix (CRBA over the tree), n_dof x n_dof, symmetric.
+Eigen::MatrixXd mass_matrix(const DynModel& dm, const std::vector<double>& q);
+
+/// Forward dynamics: qdd = M^-1 (tau - tau_fric - bias). `armature` (n_dof) is added to the
+/// diagonal of M. Throws std::runtime_error if M is not positive definite.
+std::vector<double> forward_dynamics(const DynModel& dm, const std::vector<double>& q,
+                                     const std::vector<double>& qd, const std::vector<double>& tau,
+                                     const Eigen::Vector3d& gravity_world,
+                                     const Friction* friction = nullptr,
+                                     const std::vector<double>* armature = nullptr);
 
 /// RNEA(q, 0, 0, g).
 std::vector<double> gravity_torque(const DynModel& dm, const std::vector<double>& q,
