@@ -2,6 +2,7 @@ add_library(core_lib STATIC
     src/placeholder.cpp
     urm/robot_model.cpp
     kin/fk.cpp
+    kin/compiled_model.cpp
 )
 
 target_include_directories(core_lib PUBLIC

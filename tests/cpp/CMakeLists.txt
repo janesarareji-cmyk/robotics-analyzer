@@ -29,3 +29,9 @@ add_executable(test_fk test_fk.cpp)
 target_link_libraries(test_fk PRIVATE core_lib Eigen3::Eigen)
 target_compile_features(test_fk PUBLIC cxx_std_20)
 add_test(NAME test_fk COMMAND test_fk)
+
+# test_compiled - R3.2
+add_executable(test_compiled test_compiled.cpp)
+target_link_libraries(test_compiled PRIVATE core_lib Eigen3::Eigen)
+target_compile_features(test_compiled PUBLIC cxx_std_20)
+add_test(NAME test_compiled COMMAND test_compiled)

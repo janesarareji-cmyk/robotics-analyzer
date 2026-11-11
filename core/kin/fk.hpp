@@ -23,15 +23,20 @@ Eigen::Isometry3d dh_transform(double a, double alpha, double d, double theta);
 Eigen::Isometry3d mdh_transform(double a, double alpha, double d, double theta);
 
 /// Result of forward kinematics computation.
-/// - `frames`: Transforms of all link coordinate frames relative to world frame.
-///             `frames.size() == model.joints.size() + 1`.
+/// - `frames`: `frames.size() == links.size()`; `frames[k]` = pose of link k in world.
 ///             `frames[0] = pose_to_iso(model.base)`.
-///             `frames[i+1] = frames[i] · A_i`.
-/// - `tcp`: Tool center point transform in world frame: `tcp = frames.back() · pose_to_iso(model.tool)`.
+/// - `tcp`: `tcp = frames[tcp_link] * pose_to_iso(model.tool)`.
 struct FKResult {
     std::vector<Eigen::Isometry3d> frames;
     Eigen::Isometry3d              tcp;
 };
+
+struct CompiledModel;
+
+/// FK on a compiled model. Callers compile once and reuse for many q.
+/// q.size() must equal cm.n_dof, else std::invalid_argument.
+/// Only allocates the result vector.
+FKResult forward_kinematics(const CompiledModel& cm, const std::vector<double>& q);
 
 /// Compute forward kinematics using joint values stored in model.joints[i].q.
 FKResult forward_kinematics(const urm::RobotModel& model);

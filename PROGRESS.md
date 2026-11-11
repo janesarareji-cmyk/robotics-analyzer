@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R3 --- Import (status: `in-progress`)
--   **Next substage:** R3.2 --- Compiled kinematic model + tree FK
+-   **Next substage:** R3.3 --- URDF parser → URM (no meshes)
 -   **Owner now:** Sonnet orchestrator + Builder subagents
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R3 (Builder builds R3.2 to R3.7, runs gate, sets `stage-ready-for-review`, stops)
@@ -73,7 +73,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | approved (follow-up → R2.9) |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | approved |
 | R3.1  | URM schema v2: tree + origin/axis joints  | test_urm.cpp, test_urm_bridge.py   | committed        |
-| R3.2  | Compiled kinematic model + tree FK        | test_fk.cpp, test_fk_bridge.py     | planned  |
+| R3.2  | Compiled kinematic model + tree FK        | test_fk.cpp, test_compiled.cpp, test_fk_tree.py | committed |
 | R3.3  | URDF parser → URM (no meshes)             | test_urdf_import.py                | planned  |
 | R3.4  | UI for tree/origin_axis joints            | test_ui_tree.py                    | planned  |
 | R3.5  | Mesh/asset resolution + visual meshes     | test_urdf_meshes.py                | planned  |
@@ -114,6 +114,8 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: URDF parsing uses Python stdlib `xml.etree` in `app/` (no new C++ dependency). Importer builds URM through bindings.
 -   2026-11-11: Plan audit (Sonnet, no Opus). R3 spec pack fixed for a fresh Builder: (1) compiled joints sorted by child_link (URM joint order is not topological); (2) mimic chains flattened at compile time to the root master; mimic of a fixed joint is invalid; (3) URDF import emits canonical order `joints[i].child_link == i+1`; returns `ImportResult(model, report, visuals, collisions)`; full report-code table; (4) tree UI reuses `ModelPanel`/`PropertiesPanel`, `polyline_points` keeps R2 meaning for the active chain, new `branch_segments`; (5) R3.7 reuses existing `Link.inertia` (defaults → mass 0 = not set), physical checks in separate `validate_physical()` (warnings); (6) project format 1.0.0 → 1.1.0 for `visuals.json` + `assets/`; (7) R3.1 counted `committed` under stage-batch, reviewed with stage R3.
 -   2026-11-11: Workflow change by user: Gemini retired; Sonnet orchestrates, Builder = Claude subagents (Haiku/Sonnet tiers), Sonnet reviews each substage diff.
+
+-   2026-11-11: R3.2 legacy serial fallback in compile() when all joints 0/0 (Sonnet decision)
 
 ## Risks
 

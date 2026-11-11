@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <cmath>
+#include <algorithm>
 
 using json = nlohmann::json;
 
@@ -227,6 +228,10 @@ std::vector<std::string> RobotModel::validate() const {
             if (!target_found) {
                 errors.push_back("Joint '" + j_label + "': mimic target joint '" +
                                  target_name + "' does not exist");
+            } else if (std::any_of(joints.begin(), joints.end(), [&](const Joint& o) {
+                           return o.name == target_name && o.type == JointType::Fixed; })) {
+                errors.push_back("Joint '" + j_label + "': mimic target '" + target_name +
+                                 "' is a fixed joint");
             } else if (target_name == j.name) {
                 errors.push_back("Joint '" + j_label + "': mimic target cannot be itself");
             } else {

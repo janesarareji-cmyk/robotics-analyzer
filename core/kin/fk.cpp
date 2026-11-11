@@ -1,4 +1,5 @@
 #include "fk.hpp"
+#include "compiled_model.hpp"
 #include <stdexcept>
 #include <string>
 
@@ -34,81 +35,38 @@ Eigen::Isometry3d mdh_transform(double a, double alpha, double d, double theta) 
     return A;
 }
 
-static Eigen::Isometry3d compute_joint_transform(const urm::Joint& j, urm::DHConvention convention, double q_val) {
-    double theta_eff = 0.0;
-    double d_eff = 0.0;
-
-    if (convention == urm::DHConvention::Standard) {
-        theta_eff = j.dh.theta;
-        d_eff = j.dh.d;
-        if (j.type == urm::JointType::Revolute) {
-            theta_eff += q_val;
-        } else if (j.type == urm::JointType::Prismatic) {
-            d_eff += q_val;
-        }
-        // Fixed joint: q is ignored
-        return dh_transform(j.dh.a, j.dh.alpha, d_eff, theta_eff);
-    } else {
-        theta_eff = j.mdh.theta;
-        d_eff = j.mdh.d;
-        if (j.type == urm::JointType::Revolute) {
-            theta_eff += q_val;
-        } else if (j.type == urm::JointType::Prismatic) {
-            d_eff += q_val;
-        }
-        // Fixed joint: q is ignored
-        return mdh_transform(j.mdh.a, j.mdh.alpha, d_eff, theta_eff);
+FKResult forward_kinematics(const CompiledModel& cm, const std::vector<double>& q) {
+    if (static_cast<int>(q.size()) != cm.n_dof) {
+        throw std::invalid_argument("q size mismatch: expected " +
+                                    std::to_string(cm.n_dof) + ", got " +
+                                    std::to_string(q.size()));
     }
+    FKResult result;
+    result.frames.assign(cm.n_links, Eigen::Isometry3d::Identity());
+    result.frames[0] = cm.base;
+    for (const auto& j : cm.joints) {
+        Eigen::Isometry3d A = j.pre;
+        if (j.type != urm::JointType::Fixed) {
+            const double qe = j.mult * q[j.src_q_index] + j.offset;
+            if (j.type == urm::JointType::Revolute) {
+                A = A * Eigen::Isometry3d(Eigen::AngleAxisd(qe, j.axis));
+            } else {
+                A = A * Eigen::Isometry3d(Eigen::Translation3d(j.axis * qe));
+            }
+        }
+        A = A * j.post;
+        result.frames[j.child_link] = result.frames[j.parent_link] * A;
+    }
+    result.tcp = result.frames[cm.tcp_link] * cm.tool;
+    return result;
 }
 
 FKResult forward_kinematics(const urm::RobotModel& model) {
-    FKResult result;
-    result.frames.reserve(model.joints.size() + 1);
-
-    Eigen::Isometry3d current_frame = pose_to_iso(model.base);
-    result.frames.push_back(current_frame);
-
-    for (const auto& j : model.joints) {
-        Eigen::Isometry3d A = compute_joint_transform(j, model.convention, j.q);
-        current_frame = current_frame * A;
-        result.frames.push_back(current_frame);
-    }
-
-    Eigen::Isometry3d tool_iso = pose_to_iso(model.tool);
-    result.tcp = result.frames.back() * tool_iso;
-
-    return result;
+    return forward_kinematics(compile(model), model.get_q());
 }
 
 FKResult forward_kinematics(const urm::RobotModel& model, const std::vector<double>& q) {
-    int expected_dof = model.dof();
-    if (static_cast<int>(q.size()) != expected_dof) {
-        throw std::invalid_argument("q size mismatch: expected " +
-                                    std::to_string(expected_dof) + ", got " +
-                                    std::to_string(q.size()));
-    }
-
-    FKResult result;
-    result.frames.reserve(model.joints.size() + 1);
-
-    Eigen::Isometry3d current_frame = pose_to_iso(model.base);
-    result.frames.push_back(current_frame);
-
-    size_t q_idx = 0;
-    for (const auto& j : model.joints) {
-        double q_val = 0.0;
-        if (j.type != urm::JointType::Fixed) {
-            q_val = q[q_idx++];
-        }
-        Eigen::Isometry3d A = compute_joint_transform(j, model.convention, q_val);
-        current_frame = current_frame * A;
-        result.frames.push_back(current_frame);
-    }
-
-    Eigen::Isometry3d tool_iso = pose_to_iso(model.tool);
-    result.tcp = result.frames.back() * tool_iso;
-
-    return result;
+    return forward_kinematics(compile(model), q);
 }
 
 } // namespace kin
