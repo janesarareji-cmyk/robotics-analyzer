@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "convention": "standard",
+  "metadata": {
+    "name": "FixtureV1Arm",
+    "description": "Legacy schema v1 robot model",
+    "author": "Test",
+    "version": "1.0.0"
+  },
+  "base": {
+    "xyz": [0.0, 0.0, 0.0],
+    "rpy": [0.0, 0.0, 0.0]
+  },
+  "tool": {
+    "xyz": [0.1, 0.0, 0.0],
+    "rpy": [0.0, 0.0, 0.0]
+  },
+  "links": [
+    { "name": "base_link" },
+    { "name": "link1" },
+    { "name": "link2" }
+  ],
+  "joints": [
+    {
+      "name": "joint1",
+      "type": "revolute",
+      "dh": { "a": 1.0, "alpha": 0.0, "d": 0.0, "theta": 0.0 },
+      "mdh": { "a": 0.0, "alpha": 0.0, "d": 0.0, "theta": 0.0 },
+      "limits": { "lower": -3.14159, "upper": 3.14159, "vel": 1.0, "effort": 100.0 },
+      "q": 0.0
+    },
+    {
+      "name": "joint2",
+      "type": "revolute",
+      "dh": { "a": 1.0, "alpha": 0.0, "d": 0.0, "theta": 0.0 },
+      "mdh": { "a": 1.0, "alpha": 0.0, "d": 0.0, "theta": 0.0 },
+      "limits": { "lower": -3.14159, "upper": 3.14159, "vel": 1.0, "effort": 100.0 },
+      "q": 0.0
+    }
+  ]
+}

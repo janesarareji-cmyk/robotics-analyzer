@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R3 --- Import
--   **Substage:** R3.1 --- URM schema v2: tree + origin/axis joints (planned)
--   **Owner now:** Builder
+-   **Substage:** R3.1 --- URM schema v2: tree + origin/axis joints (ready-for-review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 -   **Stage R2 gate: PASSED (Reviewer verified: CTest 5/5, pytest 146/146)**
     -   Gate results as recorded by Builder:
@@ -59,7 +59,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | approved (follow-ups → R2.8) |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | approved (follow-up → R2.9) |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | approved |
-| R3.1  | URM schema v2: tree + origin/axis joints  | test_urm.cpp, test_urm_bridge.py   | planned  |
+| R3.1  | URM schema v2: tree + origin/axis joints  | test_urm.cpp, test_urm_bridge.py   | ready-for-review |
 | R3.2  | Compiled kinematic model + tree FK        | test_fk.cpp, test_fk_bridge.py     | planned  |
 | R3.3  | URDF parser → URM (no meshes)             | test_urdf_import.py                | planned  |
 | R3.4  | UI for tree/origin_axis joints            | test_ui_tree.py                    | planned  |
@@ -386,7 +386,7 @@ Tests (all old tests must stay green):
 
 Done when: `.\run_tests.ps1` all green, `graphify update .` run, row R3.1 set to `ready-for-review`, commit `R3.1: URM schema v2`.
 
-Changed files (expected): `core/urm/joint.hpp`, `core/urm/robot_model.hpp`, `core/urm/robot_model.cpp`, `bindings/urm_bindings.cpp`, `docs/urm-schema-v2.md`, `tests/cpp/test_urm.cpp`, `tests/python/test_urm_bridge.py`, `tests/python/fixtures/robot_model_v1.json`.
+Changed files: `core/urm/joint.hpp`, `core/urm/robot_model.hpp`, `core/urm/robot_model.cpp`, `bindings/urm_bindings.cpp`, `docs/urm-schema-v2.md`, `tests/cpp/test_urm.cpp`, `tests/python/test_urm_bridge.py`, `tests/python/fixtures/robot_model_v1.json`, `app/panels/dh_editor.py`, `tests/python/test_robot_in_project.py`.
 
 ### R3.2 onward
 

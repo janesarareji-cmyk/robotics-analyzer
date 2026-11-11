@@ -13,14 +13,6 @@ enum class DHConvention {
     Modified,  ///< Modified Denavit-Hartenberg convention (Craig)
 };
 
-/// 6D Pose in Cartesian space: xyz position [m] and rpy rotation [rad].
-/// Rotation is fixed-axis XYZ convention:
-/// R = Rz(yaw) · Ry(pitch) · Rx(roll), with rpy = (roll, pitch, yaw).
-struct Pose {
-    std::array<double, 3> xyz{};
-    std::array<double, 3> rpy{};
-};
-
 /// Metadata about the robot.
 struct RobotMetadata {
     std::string name        = "Unnamed Robot";
@@ -30,20 +22,24 @@ struct RobotMetadata {
 };
 
 /// The Unified Robot Model — single source of truth.
-/// Links and joints alternate: link[0] → joint[0] → link[1] → joint[1] → ...
-/// The `joints` list includes all joints (revolute, prismatic, and fixed).
-/// The `dof()` method counts non-fixed (actuated) joints only.
+/// Supports both serial chains and branching kinematic trees.
+/// The `joints` list includes all joints (revolute, prismatic, fixed, mimic).
+/// The `dof()` method counts non-fixed, non-mimic (actuated) joints only.
 struct RobotModel {
-    int                  schema_version = 1;
+    int                  schema_version = 2;               ///< Schema version (v2 from R3.1)
     RobotMetadata        metadata;
     DHConvention         convention     = DHConvention::Standard;
-    Pose                 base{};  ///< Base mount transform: world -> frame 0
-    Pose                 tool{};  ///< End-effector transform: last frame -> TCP
+    Pose                 base{};                           ///< Base mount transform: world -> frame 0
+    Pose                 tool{};                           ///< End-effector transform: tcp_link -> TCP
+    int                  tcp_link       = -1;              ///< Target link for tool pose (-1 = last link)
     std::vector<Link>    links;
     std::vector<Joint>   joints;
 
-    /// Return the number of actuated (non-fixed) DOF.
+    /// Return the number of actuated (non-Fixed, non-mimic) DOF.
     int dof() const;
+
+    /// Return mapping from joint index to DOF vector index (-1 for fixed/mimic joints).
+    std::vector<int> q_index_map() const;
 
     /// Return a joint value vector of length dof().
     std::vector<double> get_q() const;

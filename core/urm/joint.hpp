@@ -2,8 +2,10 @@
 #ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
 #endif
-#include <string>
+#include <array>
 #include <cmath>
+#include <optional>
+#include <string>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -18,11 +20,26 @@ enum class JointType {
     Fixed,       ///< No DOF — rigid connection
 };
 
+/// Kinematics parameterisation mode for a joint.
+enum class JointKinematics {
+    DH,          ///< Denavit-Hartenberg parameterisation (serial chains)
+    OriginAxis,  ///< Rigid origin transform + 3D unit axis (URDF / tree kinematic trees)
+};
+
 /// Joint variable conventions:
-/// - Revolute:  θ_eff = θ + q (joint position q adds to DH/MDH angle θ)
-/// - Prismatic: d_eff = d + q (joint displacement q adds to DH/MDH link offset d)
+/// - Revolute:  θ_eff = θ + q (joint position q adds to DH/MDH angle θ or rotates about axis)
+/// - Prismatic: d_eff = d + q (joint displacement q adds to DH/MDH link offset d or translates along axis)
 /// - Fixed:     q is ignored (rigid connection, zero DOF)
-/// Same convention applies to both standard DH and modified DH (MDH).
+/// - Mimic:     q is ignored (derived from master joint: q_mimic = multiplier * q_master + offset)
+/// Same convention applies to both standard DH, modified DH (MDH), and OriginAxis.
+
+/// 6D Pose in Cartesian space: xyz position [m] and rpy rotation [rad].
+/// Rotation is fixed-axis XYZ convention:
+/// R = Rz(yaw) · Ry(pitch) · Rx(roll), with rpy = (roll, pitch, yaw).
+struct Pose {
+    std::array<double, 3> xyz{};
+    std::array<double, 3> rpy{};
+};
 
 /// Standard Denavit–Hartenberg parameters for one joint.
 struct DHParams {
@@ -56,14 +73,27 @@ struct JointLimits {
 /// - Fixed:     [0, 0]
 JointLimits default_limits(JointType type);
 
-/// One joint in the kinematic chain.
+/// Mimic joint specification: q = multiplier * q_master + offset.
+struct Mimic {
+    std::string joint;            ///< Name of master joint
+    double      multiplier = 1.0; ///< Multiplier coefficient
+    double      offset     = 0.0; ///< Constant offset
+};
+
+/// One joint in the kinematic tree.
 struct Joint {
-    std::string name;
-    JointType   type   = JointType::Revolute;
-    DHParams    dh;      ///< Standard DH parameters
-    MDHParams   mdh;     ///< Modified DH parameters
-    JointLimits limits;
-    double      q      = 0.0;  ///< Current joint value [rad or m]
+    std::string           name;
+    JointType             type        = JointType::Revolute;
+    int                   parent_link = 0;                  ///< Index of parent link
+    int                   child_link  = 0;                  ///< Index of child link
+    JointKinematics       kinematics  = JointKinematics::DH;///< Kinematic parameterisation mode
+    Pose                  origin;                           ///< Origin transform from parent link
+    std::array<double, 3> axis        = {0.0, 0.0, 1.0};    ///< Joint axis unit vector in child frame
+    std::optional<Mimic>  mimic;                            ///< Optional mimic dependency
+    DHParams              dh;                               ///< Standard DH parameters
+    MDHParams             mdh;                              ///< Modified DH parameters
+    JointLimits           limits;
+    double                q           = 0.0;                ///< Current joint value [rad or m]
 };
 
 } // namespace urm

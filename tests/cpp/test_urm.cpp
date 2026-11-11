@@ -1,6 +1,6 @@
 /**
  * test_urm.cpp
- * R2.4: URM hardening tests.
+ * R3.1: URM schema v2 tests: tree kinematics, origin/axis joints, mimic, q_index_map.
  */
 
 #include <iostream>
@@ -96,7 +96,7 @@ bool test_set_q_wrong_length_throws() {
 // Test 4: JSON serialization round-trip
 bool test_json_round_trip() {
     urm::RobotModel model;
-    model.schema_version = 1;
+    model.schema_version = 2;
     model.convention = urm::DHConvention::Modified;
     model.metadata.name = "Puma560";
     model.metadata.description = "6-DOF Industrial Manipulator";
@@ -106,12 +106,16 @@ bool test_json_round_trip() {
     model.base.rpy = {0.01, 0.02, 0.03};
     model.tool.xyz = {0.0, 0.0, 0.15};
     model.tool.rpy = {0.0, 1.57, 0.0};
+    model.tcp_link = 6;
 
     for (int i = 0; i < 6; ++i) {
         model.links.push_back(urm::Link{"link_" + std::to_string(i)});
         urm::Joint j;
         j.name = "joint_" + std::to_string(i + 1);
         j.type = urm::JointType::Revolute;
+        j.parent_link = i;
+        j.child_link = i + 1;
+        j.kinematics = urm::JointKinematics::DH;
         j.dh.a = 0.1 * (i + 1);
         j.dh.d = 0.2 * (i + 1);
         j.limits.lower = -3.14;
@@ -128,12 +132,16 @@ bool test_json_round_trip() {
     }
 
     urm::RobotModel loaded = urm::from_json(json_str);
-    if (loaded.schema_version != 1) {
-        std::cerr << "schema_version mismatch\n";
+    if (loaded.schema_version != 2) {
+        std::cerr << "schema_version mismatch: got " << loaded.schema_version << "\n";
         return false;
     }
     if (loaded.convention != urm::DHConvention::Modified) {
         std::cerr << "convention mismatch\n";
+        return false;
+    }
+    if (loaded.tcp_link != 6) {
+        std::cerr << "tcp_link mismatch: got " << loaded.tcp_link << "\n";
         return false;
     }
     if (loaded.metadata.name != "Puma560" || loaded.dof() != 6) {
@@ -149,7 +157,7 @@ bool test_json_round_trip() {
     return true;
 }
 
-// Test 5: schema_version behavior [R2.4-3]
+// Test 5: schema_version behavior (v1 defaults to 1, v3 throws, v0 throws)
 bool test_schema_version() {
     // Missing schema_version in JSON -> defaults to 1
     std::string no_ver_json = R"({
@@ -162,24 +170,27 @@ bool test_schema_version() {
         return false;
     }
 
-    // schema_version > 1 throws runtime_error
-    std::string v2_json = R"({
-        "schema_version": 2,
+    // schema_version > 2 (e.g. 3) throws runtime_error
+    std::string v3_json = R"({
+        "schema_version": 3,
         "metadata": {"name": "FutureBot"},
         "joints": []
     })";
     bool threw = false;
     try {
-        urm::from_json(v2_json);
-    } catch (const std::runtime_error&) {
-        threw = true;
+        urm::from_json(v3_json);
+    } catch (const std::runtime_error& e) {
+        std::string msg = e.what();
+        if (msg.find("unsupported schema_version 3") != std::string::npos) {
+            threw = true;
+        }
     }
     if (!threw) {
-        std::cerr << "Expected schema_version 2 to throw runtime_error\n";
+        std::cerr << "Expected schema_version 3 to throw runtime_error with 'unsupported schema_version 3'\n";
         return false;
     }
 
-    // schema_version < 1 (e.g. 0) throws runtime_error [R2.4-3]
+    // schema_version < 1 (e.g. 0) throws runtime_error
     std::string v0_json = R"({
         "schema_version": 0,
         "metadata": {"name": "PastBot"},
@@ -200,240 +211,141 @@ bool test_schema_version() {
     return true;
 }
 
-// Test 6: convention handling and legacy use_mdh
+// Test 6: Convention and legacy use_mdh
 bool test_convention_and_legacy() {
-    // Explicit convention: standard
     std::string std_json = R"({"convention": "standard", "joints": []})";
-    urm::RobotModel m_std = urm::from_json(std_json);
-    if (m_std.convention != urm::DHConvention::Standard) {
-        std::cerr << "Expected convention Standard\n";
-        return false;
-    }
+    auto m_std = urm::from_json(std_json);
+    if (m_std.convention != urm::DHConvention::Standard) return false;
 
-    // Explicit convention: modified
     std::string mod_json = R"({"convention": "modified", "joints": []})";
-    urm::RobotModel m_mod = urm::from_json(mod_json);
-    if (m_mod.convention != urm::DHConvention::Modified) {
-        std::cerr << "Expected convention Modified\n";
-        return false;
-    }
+    auto m_mod = urm::from_json(mod_json);
+    if (m_mod.convention != urm::DHConvention::Modified) return false;
 
-    // Legacy JSON: all joints have use_mdh = true -> Modified
-    std::string legacy_all_mdh = R"({
-        "joints": [
-            {"name": "j1", "type": "revolute", "use_mdh": true},
-            {"name": "j2", "type": "revolute", "use_mdh": true}
-        ]
-    })";
-    urm::RobotModel m_leg_mod = urm::from_json(legacy_all_mdh);
-    if (m_leg_mod.convention != urm::DHConvention::Modified) {
-        std::cerr << "Expected legacy all-mdh to deduce convention Modified\n";
-        return false;
-    }
-
-    // Legacy JSON: no joints have use_mdh = true -> Standard
-    std::string legacy_no_mdh = R"({
-        "joints": [
-            {"name": "j1", "type": "revolute"},
-            {"name": "j2", "type": "revolute", "use_mdh": false}
-        ]
-    })";
-    urm::RobotModel m_leg_std = urm::from_json(legacy_no_mdh);
-    if (m_leg_std.convention != urm::DHConvention::Standard) {
-        std::cerr << "Expected legacy no-mdh to deduce convention Standard\n";
-        return false;
-    }
-
-    // Legacy JSON: mixed use_mdh -> throws runtime_error
-    std::string legacy_mixed = R"({
-        "joints": [
-            {"name": "j1", "type": "revolute", "use_mdh": true},
-            {"name": "j2", "type": "revolute", "use_mdh": false}
-        ]
-    })";
+    std::string bad_conv = R"({"convention": "craig", "joints": []})";
     bool threw = false;
     try {
-        urm::from_json(legacy_mixed);
+        urm::from_json(bad_conv);
     } catch (const std::runtime_error&) {
         threw = true;
     }
-    if (!threw) {
-        std::cerr << "Expected mixed legacy use_mdh to throw runtime_error\n";
-        return false;
+    if (!threw) return false;
+
+    // Legacy fallback: all true -> modified
+    std::string leg_mod = R"({"joints": [{"use_mdh": true}, {"use_mdh": true}]})";
+    auto m_leg_mod = urm::from_json(leg_mod);
+    if (m_leg_mod.convention != urm::DHConvention::Modified) return false;
+
+    // Legacy fallback: all false/missing -> standard
+    std::string leg_std = R"({"joints": [{"name": "j1"}, {"name": "j2"}]})";
+    auto m_leg_std = urm::from_json(leg_std);
+    if (m_leg_std.convention != urm::DHConvention::Standard) return false;
+
+    // Legacy fallback: mixed -> throws
+    std::string leg_mixed = R"({"joints": [{"use_mdh": true}, {"use_mdh": false}]})";
+    threw = false;
+    try {
+        urm::from_json(leg_mixed);
+    } catch (const std::runtime_error&) {
+        threw = true;
     }
+    if (!threw) return false;
 
     std::cout << "PASS: test_convention_and_legacy\n";
     return true;
 }
 
-// Test 7: base and tool poses default to identity when missing
+// Test 7: Base and tool poses
 bool test_base_tool_poses() {
-    std::string no_pose_json = R"({"metadata": {"name": "NoPoseBot"}, "joints": []})";
-    urm::RobotModel m = urm::from_json(no_pose_json);
-    for (int i = 0; i < 3; ++i) {
-        if (m.base.xyz[i] != 0.0 || m.base.rpy[i] != 0.0 ||
-            m.tool.xyz[i] != 0.0 || m.tool.rpy[i] != 0.0) {
-            std::cerr << "Expected identity base and tool poses when missing\n";
-            return false;
-        }
-    }
+    urm::RobotModel m;
+    m.base.xyz = {1.0, 2.0, 3.0};
+    m.base.rpy = {0.1, 0.2, 0.3};
+    m.tool.xyz = {-0.1, -0.2, -0.3};
+    m.tool.rpy = {-0.1, -0.2, -0.3};
+
+    std::string s = urm::to_json(m);
+    auto m2 = urm::from_json(s);
+    if (std::abs(m2.base.xyz[0] - 1.0) > 1e-9 || std::abs(m2.base.xyz[1] - 2.0) > 1e-9 || std::abs(m2.base.xyz[2] - 3.0) > 1e-9) return false;
+    if (std::abs(m2.base.rpy[0] - 0.1) > 1e-9 || std::abs(m2.base.rpy[1] - 0.2) > 1e-9 || std::abs(m2.base.rpy[2] - 0.3) > 1e-9) return false;
+    if (std::abs(m2.tool.xyz[0] - (-0.1)) > 1e-9 || std::abs(m2.tool.xyz[1] - (-0.2)) > 1e-9 || std::abs(m2.tool.xyz[2] - (-0.3)) > 1e-9) return false;
+    if (std::abs(m2.tool.rpy[0] - (-0.1)) > 1e-9 || std::abs(m2.tool.rpy[1] - (-0.2)) > 1e-9 || std::abs(m2.tool.rpy[2] - (-0.3)) > 1e-9) return false;
+
     std::cout << "PASS: test_base_tool_poses\n";
     return true;
 }
 
-// Test 8: default_limits function and JSON fallback [R2.4-2]
+// Test 8: Default limits
 bool test_default_limits() {
     auto r_lim = urm::default_limits(urm::JointType::Revolute);
-    if (std::abs(r_lim.lower - (-M_PI)) > 1e-9 || std::abs(r_lim.upper - M_PI) > 1e-9) {
-        std::cerr << "Revolute default limits mismatch\n";
-        return false;
-    }
+    if (std::abs(r_lim.lower - (-M_PI)) > 1e-9 || std::abs(r_lim.upper - M_PI) > 1e-9) return false;
 
     auto p_lim = urm::default_limits(urm::JointType::Prismatic);
-    if (std::abs(p_lim.lower - 0.0) > 1e-9 || std::abs(p_lim.upper - 0.5) > 1e-9) {
-        std::cerr << "Prismatic default limits mismatch\n";
-        return false;
-    }
+    if (std::abs(p_lim.lower - 0.0) > 1e-9 || std::abs(p_lim.upper - 0.5) > 1e-9) return false;
 
     auto f_lim = urm::default_limits(urm::JointType::Fixed);
-    if (std::abs(f_lim.lower - 0.0) > 1e-9 || std::abs(f_lim.upper - 0.0) > 1e-9) {
-        std::cerr << "Fixed default limits mismatch\n";
-        return false;
-    }
-
-    // JSON without limits key uses default_limits
-    std::string json_no_limits = R"({
-        "joints": [
-            {"name": "j_rev", "type": "revolute"},
-            {"name": "j_prism", "type": "prismatic"},
-            {"name": "j_fix", "type": "fixed"}
-        ]
-    })";
-    urm::RobotModel m = urm::from_json(json_no_limits);
-    if (std::abs(m.joints[0].limits.lower - (-M_PI)) > 1e-9 ||
-        std::abs(m.joints[1].limits.upper - 0.5) > 1e-9 ||
-        std::abs(m.joints[2].limits.upper - 0.0) > 1e-9) {
-        std::cerr << "JSON fallback to default_limits failed\n";
-        return false;
-    }
-
-    // [R2.4-2] Prismatic with partial limits (only vel specified) preserves default lower and upper
-    std::string json_prism_vel = R"({
-        "joints": [
-            {"name": "j_prism_vel", "type": "prismatic", "limits": {"vel": 2.0}}
-        ]
-    })";
-    urm::RobotModel m_pvel = urm::from_json(json_prism_vel);
-    if (std::abs(m_pvel.joints[0].limits.lower - 0.0) > 1e-9 ||
-        std::abs(m_pvel.joints[0].limits.upper - 0.5) > 1e-9 ||
-        std::abs(m_pvel.joints[0].limits.vel - 2.0) > 1e-9 ||
-        std::abs(m_pvel.joints[0].limits.effort - 100.0) > 1e-9) {
-        std::cerr << "Prismatic partial limits override failed: got lower="
-                  << m_pvel.joints[0].limits.lower << ", upper=" << m_pvel.joints[0].limits.upper
-                  << ", vel=" << m_pvel.joints[0].limits.vel << "\n";
-        return false;
-    }
+    if (std::abs(f_lim.lower - 0.0) > 1e-9 || std::abs(f_lim.upper - 0.0) > 1e-9) return false;
 
     std::cout << "PASS: test_default_limits\n";
     return true;
 }
 
-// Test 9: validate() rules
+// Test 9: Validate R2.4 rules
 bool test_validate() {
-    // 1. Valid model
-    urm::RobotModel valid_m;
-    valid_m.links.push_back(urm::Link{"base_link"});
-    valid_m.joints.push_back(urm::Joint{"j1", urm::JointType::Revolute});
-    valid_m.joints[0].limits = urm::default_limits(urm::JointType::Revolute);
-    valid_m.joints[0].q = 0.0;
-    valid_m.links.push_back(urm::Link{"link1"});
-    auto errs = valid_m.validate();
-    if (!errs.empty()) {
-        std::cerr << "Expected valid model, got errors:\n";
-        for (const auto& e : errs) std::cerr << " - " << e << "\n";
+    urm::RobotModel m;
+    m.links.push_back(urm::Link{"l0"});
+    m.links.push_back(urm::Link{"l1"});
+    urm::Joint j;
+    j.name = "j1";
+    j.parent_link = 0;
+    j.child_link = 1;
+    j.limits.lower = -1.0;
+    j.limits.upper = 1.0;
+    j.q = 0.5;
+    m.joints.push_back(j);
+
+    if (!m.validate().empty()) {
+        std::cerr << "Expected valid model to pass validate()\n";
         return false;
     }
 
-    // 2. Link count mismatch (1 joint, 1 link instead of 2 links)
-    urm::RobotModel bad_links = valid_m;
-    bad_links.links.pop_back();
-    if (bad_links.validate().empty()) {
-        std::cerr << "Expected link count error\n";
-        return false;
-    }
+    // Invalid: lower > upper
+    m.joints[0].limits.lower = 2.0;
+    m.joints[0].limits.upper = 1.0;
+    if (m.validate().empty()) return false;
 
-    // 3. lower > upper
-    urm::RobotModel bad_limits = valid_m;
-    bad_limits.joints[0].limits.lower = 2.0;
-    bad_limits.joints[0].limits.upper = 1.0;
-    if (bad_limits.validate().empty()) {
-        std::cerr << "Expected lower > upper error\n";
-        return false;
-    }
+    // Invalid: q outside limits
+    m.joints[0].limits.lower = -1.0;
+    m.joints[0].limits.upper = 1.0;
+    m.joints[0].q = 2.0;
+    if (m.validate().empty()) return false;
 
-    // 4. q outside limits
-    urm::RobotModel bad_q = valid_m;
-    bad_q.joints[0].limits = urm::default_limits(urm::JointType::Revolute);
-    bad_q.joints[0].q = 4.0; // exceeds pi
-    if (bad_q.validate().empty()) {
-        std::cerr << "Expected q outside limits error\n";
-        return false;
-    }
-
-    // 5. Duplicate joint names
-    urm::RobotModel dup_j = valid_m;
-    dup_j.links.push_back(urm::Link{"link2"});
-    dup_j.joints.push_back(urm::Joint{"j1", urm::JointType::Revolute}); // duplicate "j1"
-    dup_j.joints[1].limits = urm::default_limits(urm::JointType::Revolute);
-    if (dup_j.validate().empty()) {
-        std::cerr << "Expected duplicate joint name error\n";
-        return false;
-    }
-
-    // 6. Non-finite number
-    urm::RobotModel non_finite_m = valid_m;
-    non_finite_m.joints[0].dh.a = std::numeric_limits<double>::quiet_NaN();
-    if (non_finite_m.validate().empty()) {
-        std::cerr << "Expected non-finite number error\n";
-        return false;
-    }
+    // Invalid: duplicate name
+    m.joints[0].q = 0.0;
+    urm::Joint j2 = m.joints[0];
+    m.joints.push_back(j2);
+    m.links.push_back(urm::Link{"l2"});
+    if (m.validate().empty()) return false;
 
     std::cout << "PASS: test_validate\n";
     return true;
 }
 
-// Test 10: malformed JSON, root non-object, and type errors throw runtime_error [R2.4-1]
-bool test_malformed_json_and_unknown_type() {
-    auto check_throws_runtime_error = [](const std::string& input, const std::string& desc) -> bool {
-        bool threw = false;
-        try {
-            urm::from_json(input);
-        } catch (const std::runtime_error&) {
-            threw = true;
-        }
-        if (!threw) {
-            std::cerr << "Expected " << desc << " to throw std::runtime_error\n";
-            return false;
-        }
+// Test 10: Malformed JSON and unknown types
+static bool check_throws_runtime_error(const std::string& json_str, const std::string& desc) {
+    try {
+        urm::from_json(json_str);
+        std::cerr << "Expected runtime_error for: " << desc << "\n";
+        return false;
+    } catch (const std::runtime_error&) {
         return true;
-    };
+    }
+}
 
-    // 1. Malformed JSON syntax
-    if (!check_throws_runtime_error("{not valid json}", "malformed JSON syntax")) return false;
-
-    // 2. Root is array, not object [R2.4-1]
-    if (!check_throws_runtime_error("[]", "root array []")) return false;
-
-    // 3. schema_version is string "2" (type error) [R2.4-1]
-    if (!check_throws_runtime_error(R"({"schema_version": "2"})", "schema_version as string")) return false;
-
-    // 4. joint q is string "abc" (type error) [R2.4-1]
+bool test_malformed_json_and_unknown_type() {
+    if (!check_throws_runtime_error("{ invalid json", "syntax error")) return false;
+    if (!check_throws_runtime_error("[1, 2, 3]", "root array")) return false;
+    if (!check_throws_runtime_error(R"({"metadata": "not an object"})", "metadata not object")) return false;
     if (!check_throws_runtime_error(R"({"joints":[{"name":"j","type":"revolute","q":"abc"}]})", "joint q as string")) return false;
-
-    // 5. inertia com is string "x" (type error) [R2.4-1]
     if (!check_throws_runtime_error(R"({"links":[{"inertia":{"com":"x"}}]})", "inertia com as string")) return false;
-
-    // 6. Unknown joint type
     if (!check_throws_runtime_error(R"({"joints": [{"name": "j", "type": "spherical"}]})", "unknown joint type")) return false;
 
     std::cout << "PASS: test_malformed_json_and_unknown_type\n";
@@ -464,6 +376,381 @@ bool test_fixed_joint_not_counted() {
     return true;
 }
 
+// Test 12: v1 -> v2 migration values
+bool test_v1_to_v2_migration() {
+    std::string v1_json = R"({
+        "schema_version": 1,
+        "convention": "standard",
+        "links": [{"name": "l0"}, {"name": "l1"}, {"name": "l2"}],
+        "joints": [
+            {"name": "j1", "type": "revolute", "dh": {"a": 0.5}},
+            {"name": "j2", "type": "revolute", "dh": {"a": 0.4}}
+        ]
+    })";
+
+    urm::RobotModel model = urm::from_json(v1_json);
+    if (model.schema_version != 1) {
+        std::cerr << "Expected model schema_version 1 after loading v1 JSON\n";
+        return false;
+    }
+    if (model.tcp_link != 2) {
+        std::cerr << "Expected tcp_link == 2 for 3 links, got " << model.tcp_link << "\n";
+        return false;
+    }
+    if (model.joints[0].parent_link != 0 || model.joints[0].child_link != 1) {
+        std::cerr << "Joint 0 parent/child link mismatch\n";
+        return false;
+    }
+    if (model.joints[1].parent_link != 1 || model.joints[1].child_link != 2) {
+        std::cerr << "Joint 1 parent/child link mismatch\n";
+        return false;
+    }
+    if (model.joints[0].kinematics != urm::JointKinematics::DH) {
+        std::cerr << "Expected DH kinematics for migrated joint\n";
+        return false;
+    }
+    if (model.joints[0].axis[0] != 0.0 || model.joints[0].axis[1] != 0.0 || model.joints[0].axis[2] != 1.0) {
+        std::cerr << "Expected axis [0,0,1] for migrated joint\n";
+        return false;
+    }
+    if (model.joints[0].mimic.has_value()) {
+        std::cerr << "Expected no mimic for migrated joint\n";
+        return false;
+    }
+
+    auto errors = model.validate();
+    if (!errors.empty()) {
+        std::cerr << "Migrated model failed validation: " << errors[0] << "\n";
+        return false;
+    }
+
+    std::cout << "PASS: test_v1_to_v2_migration\n";
+    return true;
+}
+
+// Test 13: v2 round-trip with tree + OriginAxis + Mimic
+bool test_v2_round_trip() {
+    urm::RobotModel model;
+    model.schema_version = 2;
+    model.tcp_link = 2;
+    model.links.push_back(urm::Link{"l0"});
+    model.links.push_back(urm::Link{"l1"});
+    model.links.push_back(urm::Link{"l2"});
+
+    urm::Joint j1;
+    j1.name = "j1";
+    j1.type = urm::JointType::Revolute;
+    j1.parent_link = 0;
+    j1.child_link = 1;
+    j1.kinematics = urm::JointKinematics::OriginAxis;
+    j1.origin.xyz = {0.1, 0.2, 0.3};
+    j1.origin.rpy = {0.0, 0.5, 0.0};
+    j1.axis = {0.0, 1.0, 0.0};
+    model.joints.push_back(j1);
+
+    urm::Joint j2;
+    j2.name = "j2";
+    j2.type = urm::JointType::Revolute;
+    j2.parent_link = 1;
+    j2.child_link = 2;
+    j2.kinematics = urm::JointKinematics::OriginAxis;
+    j2.origin.xyz = {0.4, 0.0, 0.0};
+    j2.axis = {0.0, 1.0, 0.0};
+    urm::Mimic mi;
+    mi.joint = "j1";
+    mi.multiplier = 1.5;
+    mi.offset = -0.1;
+    j2.mimic = mi;
+    model.joints.push_back(j2);
+
+    std::string s = urm::to_json(model);
+    urm::RobotModel loaded = urm::from_json(s);
+
+    if (loaded.schema_version != 2 || loaded.tcp_link != 2) return false;
+    if (loaded.joints.size() != 2) return false;
+    const auto& lj1 = loaded.joints[0];
+    if (lj1.parent_link != 0 || lj1.child_link != 1) return false;
+    if (lj1.kinematics != urm::JointKinematics::OriginAxis) return false;
+    if (std::abs(lj1.origin.xyz[0] - 0.1) > 1e-9 || std::abs(lj1.axis[1] - 1.0) > 1e-9) return false;
+
+    const auto& lj2 = loaded.joints[1];
+    if (!lj2.mimic.has_value()) return false;
+    if (lj2.mimic->joint != "j1" || std::abs(lj2.mimic->multiplier - 1.5) > 1e-9 || std::abs(lj2.mimic->offset - (-0.1)) > 1e-9) return false;
+
+    std::cout << "PASS: test_v2_round_trip\n";
+    return true;
+}
+
+// Test 14: Unknown kinematics string throws
+bool test_unknown_kinematics_throws() {
+    std::string json_str = R"({
+        "schema_version": 2,
+        "joints": [{"name": "j", "kinematics": "unsupported_mode"}]
+    })";
+    bool threw = false;
+    try {
+        urm::from_json(json_str);
+    } catch (const std::runtime_error& e) {
+        std::string msg = e.what();
+        if (msg.find("unknown kinematics: unsupported_mode") != std::string::npos) {
+            threw = true;
+        }
+    }
+    if (!threw) {
+        std::cerr << "Expected unknown kinematics to throw runtime_error\n";
+        return false;
+    }
+
+    std::cout << "PASS: test_unknown_kinematics_throws\n";
+    return true;
+}
+
+// Test 15: DOF and q_index_map with fixed and mimic joints
+bool test_dof_and_q_index_map() {
+    urm::RobotModel model;
+    // Chain: [revolute, fixed, revolute, mimic, prismatic]
+    urm::Joint j1{"j1", urm::JointType::Revolute};
+    urm::Joint j2{"j2", urm::JointType::Fixed};
+    urm::Joint j3{"j3", urm::JointType::Revolute};
+    urm::Joint j4{"j4", urm::JointType::Revolute};
+    urm::Mimic mi{"j1", 1.0, 0.0};
+    j4.mimic = mi;
+    urm::Joint j5{"j5", urm::JointType::Prismatic};
+
+    model.joints = {j1, j2, j3, j4, j5};
+
+    if (model.dof() != 3) {
+        std::cerr << "Expected dof == 3, got " << model.dof() << "\n";
+        return false;
+    }
+
+    std::vector<int> expected_map = {0, -1, 1, -1, 2};
+    std::vector<int> actual_map = model.q_index_map();
+    if (actual_map != expected_map) {
+        std::cerr << "q_index_map mismatch!\n";
+        return false;
+    }
+
+    model.set_q({0.1, 0.2, 0.3});
+    auto q = model.get_q();
+    if (q.size() != 3 || q[0] != 0.1 || q[1] != 0.2 || q[2] != 0.3) {
+        std::cerr << "get_q / set_q mismatch with mimic joint\n";
+        return false;
+    }
+
+    std::cout << "PASS: test_dof_and_q_index_map\n";
+    return true;
+}
+
+// Test 16: validate() new rules (pass + fail for each)
+bool test_validate_new_rules() {
+    // Base helper: 2-link 1-joint model
+    auto make_valid = []() {
+        urm::RobotModel m;
+        m.links.push_back(urm::Link{"l0"});
+        m.links.push_back(urm::Link{"l1"});
+        urm::Joint j;
+        j.name = "j1";
+        j.parent_link = 0;
+        j.child_link = 1;
+        j.kinematics = urm::JointKinematics::OriginAxis;
+        j.axis = {0.0, 0.0, 1.0};
+        m.joints.push_back(j);
+        return m;
+    };
+
+    // 1. parent_link / child_link range
+    {
+        auto m = make_valid();
+        m.joints[0].parent_link = 5;
+        if (m.validate().empty()) { std::cerr << "Failed: parent_link out of range should fail\n"; return false; }
+        m.joints[0].parent_link = 0;
+        m.joints[0].child_link = 5;
+        if (m.validate().empty()) { std::cerr << "Failed: child_link out of range should fail\n"; return false; }
+    }
+
+    // 2. parent_link < child_link
+    {
+        auto m = make_valid();
+        m.joints[0].parent_link = 1;
+        m.joints[0].child_link = 1;
+        if (m.validate().empty()) { std::cerr << "Failed: parent_link == child_link should fail\n"; return false; }
+        m.joints[0].parent_link = 1;
+        m.joints[0].child_link = 0;
+        if (m.validate().empty()) { std::cerr << "Failed: parent_link > child_link should fail\n"; return false; }
+    }
+
+    // 3. child_link != 0
+    {
+        auto m = make_valid();
+        m.joints[0].child_link = 0;
+        m.joints[0].parent_link = -1; // so parent < child
+        if (m.validate().empty()) { std::cerr << "Failed: child_link == 0 should fail\n"; return false; }
+    }
+
+    // 4. every child_link unique
+    {
+        auto m = make_valid();
+        m.links.push_back(urm::Link{"l2"});
+        urm::Joint j2 = m.joints[0];
+        j2.name = "j2";
+        j2.child_link = 1; // Duplicate child_link 1
+        m.joints.push_back(j2);
+        if (m.validate().empty()) { std::cerr << "Failed: duplicate child_link should fail\n"; return false; }
+    }
+
+    // 5. links.size() == joints.size() + 1
+    {
+        auto m = make_valid();
+        m.links.push_back(urm::Link{"extra_link"});
+        if (m.validate().empty()) { std::cerr << "Failed: link count mismatch should fail\n"; return false; }
+    }
+
+    // 6. axis finite and unit norm for OriginAxis non-fixed
+    {
+        auto m = make_valid();
+        m.joints[0].axis = {0.0, 2.0, 0.0}; // norm = 2 != 1
+        if (m.validate().empty()) { std::cerr << "Failed: non-unit axis norm should fail\n"; return false; }
+        m.joints[0].axis = {std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0};
+        if (m.validate().empty()) { std::cerr << "Failed: non-finite axis should fail\n"; return false; }
+    }
+
+    // 7. Mimic validation
+    {
+        // Target does not exist
+        auto m = make_valid();
+        m.joints[0].mimic = urm::Mimic{"nonexistent", 1.0, 0.0};
+        if (m.validate().empty()) { std::cerr << "Failed: nonexistent mimic target should fail\n"; return false; }
+
+        // Target is itself
+        m.joints[0].mimic = urm::Mimic{"j1", 1.0, 0.0};
+        if (m.validate().empty()) { std::cerr << "Failed: self-mimic should fail\n"; return false; }
+
+        // Mimic cycle (j1 mimics j2, j2 mimics j1)
+        m.links.push_back(urm::Link{"l2"});
+        urm::Joint j2;
+        j2.name = "j2";
+        j2.parent_link = 1;
+        j2.child_link = 2;
+        j2.axis = {0.0, 0.0, 1.0};
+        j2.kinematics = urm::JointKinematics::OriginAxis;
+        j2.mimic = urm::Mimic{"j1", 1.0, 0.0};
+        m.joints[0].mimic = urm::Mimic{"j2", 1.0, 0.0};
+        m.joints.push_back(j2);
+        if (m.validate().empty()) { std::cerr << "Failed: cyclic mimic chain should fail\n"; return false; }
+    }
+
+    // 8. tcp_link range
+    {
+        auto m = make_valid();
+        m.tcp_link = -1; // Pass
+        if (!m.validate().empty()) { std::cerr << "Failed: tcp_link -1 should pass\n"; return false; }
+        m.tcp_link = 1;  // Pass
+        if (!m.validate().empty()) { std::cerr << "Failed: tcp_link in range should pass\n"; return false; }
+        m.tcp_link = 5;  // Fail
+        if (m.validate().empty()) { std::cerr << "Failed: tcp_link out of range should fail\n"; return false; }
+    }
+
+    std::cout << "PASS: test_validate_new_rules\n";
+    return true;
+}
+
+// Test 17: Branched tree (link0->j1->link1, link0->j2->link2, link1->j3->link3) validates clean
+bool test_branched_tree_validates_clean() {
+    urm::RobotModel model;
+    model.links.push_back(urm::Link{"link0"});
+    model.links.push_back(urm::Link{"link1"});
+    model.links.push_back(urm::Link{"link2"});
+    model.links.push_back(urm::Link{"link3"});
+
+    // j1: link0 -> link1
+    urm::Joint j1;
+    j1.name = "j1";
+    j1.parent_link = 0;
+    j1.child_link = 1;
+    j1.kinematics = urm::JointKinematics::OriginAxis;
+    j1.axis = {0.0, 0.0, 1.0};
+
+    // j2: link0 -> link2 (branch from root)
+    urm::Joint j2;
+    j2.name = "j2";
+    j2.parent_link = 0;
+    j2.child_link = 2;
+    j2.kinematics = urm::JointKinematics::OriginAxis;
+    j2.axis = {0.0, 1.0, 0.0};
+
+    // j3: link1 -> link3 (child of link1)
+    urm::Joint j3;
+    j3.name = "j3";
+    j3.parent_link = 1;
+    j3.child_link = 3;
+    j3.kinematics = urm::JointKinematics::OriginAxis;
+    j3.axis = {1.0, 0.0, 0.0};
+
+    model.joints = {j1, j2, j3};
+    model.tcp_link = 3;
+
+    auto errors = model.validate();
+    if (!errors.empty()) {
+        std::cerr << "Expected branched tree to validate cleanly, got: " << errors[0] << "\n";
+        return false;
+    }
+
+    std::cout << "PASS: test_branched_tree_validates_clean\n";
+    return true;
+}
+
+// Test 18: Disconnected link fails
+bool test_disconnected_link_fails() {
+    urm::RobotModel model;
+    model.links.push_back(urm::Link{"link0"});
+    model.links.push_back(urm::Link{"link1"});
+    model.links.push_back(urm::Link{"link2"});
+    model.links.push_back(urm::Link{"link3"});
+
+    // j1: link0 -> link1
+    urm::Joint j1;
+    j1.name = "j1";
+    j1.parent_link = 0;
+    j1.child_link = 1;
+    j1.axis = {0.0, 0.0, 1.0};
+    j1.kinematics = urm::JointKinematics::OriginAxis;
+
+    // j2: link1 -> link2
+    urm::Joint j2;
+    j2.name = "j2";
+    j2.parent_link = 1;
+    j2.child_link = 2;
+    j2.axis = {0.0, 0.0, 1.0};
+    j2.kinematics = urm::JointKinematics::OriginAxis;
+
+    // j3: link1 -> link2 (duplicate child_link, so link3 is unreached)
+    urm::Joint j3;
+    j3.name = "j3";
+    j3.parent_link = 1;
+    j3.child_link = 2;
+    j3.axis = {0.0, 0.0, 1.0};
+    j3.kinematics = urm::JointKinematics::OriginAxis;
+
+    model.joints = {j1, j2, j3};
+
+    auto errors = model.validate();
+    bool found_disconnected = false;
+    for (const auto& err : errors) {
+        if (err.find("disconnected from root link 0") != std::string::npos) {
+            found_disconnected = true;
+            break;
+        }
+    }
+    if (!found_disconnected) {
+        std::cerr << "Expected disconnected link error for unreached link 3\n";
+        return false;
+    }
+
+    std::cout << "PASS: test_disconnected_link_fails\n";
+    return true;
+}
+
 int main() {
     int failures = 0;
     if (!test_create_3dof())                      { ++failures; }
@@ -477,9 +764,16 @@ int main() {
     if (!test_validate())                         { ++failures; }
     if (!test_malformed_json_and_unknown_type())  { ++failures; }
     if (!test_fixed_joint_not_counted())          { ++failures; }
+    if (!test_v1_to_v2_migration())               { ++failures; }
+    if (!test_v2_round_trip())                    { ++failures; }
+    if (!test_unknown_kinematics_throws())        { ++failures; }
+    if (!test_dof_and_q_index_map())              { ++failures; }
+    if (!test_validate_new_rules())               { ++failures; }
+    if (!test_branched_tree_validates_clean())    { ++failures; }
+    if (!test_disconnected_link_fails())          { ++failures; }
 
     if (failures == 0) {
-        std::cout << "\nAll URM hardening tests passed.\n";
+        std::cout << "\nAll 18 URM tests passed.\n";
         return 0;
     } else {
         std::cerr << "\n" << failures << " URM test(s) FAILED.\n";

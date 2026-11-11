@@ -440,9 +440,13 @@ class DHEditorWidget(QWidget):
         """Add a new revolute joint and link to the model."""
         if self._model is None:
             return
+        idx = len(self._model.joints)
         j = cb.Joint()
-        j.name = f"joint{len(self._model.joints) + 1}"
+        j.name = f"joint{idx + 1}"
         j.type = cb.JointType.Revolute
+        j.parent_link = idx
+        j.child_link = idx + 1
+        j.kinematics = cb.JointKinematics.DH
         j.limits = cb.default_limits(j.type)
         self._model.joints.append(j)
         while len(self._model.links) < len(self._model.joints) + 1:

@@ -1,7 +1,7 @@
 /**
  * bindings/urm_bindings.cpp
  * pybind11 bindings for the URM (Unified Robot Model) C++ types.
- * R2.4: Exposes Joint, Link, RobotModel, DHParams, MDHParams, JointLimits, Pose, DHConvention.
+ * R3.1: Exposes JointKinematics, Mimic, tree links/joints, tcp_link, q_index_map.
  */
 
 #include <pybind11/pybind11.h>
@@ -29,6 +29,12 @@ void bind_urm(py::module_& m) {
         .value("Fixed",     urm::JointType::Fixed)
         .export_values();
 
+    // JointKinematics enum
+    py::enum_<urm::JointKinematics>(m, "JointKinematics")
+        .value("DH",         urm::JointKinematics::DH)
+        .value("OriginAxis", urm::JointKinematics::OriginAxis)
+        .export_values();
+
     // DHConvention enum
     py::enum_<urm::DHConvention>(m, "DHConvention")
         .value("Standard", urm::DHConvention::Standard)
@@ -45,6 +51,18 @@ void bind_urm(py::module_& m) {
                    std::to_string(p.xyz[1]) + ", " + std::to_string(p.xyz[2]) + "] rpy=[" +
                    std::to_string(p.rpy[0]) + ", " + std::to_string(p.rpy[1]) + ", " +
                    std::to_string(p.rpy[2]) + "]>";
+        });
+
+    // Mimic
+    py::class_<urm::Mimic>(m, "Mimic")
+        .def(py::init<>())
+        .def_readwrite("joint",      &urm::Mimic::joint)
+        .def_readwrite("multiplier", &urm::Mimic::multiplier)
+        .def_readwrite("offset",     &urm::Mimic::offset)
+        .def("__repr__", [](const urm::Mimic& mi) {
+            return "<Mimic joint='" + mi.joint + "' mult=" +
+                   std::to_string(mi.multiplier) + " offset=" +
+                   std::to_string(mi.offset) + ">";
         });
 
     // DHParams
@@ -93,12 +111,18 @@ void bind_urm(py::module_& m) {
     // Joint
     py::class_<urm::Joint>(m, "Joint")
         .def(py::init<>())
-        .def_readwrite("name",    &urm::Joint::name)
-        .def_readwrite("type",    &urm::Joint::type)
-        .def_readwrite("dh",      &urm::Joint::dh)
-        .def_readwrite("mdh",     &urm::Joint::mdh)
-        .def_readwrite("limits",  &urm::Joint::limits)
-        .def_readwrite("q",       &urm::Joint::q)
+        .def_readwrite("name",        &urm::Joint::name)
+        .def_readwrite("type",        &urm::Joint::type)
+        .def_readwrite("parent_link", &urm::Joint::parent_link)
+        .def_readwrite("child_link",  &urm::Joint::child_link)
+        .def_readwrite("kinematics",  &urm::Joint::kinematics)
+        .def_readwrite("origin",      &urm::Joint::origin)
+        .def_readwrite("axis",        &urm::Joint::axis)
+        .def_readwrite("mimic",       &urm::Joint::mimic)
+        .def_readwrite("dh",          &urm::Joint::dh)
+        .def_readwrite("mdh",         &urm::Joint::mdh)
+        .def_readwrite("limits",      &urm::Joint::limits)
+        .def_readwrite("q",           &urm::Joint::q)
         .def("__repr__", [](const urm::Joint& j) {
             return "<Joint name=" + j.name + " q=" + std::to_string(j.q) + ">";
         });
@@ -129,15 +153,18 @@ void bind_urm(py::module_& m) {
         .def_readwrite("metadata",       &urm::RobotModel::metadata)
         .def_readwrite("base",           &urm::RobotModel::base)
         .def_readwrite("tool",           &urm::RobotModel::tool)
+        .def_readwrite("tcp_link",       &urm::RobotModel::tcp_link)
         .def_readwrite("links",          &urm::RobotModel::links)
         .def_readwrite("joints",         &urm::RobotModel::joints)
-        .def("dof",     &urm::RobotModel::dof,
-             "Return the number of actuated (non-Fixed) DOF.")
-        .def("get_q",   &urm::RobotModel::get_q,
+        .def("dof",          &urm::RobotModel::dof,
+             "Return the number of actuated (non-Fixed, non-mimic) DOF.")
+        .def("q_index_map",  &urm::RobotModel::q_index_map,
+             "Return mapping from joint index to DOF vector index (-1 for fixed/mimic joints).")
+        .def("get_q",        &urm::RobotModel::get_q,
              "Return current joint values as a list of floats.")
-        .def("set_q",   &urm::RobotModel::set_q, py::arg("q"),
+        .def("set_q",        &urm::RobotModel::set_q, py::arg("q"),
              "Set joint values from a list of floats.")
-        .def("validate", &urm::RobotModel::validate,
+        .def("validate",     &urm::RobotModel::validate,
              "Validate model consistency. Returns human-readable error messages.")
         .def("to_json", [](const urm::RobotModel& m, int indent) {
             return urm::to_json(m, indent);

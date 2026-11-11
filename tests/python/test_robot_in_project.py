@@ -224,6 +224,8 @@ def test_validate_errors_shown(qapp):
     # Fix robot
     robot.joints[0].limits.lower = -1.0
     robot.joints[0].limits.upper = 1.0
+    robot.joints[0].parent_link = 0
+    robot.joints[0].child_link = 1
     lk0 = cb.Link()
     lk0.name = "base"
     lk1 = cb.Link()
