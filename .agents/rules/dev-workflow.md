@@ -31,6 +31,11 @@ The user drives the work. The user talks to the Orchestrator in Claude Code and 
 - Drop back to Sonnet/Haiku as soon as the hard part is done.
 - Record every Opus consultation in `PROGRESS.md` → "Decisions".
 
+### User Shortcuts
+
+- To Gemini: "continue" → follow `.agents/rules/continue-protocol.md`.
+- To Claude: "review" → review the substage marked `ready-for-review` in `PROGRESS.md`, set `approved` or `changes-requested`, and write the next substage spec if approved.
+
 ### Progress File
 
 `PROGRESS.md` (repo root) is the shared handoff file between Builder and Reviewer.
