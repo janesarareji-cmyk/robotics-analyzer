@@ -9,12 +9,19 @@ description: Development workflow, agent roles, build pipeline, and stage/substa
 
 | Agent | Model | Where | Role |
 |-------|-------|-------|------|
-| Builder | Gemini 3.8 Medium | Antigravity | Write code, implement features, scaffold files, run builds and tests |
-| Orchestrator / Reviewer | Claude Sonnet 5.5 | Claude Code (user talks to it here) | Default. Review code quality, correctness, architecture compliance; plan substages; pick the model tier for each task |
-| Helper | Claude Haiku | Claude Code subagents | Simple work: file search, reading/summarizing files, running tests and reporting output, updating PROGRESS.md, checking tags and paths |
-| Advisor | Claude Opus | Claude Code `/advisor` or Opus subagent | ONLY very difficult work: numerical-method or architecture decisions, IK/dynamics correctness disputes, CUDA memory design, a fix that failed twice |
+| Builder | Gemini 3.8 Medium | Antigravity | ALL product implementation: code, scaffolding, builds, tests, bug fixes, graphify updates, git commits and pushes |
+| Orchestrator / Reviewer | Claude Sonnet 5.5 | Claude Code (user talks to it here) | Planning and orchestration only: break stages into substages, write substage specs/acceptance criteria, review Builder output, pick model tier. Does NOT write product code |
+| Helper | Claude Haiku 5.5 | Claude Code subagents | Low-intelligence planning-side chores: edit PROGRESS.md / plan docs from Orchestrator's decisions, git config, file search, read/summarize files, run tests and report output |
+| Advisor | Claude Opus 5.5 | Claude Code `/advisor` or Opus subagent | EXTREMELY RARE: only when Sonnet cannot decide safely (core numerical method, architecture/schema later stages depend on, CUDA memory model, a fix that failed twice) |
 
-The user drives the work. The user talks to the Orchestrator in Claude Code. The Builder works inside Antigravity.
+The user drives the work. The user talks to the Orchestrator in Claude Code and relays its specs/reviews to the Builder in Antigravity.
+
+### Work Routing
+
+- Writes or changes product code (`app/`, `core/`, `bindings/`, `cuda/`, `tests/`, CMake) → **Gemini**.
+- Decides what to build, in what order, and whether it is correct → **Sonnet**.
+- Mechanical doc/bookkeeping/git chore on the Claude side → **Haiku subagent**.
+- Hard, high-risk decision Sonnet is not confident about → **Opus**, then log it in `PROGRESS.md` → "Decisions".
 
 ### Claude Model Tiering (token saving)
 
@@ -64,7 +71,7 @@ This keeps the sequence strictly linear. No substage is skipped. No substage is 
 
 ### Key Rules
 
-- Git (Builder owns commits): after each substage is implemented and its tests pass, Gemini commits with message `R<x>.<y>: <summary>`. Review fixes get their own commit `R<x>.<y>-fix: <summary>`. Commit `PROGRESS.md` and `graphify-out/graph.json` in the same commit. Never commit `build/` or binaries (see `.gitignore`). Do not rewrite history. Do not push unless the user asks.
+- Git (Builder owns commits): after each substage is implemented and its tests pass, Gemini commits with message `R<x>.<y>: <summary>`. Review fixes get their own commit `R<x>.<y>-fix: <summary>`. Commit `PROGRESS.md` and `graphify-out/graph.json` in the same commit. Never commit `build/` or binaries (see `.gitignore`). Do not rewrite history. Gemini pushes after each commit once a remote is configured (none yet). Never force-push.
 - Implement one substage at a time. Do not start the next substage until the current one compiles, runs, and has passing tests.
 - Keep the application runnable after every substage.
 - Do not add new dependencies without first verifying Windows compatibility in a proof-of-compatibility build.
