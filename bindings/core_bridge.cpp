@@ -20,6 +20,9 @@ void bind_urm(py::module_& m);
 // Forward declare from kin_bindings
 void bind_kin(py::module_& m);
 
+// Forward declare from dyn_bindings
+void bind_dyn(py::module_& m);
+
 // Simple arithmetic function for bridge verification
 int add(int a, int b) {
     return a + b;
@@ -40,4 +43,7 @@ PYBIND11_MODULE(core_bridge, m) {
 
     // R2.5: Kinematics bindings
     bind_kin(m);
+
+    // R4.6: Dynamics bindings
+    bind_dyn(m);
 }

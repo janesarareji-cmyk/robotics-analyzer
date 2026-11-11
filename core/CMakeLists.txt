@@ -8,6 +8,7 @@ add_library(core_lib STATIC
     kin/ik.cpp
     kin/ik_multi.cpp
     kin/singularity.cpp
+    dyn/dynamics.cpp
 )
 
 target_include_directories(core_lib PUBLIC

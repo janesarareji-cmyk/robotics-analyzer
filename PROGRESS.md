@@ -7,7 +7,7 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R4 --- Kinematics and dynamics (status: `planned`, spec pack written, ready for Builder)
--   **Next substage:** R4.6 --- Inverse dynamics (RNEA)
+-   **Next substage:** R4.7 --- Mass matrix + forward dynamics
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R4
@@ -88,7 +88,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R4.3 | Numerical IK | test_ik.py | committed |
 | R4.4 | Multiple IK solutions | test_ik_multi.py | committed |
 | R4.5 | Singularity indicators | test_singularity.py | committed |
-| R4.6 | Inverse dynamics (RNEA) | test_dynamics.cpp, test_dynamics.py | planned |
+| R4.6 | Inverse dynamics (RNEA) | test_dynamics.cpp, test_dynamics.py | committed |
 | R4.7 | Mass matrix + forward dynamics | test_dynamics.py | planned |
 | R4.8 | Energy and torque tools | test_energy.py | planned |
 | R4.9 | IK + analysis panels | test_ui_kin_dyn.py | planned |

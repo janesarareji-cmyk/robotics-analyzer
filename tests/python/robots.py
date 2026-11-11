@@ -102,3 +102,23 @@ def random_q(model, rng):
             continue
         q.append(float(rng.uniform(j.limits.lower, j.limits.upper)))
     return q
+
+
+def random_inertias(model, rng, skip=()):
+    """Give every link except link 0 (and ``skip``) random physical inertia.
+
+    Mass 0.5..2 kg, COM within 0.3 m, full SPD tensor about the COM
+    (random rotation of a diagonal), stored as (ixx, ixy, ixz, iyy, iyz, izz).
+    """
+    for k, lk in enumerate(model.links):
+        if k == 0 or k in skip:
+            continue
+        A = rng.normal(size=(3, 3))
+        Q, _ = np.linalg.qr(A)
+        I = Q @ np.diag(rng.uniform(0.02, 0.2, 3)) @ Q.T
+        i = cb.Inertia()
+        i.mass = float(rng.uniform(0.5, 2.0))
+        i.com = [float(v) for v in rng.uniform(-0.3, 0.3, 3)]
+        i.inertia_tensor = [float(I[0, 0]), float(I[0, 1]), float(I[0, 2]),
+                            float(I[1, 1]), float(I[1, 2]), float(I[2, 2])]
+        lk.inertia = i

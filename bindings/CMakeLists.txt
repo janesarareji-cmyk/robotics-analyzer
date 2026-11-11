@@ -11,6 +11,7 @@ pybind11_add_module(core_bridge
     core_bridge.cpp
     urm_bindings.cpp
     kin_bindings.cpp
+    dyn_bindings.cpp
 )
 
 target_link_libraries(core_bridge PRIVATE core_lib Eigen3::Eigen)

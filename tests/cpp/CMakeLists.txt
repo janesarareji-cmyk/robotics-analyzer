@@ -41,3 +41,9 @@ add_executable(test_compiled_arrays test_compiled_arrays.cpp)
 target_link_libraries(test_compiled_arrays PRIVATE core_lib Eigen3::Eigen)
 target_compile_features(test_compiled_arrays PUBLIC cxx_std_20)
 add_test(NAME test_compiled_arrays COMMAND test_compiled_arrays)
+
+# test_dynamics - R4.6
+add_executable(test_dynamics test_dynamics.cpp)
+target_link_libraries(test_dynamics PRIVATE core_lib Eigen3::Eigen)
+target_compile_features(test_dynamics PUBLIC cxx_std_20)
+add_test(NAME test_dynamics COMMAND test_dynamics)

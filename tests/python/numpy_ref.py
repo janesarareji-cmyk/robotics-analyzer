@@ -199,3 +199,108 @@ def spec_from_model(model, independent_mimic=False):
             "base": pose_matrix(list(model.base.xyz), list(model.base.rpy)),
             "tool": pose_matrix(list(model.tool.xyz), list(model.tool.rpy)),
             "joints": out}
+
+
+# ----------------------------------------------------------------- dynamics
+def inertias_from_model(model):
+    """Per-link ``(mass, com(3), Ic(3x3))`` read from ``RobotModel.links[k].inertia``.
+
+    ``Ic`` is built from ``inertia_tensor = (ixx, ixy, ixz, iyy, iyz, izz)``.
+    """
+    out = []
+    for lk in model.links:
+        i = lk.inertia
+        t = list(i.inertia_tensor)
+        Ic = np.array([[t[0], t[1], t[2]], [t[1], t[3], t[4]], [t[2], t[4], t[5]]], float)
+        out.append((float(i.mass), np.array(list(i.com), float), Ic))
+    return out
+
+
+def _richardson(f, x, h):
+    """4th-order central derivative of an array valued f at scalar-shifted x."""
+    d1 = (f(h) - f(-h)) / (2 * h)
+    d2 = (f(2 * h) - f(-2 * h)) / (4 * h)
+    return (4 * d1 - d2) / 3.0
+
+
+def numeric_jacobian4(spec, q, link, point_local=(0, 0, 0), h=1e-3):
+    """Like ``numeric_jacobian`` but 4th order (Richardson on the central
+    difference; rotation rows via ``log(R(q+h) R(q-h)^T) / 2h``).
+
+    Needed by ``numpy_dynamics``: its second derivative of M by differences
+    would amplify the noise of a 2nd order, h = 1e-6 Jacobian.
+    """
+    q = np.asarray(q, float)
+    pl = np.append(np.asarray(point_local, float), 1.0)
+    J = np.zeros((6, spec["n_dof"]))
+
+    def pair(k, s):
+        qp, qm = q.copy(), q.copy()
+        qp[k] += s
+        qm[k] -= s
+        fp, _ = fk_numpy(spec, qp)
+        fm, _ = fk_numpy(spec, qm)
+        lin = (fp[link] @ pl)[:3] - (fm[link] @ pl)[:3]
+        ang = so3_log(fp[link][:3, :3] @ fm[link][:3, :3].T)
+        return np.concatenate([lin, ang]) / (2 * s)
+
+    for k in range(spec["n_dof"]):
+        J[:, k] = (4 * pair(k, h) - pair(k, 2 * h)) / 3.0
+    return J
+
+
+def _mass_matrix_numpy(spec, inertias, q):
+    n = spec["n_dof"]
+    frames, _ = fk_numpy(spec, q)
+    M = np.zeros((n, n))
+    for k in range(1, spec["n_links"]):
+        m, c, Ic = inertias[k]
+        if m == 0.0 and not np.any(Ic):
+            continue
+        J = numeric_jacobian4(spec, q, k, c)
+        R = frames[k][:3, :3]
+        Iw = R @ Ic @ R.T
+        M += m * J[:3].T @ J[:3] + J[3:].T @ Iw @ J[3:]
+    return M
+
+
+def numpy_dynamics(spec, inertias, q, qd, g):
+    """Independent Lagrangian reference. Returns ``(M, c, grav)``.
+
+    ``tau = M qdd + c + grav`` with ``c = C(q, qd) qd`` (Christoffel form,
+    ``dM/dq`` by 4th-order central differences) and
+    ``grav = dV/dq`` with ``V = -sum m g . p_com`` (the actuator torque that
+    holds the robot against gravity; the generalised force of gravity itself
+    is ``-dV/dq``, and RNEA returns the actuator torque).
+    Never calls ``core_bridge``. ``g`` is the world gravity vector.
+    """
+    q = np.asarray(q, float)
+    qd = np.asarray(qd, float)
+    g = np.asarray(g, float)
+    n = spec["n_dof"]
+    M = _mass_matrix_numpy(spec, inertias, q)
+
+    def V(qq):
+        frames, _ = fk_numpy(spec, qq)
+        v = 0.0
+        for k in range(1, spec["n_links"]):
+            m, c, _ = inertias[k]
+            v -= m * (g @ (frames[k] @ np.append(c, 1.0))[:3])
+        return v
+
+    grav = np.zeros(n)
+    dM = []
+    for i in range(n):
+        def shift(s, i=i):
+            qq = q.copy()
+            qq[i] += s
+            return qq
+        grav[i] = _richardson(lambda s: np.array(V(shift(s))), None, 1e-3)
+        dM.append(_richardson(lambda s: _mass_matrix_numpy(spec, inertias, shift(s)), None, 1e-3))
+    c = np.zeros(n)
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                cijk = 0.5 * (dM[i][k, j] + dM[j][k, i] - dM[k][i, j])
+                c[k] += cijk * qd[i] * qd[j]
+    return M, c, grav
