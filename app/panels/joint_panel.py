@@ -405,3 +405,4 @@ class JointPanel(QWidget):
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(self.tcp_text)
+

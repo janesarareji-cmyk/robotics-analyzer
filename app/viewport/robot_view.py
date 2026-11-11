@@ -212,8 +212,11 @@ class RobotView:
                 total_reach += abs(j.mdh.a) + abs(j.mdh.d)
             else:
                 total_reach += abs(j.dh.a) + abs(j.dh.d)
-        if len(model.joints) > 0:
-            return max(0.05, 0.05 * total_reach)
+        total_reach += (
+            abs(model.tool.xyz[0]) + abs(model.tool.xyz[1]) + abs(model.tool.xyz[2])
+        )
+        if len(model.joints) > 0 and total_reach > 0.0:
+            return max(0.01, 0.05 * total_reach)
         return 0.05
 
     def _create_triad_mesh(self, length: float) -> Any:

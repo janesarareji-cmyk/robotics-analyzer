@@ -7,9 +7,15 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.9 --- 3-DOF end-to-end milestone test (planned)
--   **Owner now:** Builder
+-   **Substage:** R2.9 --- 3-DOF end-to-end milestone test (ready-for-review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
+-   **Stage R2 Gate Results:**
+    -   CTest targets: 5/5 passed.
+    -   Pytest tests: 146/146 passed.
+    -   FK numerical reference tests: passed (`test_fk.cpp`, `test_fk_bridge.py`, `test_milestone_r2.py` 200-sample randomized verification against independent NumPy DH).
+    -   Knowledge graph: updated (`graphify-out/graph.json` current).
+    -   GPU/CPU equivalence: deferred to R5.
 
 ## Handoff protocol
 
@@ -51,7 +57,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | approved (follow-ups → R2.8) |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | approved (follow-up → R2.9) |
-| R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
+| R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | ready-for-review |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.
@@ -345,7 +351,7 @@ Stage R2 gate (Builder records results in PROGRESS.md under Current when done; R
 
 Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.9 set to `ready-for-review`, commit `R2.9: R2 milestone test`.
 
-Changed files (expected): `app/main_window.py`, `app/panels/dh_editor.py`, `tests/python/test_milestone_r2.py`, `tests/python/test_dh_editor.py` (or test_joint_panel.py for the no-rebuild test).
+Changed files: `app/main_window.py`, `app/panels/dh_editor.py`, `app/project/project_controller.py`, `app/viewport/robot_view.py`, `tests/python/test_joint_panel.py`, `tests/python/test_milestone_r2.py`.
 
 ### R3 onward
 

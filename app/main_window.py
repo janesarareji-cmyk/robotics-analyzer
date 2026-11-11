@@ -349,7 +349,7 @@ class MainWindow(QMainWindow):
             return
         self._project_controller.mark_modified()
         if self._dh_editor.get_model() is not None:
-            self._dh_editor.set_model(self._project_controller.robot)
+            self._dh_editor.refresh_q()
         self._update_robot_view(reset_camera=False)
 
     def _on_robot_changed(self, model: Any) -> None:

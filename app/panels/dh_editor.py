@@ -211,6 +211,23 @@ class DHEditorWidget(QWidget):
         """Return the current RobotModel (may be None)."""
         return self._model
 
+    def refresh_q(self) -> None:
+        """Update only the q column cells without rebuilding the table."""
+        if self._model is None:
+            return
+        self._updating = True
+        try:
+            for row, joint in enumerate(self._model.joints):
+                if row < self._table.rowCount():
+                    item = self._table.item(row, COL_Q)
+                    text = f"{joint.q:.6f}"
+                    if item is not None:
+                        item.setText(text)
+                    else:
+                        self._table.setItem(row, COL_Q, QTableWidgetItem(text))
+        finally:
+            self._updating = False
+
     def set_joint_type(self, row: int, joint_type: cb.JointType) -> None:
         """Programmatically set joint type for row, applying default limits."""
         if self._model is None or row < 0 or row >= len(self._model.joints):

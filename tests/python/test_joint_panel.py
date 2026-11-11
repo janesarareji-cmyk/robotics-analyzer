@@ -287,3 +287,35 @@ def test_q_edit_sets_dirty_flag(qapp):
         assert win.project_controller.is_modified
     finally:
         win.close()
+
+
+def test_slider_drag_does_not_rebuild_dh_table_widgets(qapp):
+    """Moving slider 50 times does not rebuild DH table widgets; q cell updates."""
+    from app.panels.dh_editor import COL_TYPE, COL_Q
+    win = MainWindow()
+    try:
+        proj = ProjectData.new("NoRebuildTest")
+        robot = make_test_arm(n_revolute=3)
+        proj.robot_model = robot
+        win.project_controller._set_project(proj, modified=False)
+
+        table = win.dh_editor._table
+        type_widget_before = table.cellWidget(0, COL_TYPE)
+        q_item_before = table.item(0, COL_Q)
+        assert type_widget_before is not None
+        assert q_item_before is not None
+
+        slider = win.joint_panel.rows[0].slider
+        for i in range(1, 51):
+            slider.setValue(i * 10)
+
+        # Widgets must be identical instances (no table rebuild)
+        assert table.cellWidget(0, COL_TYPE) is type_widget_before
+        assert table.item(0, COL_Q) is q_item_before
+
+        # Q cell must show the new value
+        expected_rad = win.project_controller.robot.joints[0].q
+        assert float(q_item_before.text()) == pytest.approx(expected_rad, abs=1e-5)
+    finally:
+        win.close()
+

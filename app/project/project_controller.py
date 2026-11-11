@@ -186,28 +186,31 @@ class ProjectController(QObject):
             return self.save_project_as(parent_widget)
         return self._save_to_path(parent_widget, self._project.file_path)
 
-    def save_project_as(self, parent_widget: QWidget) -> bool:
+    def save_project_as(
+        self, parent_widget: QWidget, path: str | None = None
+    ) -> bool:
         """
-        Prompt for a save path and save the current project there.
+        Prompt for a save path (or use provided path) and save the current project there.
         Returns True if saved, False if cancelled or failed.
         """
         if self._project is None:
             return False
 
-        default_name = (
-            self._project.name.replace(" ", "_") + ROBOTPROJ_EXTENSION
-        )
-        default_dir = self._settings.last_project_dir()
-        default_path = str(Path(default_dir) / default_name)
+        if path is None:
+            default_name = (
+                self._project.name.replace(" ", "_") + ROBOTPROJ_EXTENSION
+            )
+            default_dir = self._settings.last_project_dir()
+            default_path = str(Path(default_dir) / default_name)
 
-        path, _ = QFileDialog.getSaveFileName(
-            parent_widget,
-            "Save Project As",
-            default_path,
-            FILE_FILTER,
-        )
-        if not path:
-            return False
+            path, _ = QFileDialog.getSaveFileName(
+                parent_widget,
+                "Save Project As",
+                default_path,
+                FILE_FILTER,
+            )
+            if not path:
+                return False
 
         if not path.endswith(ROBOTPROJ_EXTENSION):
             path += ROBOTPROJ_EXTENSION
