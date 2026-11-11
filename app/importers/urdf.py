@@ -39,19 +39,21 @@ from .import_report import (
     URDF_MISSING_LINK,
     URDF_MULTIPLE_PARENTS,
     URDF_MULTIPLE_ROOTS,
+    URDF_NO_INERTIAL,
+    URDF_ROOT_NO_INERTIAL,
     URDF_TCP_CHOSEN,
     URDF_UNKNOWN_JOINT_TYPE,
     URDF_UNSUPPORTED_JOINT,
     URDF_XACRO,
     URDF_ZERO_AXIS,
+    URM_PHYSICAL,
 )
 
 # Element kinds skipped (R3.5 handles visual/collision/material,
-# R3.7 stops skipping inertial).
+# R3.7 handles inertial).
 _IGNORED_KINDS = (
     "transmission",
     "gazebo",
-    "inertial",
 )
 
 _SUPPORTED_TYPES = ("revolute", "continuous", "prismatic", "fixed")
@@ -286,11 +288,13 @@ def _build(root: ET.Element, report: ImportReport, urdf_dir: Path,
     for rj in raw:
         joints.append(_build_joint(rj, index, joint_names, report))
 
-    # Links -> cb.Link (name only).
+    # Links -> cb.Link (name + inertial data).
+    link_els = {el.get("name", ""): el for el in root.findall("link")}
     links = []
-    for name in order:
+    for i, name in enumerate(order):
         lk = cb.Link()
         lk.name = name
+        _read_inertial(link_els[name], lk, i == 0, report)
         links.append(lk)
 
     # tcp_link: deepest link, ties -> lowest index.
@@ -322,8 +326,47 @@ def _build(root: ET.Element, report: ImportReport, urdf_dir: Path,
         for msg in messages:
             report.add(SEV_ERROR, URDF_INVALID_MODEL, msg)
         return None, [], []
+    for msg in model.validate_physical():
+        report.add(SEV_WARNING, URM_PHYSICAL, msg)
     visuals, collisions = _parse_geometry(root, index, report, urdf_dir, search_roots)
     return model, visuals, collisions
+
+
+def _read_inertial(link_el: ET.Element, lk, is_root: bool,
+                   report: ImportReport) -> None:
+    """<inertial> -> Link.inertia. Tensor is rotated into the link frame."""
+    name = link_el.get("name", "")
+    el = link_el.find("inertial")
+    if el is None:
+        if is_root:
+            report.add(
+                SEV_INFO, URDF_ROOT_NO_INERTIAL,
+                f"root link '{name}' has no <inertial>; mass stays 0", name,
+            )
+        else:
+            report.add(
+                SEV_WARNING, URDF_NO_INERTIAL,
+                f"link '{name}' has no <inertial>; mass stays 0", name,
+            )
+        return
+    origin = _pose(el.find("origin"), name)
+    mass_el = el.find("mass")
+    mass = _num(mass_el.get("value") if mass_el is not None else None, 0.0, name)
+    in_el = el.find("inertia")
+    g = (lambda k: _num(in_el.get(k), 0.0, name)) if in_el is not None         else (lambda k: 0.0)
+    ixx, ixy, ixz, iyy, iyz, izz = (
+        g("ixx"), g("ixy"), g("ixz"), g("iyy"), g("iyz"), g("izz"))
+    import numpy as np
+
+    rot = np.asarray(cb.pose_to_iso(origin), dtype=float)[:3, :3]
+    tensor = np.array([[ixx, ixy, ixz], [ixy, iyy, iyz], [ixz, iyz, izz]])
+    t = rot @ tensor @ rot.T
+    inertia = cb.Inertia()
+    inertia.mass = mass
+    inertia.com = [float(x) for x in origin.xyz]
+    inertia.inertia_tensor = [float(t[0, 0]), float(t[0, 1]), float(t[0, 2]),
+                              float(t[1, 1]), float(t[1, 2]), float(t[2, 2])]
+    lk.inertia = inertia
 
 
 def _build_joint(rj: _RawJoint, index: Dict[str, int], joint_names: set,

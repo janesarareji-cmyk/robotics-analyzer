@@ -75,10 +75,9 @@ constants. Add a row here for every new code.
 | `URDF_MESH_MISSING` | warning | Mesh file not found in the URDF folder or mesh search paths. A box fallback is drawn. |
 | `URDF_MESH_FORMAT` | warning | Mesh format not supported. A box fallback is drawn. |
 | `URDF_MESH_TOO_LARGE` | warning | Mesh has too many triangles. It is not drawn. |
-| `URDF_IGNORED_ELEMENT` | info | An element kind is skipped (`<transmission>`, `<gazebo>`, `<inertial>` before R3.7, etc.). Once per kind. |
+| `URDF_IGNORED_ELEMENT` | info | An element kind is skipped (`<transmission>`, `<gazebo>`). Once per kind. |
 | `URDF_TCP_CHOSEN` | info | Names the link chosen as `tcp_link` (deepest link). It can be changed. |
 | `URDF_EXTRA_VISUAL` | info | A second visual on a link is ignored. Only the first is drawn. |
-
-When R3.7 adds physical-data codes (`URDF_NO_INERTIAL`,
-`URDF_ROOT_NO_INERTIAL`, and others), they go in this table with the same
-policy.
+| `URDF_NO_INERTIAL` | warning | A non-root link has no `<inertial>`. Mass stays 0 (not set). |
+| `URDF_ROOT_NO_INERTIAL` | info | The root link has no `<inertial>`. Mass stays 0. |
+| `URM_PHYSICAL` | warning | One per `validate_physical()` message after import (bad mass, COM or inertia tensor, "mass not set"). The model is still loaded. |

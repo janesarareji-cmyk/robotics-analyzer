@@ -32,8 +32,11 @@ PRIMS = FX / "urdf" / "primitives.urdf"
 
 MESH_URDF = """<?xml version="1.0"?>
 <robot name="m">
-  <link name="base"/>
+  <link name="base">
+    <inertial><mass value="1"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial>
+  </link>
   <link name="l1">
+    <inertial><mass value="1"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial>
     <visual>
       <origin xyz="0 0 0.1"/>
       <geometry><mesh filename="{fn}" scale="{scale}"/></geometry>

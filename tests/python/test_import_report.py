@@ -65,7 +65,7 @@ def _row_severities(panel):
         ("continuous_joint.urdf", 0, 1, 1),
         ("gripper_mimic.urdf", 0, 0, 1),
         ("primitives.urdf", 0, 0, 2),
-        ("serial_6dof.urdf", 0, 0, 2),
+        ("serial_6dof.urdf", 0, 0, 1),
         ("cycle.urdf", 1, 0, 0),
         ("two_roots.urdf", 1, 0, 0),
         ("xacro.urdf", 1, 0, 0),

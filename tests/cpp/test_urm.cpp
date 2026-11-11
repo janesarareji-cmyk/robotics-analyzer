@@ -751,6 +751,98 @@ bool test_disconnected_link_fails() {
     return true;
 }
 
+// Test 19 (R3.7): inertia defaults, round trip, missing -> mass 0, old v2 JSON opens
+bool test_inertia_defaults_and_roundtrip() {
+    urm::Link l;
+    if (l.inertia.mass != 0.0) { std::cerr << "default mass must be 0\n"; return false; }
+    for (double v : l.inertia.inertia_tensor)
+        if (v != 0.0) { std::cerr << "default tensor must be zeros\n"; return false; }
+
+    urm::RobotModel m;
+    m.links.push_back(urm::Link{"l0"});
+    urm::Link l1; l1.name = "l1";
+    l1.inertia.mass = 2.5;
+    l1.inertia.com = {0.1, -0.2, 0.3};
+    l1.inertia.inertia_tensor = {1.0, 0.1, 0.2, 2.0, 0.3, 3.0};
+    m.links.push_back(l1);
+    urm::Joint j; j.name = "j"; j.parent_link = 0; j.child_link = 1;
+    j.kinematics = urm::JointKinematics::OriginAxis; j.axis = {0,0,1};
+    m.joints.push_back(j);
+    auto m2 = urm::from_json(urm::to_json(m));
+    const auto& a = m2.links[1].inertia;
+    if (a.mass != 2.5 || a.com[0] != 0.1 || a.com[1] != -0.2 || a.com[2] != 0.3 ||
+        a.inertia_tensor[1] != 0.1 || a.inertia_tensor[5] != 3.0) {
+        std::cerr << "inertia round trip mismatch\n"; return false;
+    }
+    // missing inertia / missing mass -> 0
+    auto m3 = urm::from_json(R"({"schema_version":2,"links":[{"name":"a"},{"name":"b","inertia":{"com":[1,2,3]}}]})");
+    if (m3.links[0].inertia.mass != 0.0 || m3.links[1].inertia.mass != 0.0) {
+        std::cerr << "missing mass must be 0\n"; return false;
+    }
+    if (m3.links[1].inertia.com[2] != 3.0) { std::cerr << "com not read\n"; return false; }
+    // stored values in an old file are kept
+    auto m4 = urm::from_json(R"({"schema_version":2,"links":[{"name":"a","inertia":{"mass":1.0,"inertia_tensor":[1,0,0,1,0,1]}}]})");
+    if (m4.links[0].inertia.mass != 1.0 || m4.links[0].inertia.inertia_tensor[3] != 1.0) {
+        std::cerr << "stored values must be kept\n"; return false;
+    }
+    std::cout << "PASS: test_inertia_defaults_and_roundtrip\n";
+    return true;
+}
+
+// Test 20 (R3.7): validate_physical rules, validate() unaffected
+bool test_validate_physical() {
+    auto make = []() {
+        urm::RobotModel m;
+        m.links.push_back(urm::Link{"l0"});
+        urm::Link l1; l1.name = "l1";
+        l1.inertia.mass = 1.0;
+        l1.inertia.inertia_tensor = {1,0,0,1,0,1};
+        m.links.push_back(l1);
+        urm::Joint j; j.name = "j1"; j.parent_link = 0; j.child_link = 1;
+        j.kinematics = urm::JointKinematics::OriginAxis; j.axis = {0,0,1};
+        m.joints.push_back(j);
+        return m;
+    };
+    auto has = [](const std::vector<std::string>& v, const std::string& s) {
+        for (const auto& x : v) if (x.find(s) != std::string::npos) return true;
+        return false;
+    };
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    {   auto m = make();
+        if (!m.validate_physical().empty()) { std::cerr << "valid model must be clean\n"; return false; } }
+    {   auto m = make(); m.links[1].inertia.mass = -1.0;
+        auto v = m.validate_physical();
+        if (!has(v, "negative") || !has(v, "'l1'")) { std::cerr << "negative mass\n"; return false; }
+        if (!m.validate().empty()) { std::cerr << "validate() must ignore inertia\n"; return false; } }
+    {   auto m = make(); m.links[1].inertia.mass = nan;
+        if (!has(m.validate_physical(), "mass is not finite")) { std::cerr << "nan mass\n"; return false; }
+        if (!m.validate().empty()) { std::cerr << "validate() must ignore nan mass\n"; return false; } }
+    {   auto m = make(); m.links[1].inertia.com = {0, nan, 0};
+        if (!has(m.validate_physical(), "com is not finite")) { std::cerr << "nan com\n"; return false; } }
+    {   auto m = make(); m.links[1].inertia.inertia_tensor[3] = nan;
+        if (!has(m.validate_physical(), "tensor is not finite")) { std::cerr << "nan tensor\n"; return false; } }
+    {   auto m = make(); m.links[1].inertia.inertia_tensor = {1,0,0,-1,0,1};
+        if (!has(m.validate_physical(), "positive definite")) { std::cerr << "not PD\n"; return false; }
+        if (!m.validate().empty()) { std::cerr << "validate() must ignore bad tensor\n"; return false; } }
+    {   auto m = make(); m.links[1].inertia.inertia_tensor = {1,0,0,1,0,0};
+        if (!has(m.validate_physical(), "positive definite")) { std::cerr << "zero moment\n"; return false; } }
+    {   // triangle inequality: 1 + 1 < 3
+        auto m = make(); m.links[1].inertia.inertia_tensor = {1,0,0,1,0,3};
+        if (!has(m.validate_physical(), "triangle")) { std::cerr << "triangle fail\n"; return false; }
+        // boundary 1 + 1 == 2 passes
+        m.links[1].inertia.inertia_tensor = {1,0,0,1,0,2};
+        if (!m.validate_physical().empty()) { std::cerr << "triangle boundary must pass\n"; return false; } }
+    {   // mass 0: tensor not checked, but "mass not set" for moving link
+        auto m = make(); m.links[1].inertia = urm::Inertia{};
+        auto v = m.validate_physical();
+        if (v.size() != 1 || !has(v, "mass not set") || !has(v, "'l1'")) { std::cerr << "mass not set\n"; return false; }
+        // fixed joint child: no message
+        m.joints[0].type = urm::JointType::Fixed;
+        if (!m.validate_physical().empty()) { std::cerr << "fixed child must not warn\n"; return false; } }
+    std::cout << "PASS: test_validate_physical\n";
+    return true;
+}
+
 int main() {
     int failures = 0;
     if (!test_create_3dof())                      { ++failures; }
@@ -771,9 +863,11 @@ int main() {
     if (!test_validate_new_rules())               { ++failures; }
     if (!test_branched_tree_validates_clean())    { ++failures; }
     if (!test_disconnected_link_fails())          { ++failures; }
+    if (!test_inertia_defaults_and_roundtrip())   { ++failures; }
+    if (!test_validate_physical())                { ++failures; }
 
     if (failures == 0) {
-        std::cout << "\nAll 18 URM tests passed.\n";
+        std::cout << "\nAll 20 URM tests passed.\n";
         return 0;
     } else {
         std::cerr << "\n" << failures << " URM test(s) FAILED.\n";

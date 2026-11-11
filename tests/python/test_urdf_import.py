@@ -115,10 +115,8 @@ def test_serial_6dof_structure_and_report():
     assert res.model is not None
     assert _codes(res.report, "error") == []
     assert _codes(res.report, "warning") == []
-    # inertial skipped (R3.5 handles visual), plus the TCP info
-    assert sorted(_codes(res.report, "info")) == sorted(
-        [ir.URDF_IGNORED_ELEMENT, ir.URDF_TCP_CHOSEN]
-    )
+    # inertial is read (R3.7); only the TCP info remains
+    assert _codes(res.report, "info") == [ir.URDF_TCP_CHOSEN]
     m = res.model
     assert len(m.links) == 7
     assert len(m.joints) == 6

@@ -143,3 +143,20 @@ When loading a Schema v1 JSON file (`"schema_version": 1` or missing key):
   ]
 }
 ```
+
+## Link inertial data (R3.7)
+
+Each link may carry `"inertia": { "mass", "com", "inertia_tensor" }`.
+
+-   `mass` [kg]. Default 0.0 (0 = not set). Missing `"inertia"` or missing
+    `"mass"` loads as 0.0. Values stored in old files are kept as they are.
+-   `com` [m], in the link frame. Default [0, 0, 0].
+-   `inertia_tensor` [kg m^2], order `[ixx, ixy, ixz, iyy, iyz, izz]`, about
+    the COM, axes parallel to the link frame. Default all zeros.
+
+`schema_version` stays 2 (no new keys). `RobotModel::validate()` ignores
+inertia. `RobotModel::validate_physical()` returns warnings (model still
+loads): mass finite and >= 0; com and tensor finite; if mass > 0 the tensor
+is positive definite (eigenvalues > 1e-12) and its principal moments satisfy
+the triangle inequality (tol 1e-9); a non-root link that is the child of a
+non-fixed joint with mass 0 gives "mass not set".

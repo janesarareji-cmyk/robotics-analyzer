@@ -21,6 +21,7 @@ from app.panels.model_panel import ModelPanel
 from app.panels.properties_panel import PropertiesPanel
 from app.panels.dh_editor import DHEditorWidget
 from app.panels.joint_panel import JointPanel
+from app.panels.physical_panel import PhysicalPropertiesPanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
@@ -172,6 +173,11 @@ class MainWindow(QMainWindow):
         self._action_view_import_report.setCheckable(True)
         self._action_view_import_report.setChecked(False)
         view_menu.addAction(self._action_view_import_report)
+
+        self._action_view_physical = QAction("P&hysical Properties", self)
+        self._action_view_physical.setCheckable(True)
+        self._action_view_physical.setChecked(False)
+        view_menu.addAction(self._action_view_physical)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -330,6 +336,20 @@ class MainWindow(QMainWindow):
         )
         self._import_report_panel.element_clicked.connect(self._on_report_element_clicked)
 
+        # Physical properties dock — bottom, tabbed with the log. Hidden by default.
+        self._physical_panel = PhysicalPropertiesPanel()
+        self._physical_dock = QDockWidget("Physical", self)
+        self._physical_dock.setObjectName("physical_dock")
+        self._physical_dock.setWidget(self._physical_panel)
+        self._physical_dock.setMinimumHeight(160)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._physical_dock)
+        self.tabifyDockWidget(log_dock, self._physical_dock)
+        self._physical_dock.hide()
+        self._action_view_physical.toggled.connect(self._physical_dock.setVisible)
+        self._physical_dock.visibilityChanged.connect(self._action_view_physical.setChecked)
+        self._physical_panel.edited.connect(self._on_physical_edited)
+        self._physical_panel.log_requested.connect(self.log)
+
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
@@ -357,6 +377,7 @@ class MainWindow(QMainWindow):
         self.set_status(f"Project '{project.name}' opened.")
 
         self._viewport.robot_view.set_visuals(project.visuals)
+        self._physical_panel.set_model(project.robot_model, project.visuals)
 
         # Load robot model into DH editor and Joint panel
         if project.robot_model is not None:
@@ -380,6 +401,7 @@ class MainWindow(QMainWindow):
         self._viewport.robot_view.clear()
         self._dh_editor.set_model(None)
         self._joint_panel.set_model(None)
+        self._physical_panel.set_model(None)
         self._refresh_tree(None)
         self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
@@ -408,11 +430,17 @@ class MainWindow(QMainWindow):
             self._dh_editor.refresh_q()
         self._update_robot_view(reset_camera=False)
 
+    def _on_physical_edited(self) -> None:
+        """Mass / COM / inertia edited in the Physical panel."""
+        if self._project_controller.has_project:
+            self._project_controller.mark_modified()
+
     def _on_robot_changed(self, model: Any) -> None:
         """Handle robot model replacement from controller."""
         if self._dh_editor.get_model() is not model:
             self._dh_editor.set_model(model)
         self._joint_panel.set_model(model, save_baseline=False)
+        self._physical_panel.set_model(model)
         self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
@@ -536,6 +564,7 @@ class MainWindow(QMainWindow):
             fk_res = cb.fk(model)
             self._viewport.robot_view.update(model, fk_res)
             self._joint_panel.update_tcp_readout(fk_res["tcp"])
+            self._physical_panel.update_readout()
             if reset_camera:
                 self._viewport.reset_camera()
         except Exception as exc:
@@ -652,6 +681,16 @@ class MainWindow(QMainWindow):
     def import_report_dock(self) -> QDockWidget:
         """Return the import report dock widget."""
         return self._import_report_dock
+
+    @property
+    def physical_panel(self) -> PhysicalPropertiesPanel:
+        """Return the physical properties panel widget."""
+        return self._physical_panel
+
+    @property
+    def physical_dock(self) -> QDockWidget:
+        """Return the physical properties dock widget."""
+        return self._physical_dock
 
     @property
     def props_panel(self) -> PropertiesPanel:

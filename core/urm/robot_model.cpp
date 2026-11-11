@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
+#include <Eigen/Dense>
 
 using json = nlohmann::json;
 
@@ -80,6 +81,54 @@ void RobotModel::set_q(const std::vector<double>& q) {
             j.q = q[idx++];
         }
     }
+}
+
+std::vector<std::string> RobotModel::validate_physical() const {
+    std::vector<std::string> msgs;
+    // Which links are children of a non-fixed joint?
+    std::vector<bool> moving(links.size(), false);
+    for (const auto& j : joints) {
+        if (j.type != JointType::Fixed && j.child_link >= 0 &&
+            static_cast<size_t>(j.child_link) < links.size()) {
+            moving[static_cast<size_t>(j.child_link)] = true;
+        }
+    }
+    for (size_t i = 0; i < links.size(); ++i) {
+        const auto& lk = links[i];
+        const auto& in = lk.inertia;
+        const std::string pre = "link '" + lk.name + "': ";
+        bool finite = std::isfinite(in.mass);
+        if (!finite) {
+            msgs.push_back(pre + "mass is not finite");
+        } else if (in.mass < 0.0) {
+            msgs.push_back(pre + "mass is negative");
+        }
+        bool com_ok = true;
+        for (double v : in.com) com_ok = com_ok && std::isfinite(v);
+        if (!com_ok) msgs.push_back(pre + "com is not finite");
+        bool t_ok = true;
+        for (double v : in.inertia_tensor) t_ok = t_ok && std::isfinite(v);
+        if (!t_ok) msgs.push_back(pre + "inertia tensor is not finite");
+
+        if (finite && in.mass > 0.0 && t_ok) {
+            const auto& t = in.inertia_tensor;
+            Eigen::Matrix3d I;
+            I << t[0], t[1], t[2],
+                 t[1], t[3], t[4],
+                 t[2], t[4], t[5];
+            Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> es(I);
+            Eigen::Vector3d ev = es.eigenvalues();   // ascending
+            if (ev[0] <= 1e-12) {
+                msgs.push_back(pre + "inertia tensor is not positive definite");
+            } else if (ev[0] + ev[1] < ev[2] - 1e-9) {
+                msgs.push_back(pre + "principal moments violate the triangle inequality");
+            }
+        }
+        if (i > 0 && moving[i] && finite && in.mass == 0.0) {
+            msgs.push_back(pre + "mass not set");
+        }
+    }
+    return msgs;
 }
 
 std::vector<std::string> RobotModel::validate() const {
@@ -514,7 +563,7 @@ RobotModel from_json(const std::string& json_str) {
                         throw std::runtime_error("link 'inertia' must be an object");
                     }
                     const auto& in = jl["inertia"];
-                    link.inertia.mass = in.value("mass", 1.0);
+                    link.inertia.mass = in.value("mass", 0.0);
                     if (in.contains("com")) {
                         if (!in["com"].is_array()) {
                             throw std::runtime_error("link inertia 'com' must be an array");

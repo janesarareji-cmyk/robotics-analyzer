@@ -51,6 +51,10 @@ struct RobotModel {
     /// Validate model consistency. Returns human-readable error messages.
     /// Returns an empty list if the model is valid.
     std::vector<std::string> validate() const;
+
+    /// Physical-data warnings (mass, COM, inertia). Separate from validate():
+    /// the model stays loadable. Empty list = physically plausible.
+    std::vector<std::string> validate_physical() const;
 };
 
 } // namespace urm

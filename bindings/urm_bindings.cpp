@@ -166,6 +166,8 @@ void bind_urm(py::module_& m) {
              "Set joint values from a list of floats.")
         .def("validate",     &urm::RobotModel::validate,
              "Validate model consistency. Returns human-readable error messages.")
+        .def("validate_physical", &urm::RobotModel::validate_physical,
+             "Physical-data warnings (mass/COM/inertia). Empty list = OK.")
         .def("to_json", [](const urm::RobotModel& m, int indent) {
             return urm::to_json(m, indent);
         }, py::arg("indent") = 2,
