@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.4 --- URM hardening (review fixes applied)
--   **Owner now:** Reviewer
+-   **Substage:** R2.5 --- FK engine (spec below)
+-   **Owner now:** Builder
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -46,7 +46,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.1  | URM schema + JSON round-trip              | tests/cpp/test_urm.cpp             | approved (follow-ups → R2.4) |
 | R2.2  | URM pybind11 bindings                     | tests/python/test_urm_bridge.py    | approved |
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
-| R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | ready-for-review |
+| R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | planned |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | planned |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
@@ -130,33 +130,80 @@ Changed files:
 - `tests/cpp/test_urm.cpp`
 - `tests/python/test_urm_bridge.py`
 
-### R2.5 onward
+### R2.5 --- FK engine (DH + MDH), C++ + bindings
 
-Spec written by Reviewer when R2.4 is approved.
+Goal: forward kinematics from `RobotModel` → all frame poses + TCP. No UI.
+
+Files: new `core/kin/fk.hpp`, `core/kin/fk.cpp` (namespace `kin`), add
+`kin/fk.cpp` to `core_lib` in `core/CMakeLists.txt`. Bindings in new
+`bindings/kin_bindings.cpp`, registered in `core_bridge.cpp` like
+`bind_urm`. Use `#include <pybind11/eigen.h>`. New CTest target `test_fk`
+in `tests/cpp/CMakeLists.txt` (copy `test_urm` pattern).
+
+1.  `Eigen::Isometry3d pose_to_iso(const urm::Pose&)`:
+    translation = xyz; rotation `R = Rz(yaw)·Ry(pitch)·Rx(roll)`,
+    rpy = (roll, pitch, yaw). Use `Eigen::AngleAxisd`, nothing hand-rolled.
+2.  `Eigen::Isometry3d dh_transform(a, alpha, d, theta)` --- standard DH:
+    `A = Rz(θ) · Tz(d) · Tx(a) · Rx(α)`.
+3.  `Eigen::Isometry3d mdh_transform(a, alpha, d, theta)` --- modified DH
+    (Craig): `A = Rx(α) · Tx(a) · Rz(θ) · Tz(d)`. Here `a`, `alpha` stored
+    on joint i are Craig's a_{i-1}, α_{i-1}. Write this in `fk.hpp` and
+    update the `MDHParams` doc comment in `joint.hpp` to say it.
+4.  Joint variable (from R2.4): revolute θ_eff = θ + q; prismatic
+    d_eff = d + q; fixed → q ignored, transform still applied.
+    `robot.convention` picks `dh` or `mdh` for every joint.
+5.  `struct FKResult { std::vector<Eigen::Isometry3d> frames; Eigen::Isometry3d tcp; }`.
+    `frames.size() == joints.size() + 1`. `frames[0] = base`.
+    `frames[i+1] = frames[i] · A_i`. `tcp = frames.back() · tool`.
+    All poses in world frame.
+6.  `FKResult forward_kinematics(const urm::RobotModel&)` uses each
+    `joint.q`. Overload `forward_kinematics(const urm::RobotModel&,
+    const std::vector<double>& q)` takes `q` of size `dof()` (non-fixed
+    joints, in order); wrong size → `std::invalid_argument`. Overload must
+    NOT modify the model (take const ref, copy q internally).
+7.  No `validate()` call inside FK. No allocation beyond the result vector.
+8.  Python: `core_bridge.fk(model)` and `core_bridge.fk(model, q)` return
+    dict `{"frames": [np 4x4, ...], "tcp": np 4x4}` (float64, homogeneous
+    `.matrix()`). Also bind `pose_to_iso` → np 4x4. Wrong-size q →
+    `ValueError`.
+
+Tests C++ `tests/cpp/test_fk.cpp` (tol 1e-12 unless noted):
+-   1R: a=1, q=π/2 → TCP xyz = (0, 1, 0).
+-   2R planar a1=a2=1: q=(0,0) → (2,0,0); q=(π/2,−π/2) → (1,1,0).
+-   3R planar closed form: a=(1, 0.8, 0.5), 100 deterministic q samples
+    (fixed seed, std::mt19937 seed 42, uniform [−π, π]).
+    x = Σ a_i cos(q1+…+qi), y = Σ a_i sin(…), yaw = Σ q. Match.
+-   Prismatic: d=0.2, q=0.3 → TCP z = 0.5.
+-   Fixed joint: contributes transform, `dof()` unchanged, q ignored
+    (set q=99 → same result).
+-   DH vs MDH equivalence: same 2R planar arm in MDH (j1 a=0, j2 a=1,
+    tool xyz=(1,0,0)) gives same TCP as DH version for 20 q samples.
+-   Base + tool: base yaw π/2 rotates TCP of 1R arm; tool xyz offset adds
+    along last frame x.
+-   `pose_to_iso` order: rpy=(0.3, −0.7, 1.1) equals explicit
+    `Rz(1.1)·Ry(−0.7)·Rx(0.3)` built from AngleAxis.
+-   Every frame rotation orthonormal, det = +1 (tol 1e-12).
+-   `frames.size() == joints.size()+1`; wrong-size q throws
+    `std::invalid_argument`; overload leaves `model.joints[i].q` unchanged.
+
+Tests Python `tests/python/test_fk_bridge.py`:
+-   `fk(model)` returns dict; frames list len = joints+1; each ndarray
+    shape (4,4), dtype float64; tcp shape (4,4).
+-   2R planar result equals C++ case above.
+-   `fk(model, q)` wrong length → `ValueError`.
+-   `pose_to_iso` returns (4,4), last row `[0,0,0,1]`.
+
+Done when: `.\run_tests.ps1` all green (5 CTest targets), `graphify
+update .` run, row set to `ready-for-review`, commit `R2.5: FK engine`.
+
+### R2.6 onward
+
+Spec written by Reviewer when R2.5 is approved.
 
 ## Open review items
 
--   **R2.4 review (2026-11-11)** --- build OK, ctest 4/4, pytest 112/112.
--   [R2.4-1] (fixed — pending review) (must) `from_json` only wraps `json::parse`. Later
-    `j.value(...)` / `.get<>()` calls throw `nlohmann::json::type_error`,
-    which is NOT a `std::runtime_error`. Spec item 8 not met. Fix: wrap the
-    whole body of `from_json` after parse; catch `nlohmann::json::exception`
-    and rethrow `std::runtime_error("invalid robot model JSON: " + what)`.
-    Let our own `std::runtime_error`s pass through unchanged. Also: top-level
-    JSON not an object → throw. C++ tests (each must throw
-    `std::runtime_error`): `[]`; `{"schema_version": "2"}`;
-    `{"joints":[{"name":"j","type":"revolute","q":"abc"}]}`;
-    `{"links":[{"inertia":{"com":"x"}}]}`.
--   [R2.4-2] (fixed — pending review) (must) `"limits"` object present but missing `lower`/`upper`
-    → falls back to ±π even for prismatic. Fix: start from
-    `default_limits(joint.type)` and override only the keys present. Test:
-    prismatic with `"limits": {"vel": 2.0}` → lower 0, upper 0.5, vel 2.0.
--   [R2.4-3] (fixed — pending review) (must) `schema_version < 1` accepted. Throw
-    `unsupported schema_version N` for N < 1 too. Test with 0.
--   [R2.4-4] (fixed — pending review) (info, no code) Python: `model.base.xyz[0] = 1.0` changes a
-    copy, silently lost; must assign whole list `model.base.xyz = [...]`.
-    DH editor (R2.6) must do this. Add one Python test that documents it:
-    assign whole list → value sticks.
+-   (info) R2.6 DH editor: assign whole lists to `Pose.xyz`/`rpy`
+    (`model.base.xyz = [...]`); element assignment is silently lost.
 -   (info) DH editor is not shown in MainWindow yet → handled in R2.6.
 -   (info) URM is a serial chain (vector), not a tree. OK for R2. Revisit
     before R3 URDF import (branching robots).
