@@ -1,4 +1,13 @@
-"""Kinematics helpers shared by UI and IK glue (R4.3)."""
+"""Kinematics helpers shared by UI and IK glue (R4.3, R4.5)."""
+import core_bridge as cb
+
+
+def singularity_at(cm, q, mode="full", threshold=1e-3):
+    """Singularity indicators of the TCP Jacobian at ``q`` (R4.5).
+
+    ``cb.jacobian_tcp`` then ``cb.analyze_singularity``. Returns the dict.
+    """
+    return cb.analyze_singularity(cb.jacobian_tcp(cm, q), mode=mode, threshold=threshold)
 
 
 def dof_limits(model):

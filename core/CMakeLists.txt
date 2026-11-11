@@ -7,6 +7,7 @@ add_library(core_lib STATIC
     kin/jacobian.cpp
     kin/ik.cpp
     kin/ik_multi.cpp
+    kin/singularity.cpp
 )
 
 target_include_directories(core_lib PUBLIC

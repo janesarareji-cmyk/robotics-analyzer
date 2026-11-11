@@ -17,6 +17,7 @@
 #include "kin/jacobian.hpp"
 #include "kin/ik.hpp"
 #include "kin/ik_multi.hpp"
+#include "kin/singularity.hpp"
 #include <stdexcept>
 #include "urm/robot_model.hpp"
 
@@ -209,6 +210,19 @@ void bind_kin(py::module_& m) {
        py::arg("options") = py::none(), py::arg("n_starts") = 30, py::arg("seed") = 42,
        py::arg("dedupe_tol") = 1e-3,
        "Multi-start IK: distinct validated solutions sorted by distance to q_current.");
+
+    m.def("analyze_singularity", [](const Eigen::MatrixXd& J, const std::string& mode, double threshold) {
+        const kin::SingularityInfo s = kin::analyze_singularity(J, mode, threshold);
+        py::dict d;
+        d["singular_values"] = s.singular_values;
+        d["sigma_min"] = s.sigma_min;
+        d["sigma_max"] = s.sigma_max;
+        d["condition"] = s.condition;
+        d["manipulability"] = s.manipulability;
+        d["near_singular"] = s.near_singular;
+        return d;
+    }, py::arg("J"), py::arg("mode") = "full", py::arg("threshold") = 1e-3,
+       "Singularity indicators of a 6 x n Jacobian. mode: full | position | angular. Returns dict.");
 
     m.def("compile_arrays", [](const urm::RobotModel& model) {
         return compiled_arrays_to_dict(kin::to_arrays(kin::compile(model)));
