@@ -7,7 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- stage-approved (Sonnet review 2026-11-11)
--   **Next substage:** R6.1 --- simulation core (spec `docs/specs/R6-spec.md`)
+-   **Next substage:** R6.2 --- Integrators (spec `docs/specs/R6-spec.md`)
+-   **R6.1 committed:** app/sim (SimState, SimClock, SimEngine, rk4 placeholder). Tests after R6.1: pytest 690 passed (CTest 9/9 unchanged, no C++ touched). Note for R6.2: SimEngine._finish runs forward dyn + inverse dyn + FK + energy every step; check the speed floor in R6.2 item 5 and make the extra signals lazy/decimated if needed.
 -   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch, non-blocking (R6)
@@ -106,7 +107,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R5.5 | Python backend, fallback, Workspace panel | test_compute_backend.py, test_ui_workspace.py | stage-approved |
 | R5.6 | Performance dashboard | test_performance.py | stage-approved |
 | R5.7 | R5 milestone | test_milestone_r5.py | stage-approved |
-| R6.1 | Simulation core | test_sim_core.py | planned |
+| R6.1 | Simulation core | test_sim_core.py | committed |
 | R6.2 | Integrators | test_integrators.py | planned |
 | R6.3 | Manual mode + UI | test_sim_panel.py | planned |
 | R6.4 | Trajectory + playback | test_trajectory.py, test_ui_trajectory.py | planned |
