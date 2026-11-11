@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<robot name="six_dof_with_gripper">
+  <link name="base">
+    <inertial><origin xyz="0 0 0.05" rpy="0.1 -0.2 0.3"/><mass value="1.0"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="l1">
+    <inertial><origin xyz="0 0.01 0.1" rpy="0.1 -0.2 0.3"/><mass value="2.0"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="l2">
+    <inertial><origin xyz="0.15 0 0.02" rpy="0.1 -0.2 0.3"/><mass value="3.0"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="l3">
+    <inertial><origin xyz="0.1 0.02 0" rpy="0.1 -0.2 0.3"/><mass value="1.5"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="l4">
+    <inertial><origin xyz="0 0 0.08" rpy="0.1 -0.2 0.3"/><mass value="1.2"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="l5">
+    <inertial><origin xyz="0.02 0 0.04" rpy="0.1 -0.2 0.3"/><mass value="0.8"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="l6">
+    <inertial><origin xyz="0 0.01 0.03" rpy="0.1 -0.2 0.3"/><mass value="0.6"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="finger_l">
+    <inertial><origin xyz="0 0.01 0.02" rpy="0.1 -0.2 0.3"/><mass value="0.1"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <link name="finger_r">
+    <inertial><origin xyz="0 -0.01 0.02" rpy="0.1 -0.2 0.3"/><mass value="0.12"/><inertia ixx="0.01" ixy="0.001" ixz="0" iyy="0.02" iyz="0" izz="0.03"/></inertial>
+    <visual><geometry><mesh filename="../meshes/cube.stl" scale="0.5 0.5 0.5"/></geometry></visual>
+  </link>
+  <joint name="j1" type="revolute"><parent link="base"/><child link="l1"/><origin xyz="0 0 0.2" rpy="0 0 0.3"/><axis xyz="0 0 1"/><limit lower="-3.0" upper="3.0" effort="10" velocity="1"/></joint>
+  <joint name="j2" type="revolute"><parent link="l1"/><child link="l2"/><origin xyz="0.05 0 0.15" rpy="0.2 0 0"/><axis xyz="0 1 0"/><limit lower="-3.0" upper="3.0" effort="10" velocity="1"/></joint>
+  <joint name="j3" type="revolute"><parent link="l2"/><child link="l3"/><origin xyz="0.3 0 0" rpy="0 0.4 0"/><axis xyz="0 1 0"/><limit lower="-3.0" upper="3.0" effort="10" velocity="1"/></joint>
+  <joint name="j4" type="revolute"><parent link="l3"/><child link="l4"/><origin xyz="0.25 0.02 0" rpy="0 0 -0.5"/><axis xyz="1 0 0"/><limit lower="-3.0" upper="3.0" effort="10" velocity="1"/></joint>
+  <joint name="j5" type="revolute"><parent link="l4"/><child link="l5"/><origin xyz="0 0 0.1" rpy="0.3 -0.2 0"/><axis xyz="0 1 0"/><limit lower="-3.0" upper="3.0" effort="10" velocity="1"/></joint>
+  <joint name="j6" type="revolute"><parent link="l5"/><child link="l6"/><origin xyz="0.05 0 0.05" rpy="0 0 0.1"/><axis xyz="0.6 0 0.8"/><limit lower="-3.0" upper="3.0" effort="10" velocity="1"/></joint>
+  <joint name="jf_l" type="prismatic"><parent link="l6"/><child link="finger_l"/><origin xyz="0 0.02 0.05" rpy="0 0 0.1"/><axis xyz="0 1 0"/><limit lower="0" upper="0.04" effort="10" velocity="0.1"/></joint>
+  <joint name="jf_r" type="prismatic"><parent link="l6"/><child link="finger_r"/><origin xyz="0 -0.02 0.05" rpy="0 0 0.1"/><axis xyz="0 -1 0"/><limit lower="0" upper="0.04" effort="10" velocity="0.1"/><mimic joint="jf_l" multiplier="1" offset="0"/></joint>
+</robot>
