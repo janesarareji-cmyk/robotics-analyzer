@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.6 --- Wire model + DH editor into app/project (ready for review)
--   **Owner now:** Reviewer
+-   **Substage:** R2.7 --- Viewport: links, frames, TCP (planned)
+-   **Owner now:** Builder
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -48,7 +48,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
 | R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
-| R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | ready-for-review |
+| R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
@@ -246,9 +246,36 @@ Changed files:
 - `tests/python/test_project.py`
 - `tests/cpp/test_fk.cpp`
 
-### R2.7 onward
+### R2.7 --- Viewport: links, frames, TCP
 
-Spec written by Reviewer when R2.6 is approved.
+Goal: draw the robot in the PyVista viewport from FK. Read-only view. No joint sliders yet (R2.8).
+
+Builder: `graphify query` on the viewport widget, ProjectController, `kin_bindings`/`core_bridge.fk` first. Reuse the existing viewport class from R1.7. Do not touch C++ unless a binding is missing.
+
+1.  New `app/viewport/robot_view.py` (or next to the existing viewport code): class `RobotView` that owns the PyVista actors for one robot and has `update(model, fk_result)`. It must NOT call FK itself, caller passes `core_bridge.fk(model)` result. Pure draw logic.
+2.  Draw: (a) one coordinate-frame triad per `frames[i]` (RGB = XYZ axes, length 0.05 m default); (b) a polyline through the origins of all frames, then to TCP; (c) a joint marker at each non-fixed joint frame origin (sphere radius 0.015 m for revolute, small cube for prismatic); (d) a larger triad at TCP. Base frame (frames[0]) drawn with the world triad style distinct from link frames.
+3.  Update in place: `update()` re-uses actors (set new transforms/points). No remove-all/re-add per call. Actor count constant while joint count is constant. Joint count change → rebuild.
+4.  Empty model (0 joints): draw only base triad + TCP triad (TCP == base · tool). No crash.
+5.  Toggles on `RobotView`: `set_show_frames(bool)`, `set_show_links(bool)`, `set_show_tcp(bool)`. Add a View-menu submenu "Robot" with 3 checkable actions wired to them (default all on).
+6.  MainWindow: on `project_opened` and `robot_changed`, compute `core_bridge.fk(model)` and call `RobotView.update`. If model fails FK (exception) → log warning, keep last drawing. Camera reset only on project_opened, not on every robot_changed.
+7.  Triad length and marker sizes scale: default from `max(0.05, 0.05 * total_reach)` where total_reach = sum of |a|+|d| over joints; fall back to 0.05.
+
+Tests `tests/python/test_viewport_robot.py` (offscreen, follow `test_viewport_in_main_window.py` pattern):
+-   3R planar model: actor count equals expected (triads + polyline + markers); polyline points == frame origins + TCP (assert numerically, tol 1e-9).
+-   `update()` with new q moves polyline points to new FK result, actor count unchanged.
+-   Empty model draws base + TCP only, no exception.
+-   Toggles hide/show each group (assert actor visibility).
+-   MainWindow integration: set_robot on controller → polyline updates; FK failure path logs warning and keeps last points.
+-   Camera not reset on robot_changed (record camera position before/after).
+-   View > Robot submenu has 3 checkable actions, default checked.
+
+Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.7 set to `ready-for-review`, commit `R2.7: robot viewport`.
+
+Changed files (expected): `app/viewport/` (new robot_view + existing viewport hook), `app/main_window.py`, `tests/python/test_viewport_robot.py`.
+
+### R2.8 onward
+
+Spec written by Reviewer when R2.7 is approved.
 
 ## Open review items
 
