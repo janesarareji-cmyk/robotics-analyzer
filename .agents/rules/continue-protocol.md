@@ -28,3 +28,19 @@ When the user says "continue" (or "go", "next", "proceed") with no other instruc
    - Commit: `R<x>.<y>: <summary>` (or `R<x>.<y>-fix: <summary>` for review fixes). Include `PROGRESS.md` and `graphify-out/graph.json`. Push if a remote exists.
 6. Stop. Do one substage per "continue". Do not start the next substage.
 7. Report to the user in 3 lines or fewer: substage, test result, commit hash.
+
+## Stage-Batch Loop (from Stage R3)
+
+Authority: `docs/MASTER_PLAN.md` section 1. Before Stage R3, steps 1-7 above apply. From Stage R3 on, this loop replaces steps 6 and 7 for the stage.
+
+1. Read `PROGRESS.md` and the stage spec pack `docs/specs/R<x>-spec.md`.
+2. Run `graphify update .`.
+3. Take the first substage in the stage not `committed`. Implement it. Follow its spec exactly.
+4. Build. Run `.\run_tests.ps1`. All tests must pass. If a substage fails twice, stop. Write the failure in `PROGRESS.md` → "Blockers". Tell the user. Stop.
+5. Run `graphify update .`. Commit `R<x>.<y>: <summary>` with `PROGRESS.md` and `graphify-out/graph.json`.
+6. Repeat from step 3 until every substage of the stage is committed. Do not wait for review between substages.
+7. Run the stage gate (`docs/MASTER_PLAN.md` 1.3). Record the results in `PROGRESS.md`.
+8. Push if a remote exists: `git push origin main`, then `git tag stage-R<x>-done`, then `git push origin stage-R<x>-done`. Never push with a red test. Never force-push.
+9. Set stage status `stage-ready-for-review`. Set "Owner now" to Reviewer.
+10. If the stage is blocking review (R3, R4, R5.2 decision): stop. Wait for `stage-approved`.
+11. Otherwise: if the next stage spec pack exists, start it at step 1. If not, stop. Tell the user: Claude must write `docs/specs/R<x+1>-spec.md` first.

@@ -16,6 +16,20 @@ description: Development workflow, agent roles, build pipeline, and stage/substa
 
 The user drives the work. The user talks to the Orchestrator in Claude Code and relays its specs/reviews to the Builder in Antigravity.
 
+### Stage-Batch Workflow (active from Stage R3)
+
+Authority: `docs/MASTER_PLAN.md` section 1. Where it conflicts with "Workflow Per Substage", "Stage Completion Gate" or the review steps below, MASTER_PLAN wins for Stage R3 onward.
+
+- Claude writes the whole stage spec pack (`docs/specs/R<x>-spec.md`) before the stage starts.
+- Gemini builds ALL substages of the stage in order. Per substage: tests green, `graphify update .`, one commit `R<x>.<y>: <summary>`. No wait for review between substages.
+- Stage gate (MASTER_PLAN 1.3), then push `main` and tag `stage-R<x>-done`.
+- Claude reviews at stage end.
+  - Blocking (Gemini waits for `stage-approved` before the next stage): R3, R4, and the R5.2 precision decision.
+  - Non-blocking (next stage starts at once): R5 (after R5.2), R6, R7, R8.
+  - Max one unreviewed stage. Findings become `R<x>-fix` substages, done first.
+- Stop rule: a substage fails its tests twice → stop. Write the failure in `PROGRESS.md` → "Blockers". Wait for the user.
+- No remote yet. The user runs `git remote add origin <url>` once. Gemini pushes only when a remote exists. Never force-push.
+
 ### Work Routing
 
 - Writes or changes product code (`app/`, `core/`, `bindings/`, `cuda/`, `tests/`, CMake) → **Gemini**.
@@ -33,8 +47,8 @@ The user drives the work. The user talks to the Orchestrator in Claude Code and 
 
 ### User Shortcuts
 
-- To Gemini: "continue" → follow `.agents/rules/continue-protocol.md`.
-- To Claude: "review" → review the substage marked `ready-for-review` in `PROGRESS.md`, set `approved` or `changes-requested`, and write the next substage spec if approved.
+- To Gemini: "continue" → continue the current stage from the first substage not `committed`, following the stage spec pack, then stage gate and push. See `.agents/rules/continue-protocol.md`.
+- To Claude: "review" → review the stage marked `stage-ready-for-review` in `PROGRESS.md`, set `stage-approved` or `stage-changes-requested`, and write the next stage spec pack if approved.
 
 ### Progress File
 
@@ -76,7 +90,7 @@ This keeps the sequence strictly linear. No substage is skipped. No substage is 
 
 ### Key Rules
 
-- Git (Builder owns commits): after each substage is implemented and its tests pass, Gemini commits with message `R<x>.<y>: <summary>`. Review fixes get their own commit `R<x>.<y>-fix: <summary>`. Commit `PROGRESS.md` and `graphify-out/graph.json` in the same commit. Never commit `build/` or binaries (see `.gitignore`). Do not rewrite history. Gemini pushes after each commit once a remote is configured (none yet). Never force-push.
+- Git (Builder owns commits): after each substage is implemented and its tests pass, Gemini commits with message `R<x>.<y>: <summary>`. Review fixes get their own commit `R<x>.<y>-fix: <summary>`. Commit `PROGRESS.md` and `graphify-out/graph.json` in the same commit. Never commit `build/` or binaries (see `.gitignore`). Do not rewrite history. Gemini pushes at the stage gate (not after each commit) once a remote is configured (none yet). Never force-push.
 - Implement one substage at a time. Do not start the next substage until the current one compiles, runs, and has passing tests.
 - Keep the application runnable after every substage.
 - Do not add new dependencies without first verifying Windows compatibility in a proof-of-compatibility build.

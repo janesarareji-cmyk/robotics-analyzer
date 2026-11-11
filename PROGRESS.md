@@ -10,6 +10,7 @@ every handoff. Keep it short.
 -   **Substage:** R3.1 --- URM schema v2: tree + origin/axis joints (ready-for-review)
 -   **Owner now:** Reviewer
 -   **Blockers:** none known
+-   **Review mode:** blocking (R3)
 -   **Stage R2 gate: PASSED (Reviewer verified: CTest 5/5, pytest 146/146)**
     -   Gate results as recorded by Builder:
     -   CTest targets: 5/5 passed.
@@ -29,7 +30,12 @@ every handoff. Keep it short.
 5.  Advisor (Opus) consulted → record it in "Decisions".
 
 Status values: `planned` · `in-progress` · `ready-for-review` ·
-`changes-requested` · `approved` · `blocked`
+`changes-requested` · `approved` · `blocked` · `stage-ready-for-review` ·
+`stage-approved` · `stage-changes-requested`
+
+Stage-batch flow (from R3): Builder builds all substages of a stage, then sets
+`stage-ready-for-review`. Reviewer sets `stage-approved` or `stage-changes-requested`.
+See `docs/MASTER_PLAN.md` section 1.
 
 ## Substage log
 

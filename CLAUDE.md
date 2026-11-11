@@ -21,12 +21,13 @@ Claude Code does not auto-load `.agents/rules/`. These imports make it load them
 4. **No product code.** Never edit `app/`, `core/`, `bindings/`, `cuda/`,
    `tests/`, CMake. Write spec for Gemini instead.
 
-## "review" checklist
+## "review" checklist (stage)
 
-1. Read `PROGRESS.md` → find row `ready-for-review`. None → say so, stop.
-2. Graphify query the substage area (rule 2).
+1. Read `PROGRESS.md` → find stage with `stage-ready-for-review`. None → say so, stop.
+2. Graphify query the stage areas (rule 2).
 3. Haiku subagent: run `.\run_tests.ps1`, report pass/fail.
-4. Review diff vs spec. Findings in Caveman.
-5. Decide `approved` / `changes-requested`. If approved, write next substage spec.
-6. Haiku subagent: write status + findings + spec into `PROGRESS.md`, commit
-   `docs(progress): review R<x>.<y>`.
+4. Read stage diff: `git diff stage-R<x-1>-done..stage-R<x>-done` (or from the last approved commit if no tag). Read every file in it.
+5. Findings in Caveman. Verdict `stage-approved` or `stage-changes-requested` with `R<x>-fix` list.
+6. If approved, write next stage spec pack `docs/specs/R<x+1>-spec.md`. Set its rows `planned`.
+7. Haiku subagent: write status + findings + spec pack pointer into `PROGRESS.md`, commit
+   `docs(progress): review stage R<x>`.
