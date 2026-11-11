@@ -6,9 +6,9 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R5 --- GPU compute (status: `stage-ready-for-review`, note: R5.2 precision decision)
--   **Next substage:** R5.3 --- Workspace sampling (Builder waits: Sonnet reviewer checks the R5.2 precision decision first, then sets status back to `in-progress` or writes an `R5-fix` list). R5.2 committed: CTest 9/9, pytest 519 (476 + 13 `test_fk_batch_cpu.py` + 30 `test_gpu_fk.py`). Precision rule outcome: FK default = **fp32** (e2e fp32 37.6 ms, fp64 68.5 ms; ratio 1.82 ok but 68.5 > 50 ms). Kernel fp32 0.58 ms, fp64 15.0 ms, CPU 32 threads e2e 127.3 ms (N = 1e6, 12 joints). Numbers: `docs/gpu-precision-decision.md`, `benchmarks/r5_fk_2026-11-11.json`. Open point for reviewer: the fp32 SASS holds one DMUL in the sincosf large-angle slow path (|angle| > 105615 rad), no DADD; see the doc.
--   **Owner now:** Sonnet reviewer (R5.2 precision decision)
+-   **Stage:** R5 --- GPU compute (status: `in-progress`)
+-   **Next substage:** R5.3 --- Workspace sampling. R5.2 decision CONFIRMED by Sonnet 2026-11-11: fp32 default for GPU FK (medians at 1e6, 12 joints: fp32 e2e 37.6 ms, fp64 e2e 68.5 ms (ratio 1.82 but over the 50 ms limit), CPU 32 threads 127.3 ms; fp32 max errors 1.6e-6 m / 7.1e-7 rad vs tolerances 6e-6..7.3e-5 m / 5.7e-6..1.1e-5 rad). Accepted: one DMUL in the sincosf large-angle slow path (|angle| > 105615 rad); pooled buffers; CPU fallback inside fk_batch. Numbers: `docs/gpu-precision-decision.md`, `benchmarks/r5_fk_2026-11-11.json`.
+-   **Owner now:** Builder subagents (Sonnet orchestrates)
 -   **Blockers:** none
 -   **Review mode:** stage-batch; the R5.2 precision decision is BLOCKING (Builder stops after R5.2), then R5.3 to R5.7 non-blocking
 -   **Spec pack:** `docs/specs/R5-spec.md`
@@ -148,6 +148,7 @@ Specs do not live in this file. Find them here:
 -   2026-11-11: effective_links is pure; link-count check lives in compile() (Sonnet decision, R4.1).
 -   2026-11-11: OPUS consulted (R5 GPU design, GPU memory model decision point). Answer: fp32 default with CPU fp64 reference; templated kernel, precision rule at R5.2 (fp64 default for FK only if e2e_fp64 <= 2x e2e_fp32 and <= 50 ms per 1e6); GPU computes in base frame, host applies base in double; thread-per-sample, joint tables in shared memory (3x4 float), SoA q [dof][N] and output [12][N], SASS-only build for sm_120 (driver 13.1 vs toolkit 13.5), own Philox RNG shared by CPU and GPU, chunk size = clamp(floor(budget/(2*bytes_per_sample)),65536,4M) with 0.6 headroom, 50 ms launch target for WDDM TDR, OOM -> halve chunk -> CPU, sticky error -> GPU dead, GPU IK with unrolled fp32 Cholesky plus CPU fp64 polish and a go/no-go rule (>=5x faster, convergence within 1 point). Details in R5-spec.
 -   2026-11-11: R5 decisions (Sonnet): GPU code in a separate optional pybind11 module `gpu_bridge` (core_bridge never links CUDA, so CPU fallback always imports); no CuPy (new dependency, needs Windows proof build); CPU batch FK and CPU batch IK are built in R5 as reference and fallback.
+-   2026-11-11: R5.2 precision rule applied mechanically (Opus rule): GPU FK default precision = fp32, fp64 available via precision="fp64". Workspace and GPU IK always fp32.
 
 ## Risks
 
