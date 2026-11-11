@@ -87,7 +87,8 @@ class ProjectController(QObject):
         self.mark_modified()
         self.robot_changed.emit(model)
 
-    def import_robot(self, parent_widget: QWidget, model: Any, name: str) -> bool:
+    def import_robot(self, parent_widget: QWidget, model: Any, name: str,
+                     visuals: Any = None, collisions: Any = None) -> bool:
         """
         Create a NEW unsaved project holding an imported robot model.
         Asks to discard if the current project is modified (Cancel -> False, nothing changes).
@@ -96,6 +97,8 @@ class ProjectController(QObject):
             return False
         project = ProjectData.new((name or "").strip() or "Imported Robot")
         project.robot_model = model
+        project.visuals = list(visuals or [])
+        project.collisions = list(collisions or [])
         self._set_project(project, modified=True)
         log.info("Robot imported into new project: %s", project.name)
         return True
@@ -180,6 +183,7 @@ class ProjectController(QObject):
         if parent_widget is not None and not self._confirm_discard(parent_widget):
             return False
 
+        self._project.cleanup_assets()
         self._project = None
         self._is_modified = False
         self.project_closed.emit()
@@ -264,6 +268,8 @@ class ProjectController(QObject):
 
     def _set_project(self, project: ProjectData, modified: bool) -> None:
         """Set the active project and emit project_opened."""
+        if self._project is not None and self._project is not project:
+            self._project.cleanup_assets()
         self._project = project
         self._is_modified = modified
         self.project_opened.emit(project)

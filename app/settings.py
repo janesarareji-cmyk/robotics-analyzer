@@ -142,6 +142,18 @@ class AppSettings:
     # Generic access
     # ------------------------------------------------------------------
 
+    def mesh_search_roots(self) -> list[str]:
+        """Folders searched for package:// meshes (R3.5)."""
+        v = self._settings.value("import/mesh_search_roots", [])
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            return [v]
+        return [str(x) for x in v]
+
+    def set_mesh_search_roots(self, roots: list[str]) -> None:
+        self._settings.setValue("import/mesh_search_roots", list(roots))
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get a setting value by key with an optional default."""
         return self._settings.value(key, default)

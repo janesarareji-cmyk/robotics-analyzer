@@ -114,9 +114,9 @@ def test_serial_6dof_structure_and_report():
     assert res.model is not None
     assert _codes(res.report, "error") == []
     assert _codes(res.report, "warning") == []
-    # visual + inertial skipped (once each), plus the TCP info
+    # inertial skipped (R3.5 handles visual), plus the TCP info
     assert sorted(_codes(res.report, "info")) == sorted(
-        [ir.URDF_IGNORED_ELEMENT, ir.URDF_IGNORED_ELEMENT, ir.URDF_TCP_CHOSEN]
+        [ir.URDF_IGNORED_ELEMENT, ir.URDF_TCP_CHOSEN]
     )
     m = res.model
     assert len(m.links) == 7
@@ -268,11 +268,11 @@ def test_ignored_top_level_elements_info_once_per_kind(tmp_path):
     res = import_urdf(_write(tmp_path, text))
     assert res.model is not None
     ignored = res.report.by_code(ir.URDF_IGNORED_ELEMENT)
-    assert len(ignored) == 3  # material, transmission, gazebo: once each
+    assert len(ignored) == 2  # transmission, gazebo: once each (material is read since R3.5)
     assert all(i.severity == "info" for i in ignored)
 
 
-def test_import_report_no_visuals_or_collisions_until_r35():
+def test_import_result_no_visuals_for_link_without_geometry():
     res = import_urdf(_fx("planar_2r.urdf"))
     assert res.visuals == []
     assert res.collisions == []

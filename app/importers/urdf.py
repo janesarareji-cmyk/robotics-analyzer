@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 
 import core_bridge as cb
 
+from . import visuals as vis
 from .import_report import (
     ImportReport,
     ImportResult,
@@ -26,9 +27,13 @@ from .import_report import (
     URDF_CONTINUOUS_LIMITS,
     URDF_CYCLE,
     URDF_DUPLICATE_NAME,
+    URDF_EXTRA_VISUAL,
     URDF_FILE_NOT_FOUND,
     URDF_IGNORED_ELEMENT,
     URDF_INVALID_MODEL,
+    URDF_MESH_FORMAT,
+    URDF_MESH_MISSING,
+    URDF_MESH_TOO_LARGE,
     URDF_MIMIC_UNKNOWN,
     URDF_MISSING_LIMIT,
     URDF_MISSING_LINK,
@@ -41,14 +46,11 @@ from .import_report import (
     URDF_ZERO_AXIS,
 )
 
-# Element kinds skipped in R3.3 (R3.5 stops skipping visual/collision/material,
+# Element kinds skipped (R3.5 handles visual/collision/material,
 # R3.7 stops skipping inertial).
 _IGNORED_KINDS = (
     "transmission",
     "gazebo",
-    "material",
-    "visual",
-    "collision",
     "inertial",
 )
 
@@ -86,16 +88,21 @@ class _RawJoint:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def import_urdf(path) -> ImportResult:
-    """Import a URDF file. Errors go to the report; model is None on failure."""
+def import_urdf(path, search_roots=None) -> ImportResult:
+    """Import a URDF file. Errors go to the report; model is None on failure.
+
+    `search_roots`: extra folders used to resolve package:// mesh paths.
+    """
     report = ImportReport()
     try:
         root = _read_root(path)
-        model = _build(root, report)
+        model, visuals, collisions = _build(
+            root, report, Path(path).resolve().parent, list(search_roots or [])
+        )
     except _Fatal as exc:
         report.add(SEV_ERROR, exc.code, exc.message, exc.element)
         return ImportResult(None, report)
-    return ImportResult(model, report)
+    return ImportResult(model, report, visuals, collisions)
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +173,9 @@ def _pose(el: Optional[ET.Element], element: Optional[str]):
 # Model build
 # ---------------------------------------------------------------------------
 
-def _build(root: ET.Element, report: ImportReport) -> Optional[cb.RobotModel]:
+def _build(root: ET.Element, report: ImportReport, urdf_dir: Path,
+           search_roots: List[str]):
+    """Returns (model | None, visuals, collisions)."""
     _report_ignored(root, report)
 
     # Links: names must be unique.
@@ -312,8 +321,9 @@ def _build(root: ET.Element, report: ImportReport) -> Optional[cb.RobotModel]:
     if messages:
         for msg in messages:
             report.add(SEV_ERROR, URDF_INVALID_MODEL, msg)
-        return None
-    return model
+        return None, [], []
+    visuals, collisions = _parse_geometry(root, index, report, urdf_dir, search_roots)
+    return model, visuals, collisions
 
 
 def _build_joint(rj: _RawJoint, index: Dict[str, int], joint_names: set,
@@ -430,3 +440,142 @@ def _report_ignored(root: ET.Element, report: ImportReport) -> None:
             f"<{kind}> elements are skipped on import",
             None,
         )
+
+
+# ---------------------------------------------------------------------------
+# Visual / collision geometry (R3.5)
+# ---------------------------------------------------------------------------
+
+def _named_materials(root: ET.Element) -> Dict[str, List[float]]:
+    out: Dict[str, List[float]] = {}
+    for m in root.findall("material"):
+        c = m.find("color")
+        if c is not None and c.get("rgba") is not None:
+            out[m.get("name", "")] = _vec(
+                c.get("rgba"), 4, vis.DEFAULT_RGBA, m.get("name")
+            )
+    return out
+
+
+def _rgba(el: ET.Element, named: Dict[str, List[float]], link: str) -> List[float]:
+    m = el.find("material")
+    if m is None:
+        return list(vis.DEFAULT_RGBA)
+    c = m.find("color")
+    if c is not None and c.get("rgba") is not None:
+        return _vec(c.get("rgba"), 4, vis.DEFAULT_RGBA, link)
+    return list(named.get(m.get("name", ""), vis.DEFAULT_RGBA))
+
+
+def _make_shape(el: ET.Element, link_name: str, link_index: int,
+                named: Dict[str, List[float]]) -> Optional[vis.LinkVisual]:
+    geom = el.find("geometry")
+    if geom is None:
+        return None
+    org = el.find("origin")
+    xyz = _vec(org.get("xyz") if org is not None else None, 3, (0, 0, 0), link_name)
+    rpy = _vec(org.get("rpy") if org is not None else None, 3, (0, 0, 0), link_name)
+    rgba = _rgba(el, named, link_name)
+
+    shape = None
+    kind = ""
+    for kind in vis.KINDS:
+        shape = geom.find(kind)
+        if shape is not None:
+            break
+    if shape is None:
+        return None
+
+    if kind == "box":
+        params = {"size": _vec(shape.get("size"), 3, (1, 1, 1), link_name)}
+    elif kind == "cylinder":
+        params = {"radius": _num(shape.get("radius"), 1.0, link_name),
+                  "length": _num(shape.get("length"), 1.0, link_name)}
+    elif kind == "sphere":
+        params = {"radius": _num(shape.get("radius"), 1.0, link_name)}
+    else:
+        params = {
+            "filename": shape.get("filename", ""),
+            "scale": _vec(shape.get("scale"), 3, (1, 1, 1), link_name),
+        }
+        if not params["filename"]:
+            return None
+    return vis.LinkVisual(link_index, link_name, kind, params, xyz, rpy, rgba)
+
+
+def _resolve_mesh_visual(v: vis.LinkVisual, urdf_dir: Path, search_roots,
+                         report: Optional[ImportReport]) -> None:
+    """Resolve the mesh path; warn (visuals only) and set fallback."""
+    fname = v.params.get("filename", "")
+    path = vis.resolve_mesh(fname, urdf_dir, search_roots)
+    if path is None:
+        v.fallback = True
+        if report is not None:
+            report.add(
+                SEV_WARNING, URDF_MESH_MISSING,
+                f"mesh '{fname}' of link '{v.link_name}' not found; "
+                "a placeholder cube is drawn", v.link_name,
+            )
+        return
+    v.mesh_path = path
+    if not vis.mesh_format_ok(path):
+        v.fallback = True
+        if report is not None:
+            report.add(
+                SEV_WARNING, URDF_MESH_FORMAT,
+                f"mesh '{fname}' of link '{v.link_name}' has format "
+                f"'{Path(path).suffix}'; only .stl .obj .ply are read. "
+                "A placeholder cube is drawn", v.link_name,
+            )
+        return
+    try:
+        mesh = vis.read_mesh_file(path)
+    except Exception as exc:
+        v.fallback = True
+        if report is not None:
+            report.add(
+                SEV_WARNING, URDF_MESH_FORMAT,
+                f"mesh '{fname}' of link '{v.link_name}' cannot be read: {exc}",
+                v.link_name,
+            )
+        return
+    if report is not None and vis.triangle_count(mesh) > vis.MAX_TRIANGLES:
+        report.add(
+            SEV_WARNING, URDF_MESH_TOO_LARGE,
+            f"mesh '{fname}' of link '{v.link_name}' has more than "
+            f"{vis.MAX_TRIANGLES} triangles; it is not drawn", v.link_name,
+        )
+
+
+def _parse_geometry(root: ET.Element, index: Dict[str, int], report: ImportReport,
+                    urdf_dir: Path, search_roots: List[str]):
+    named = _named_materials(root)
+    visuals: List[vis.LinkVisual] = []
+    collisions: List[vis.LinkVisual] = []
+    for link_el in root.findall("link"):
+        name = link_el.get("name", "")
+        li = index[name]
+        first = True
+        for el in link_el.findall("visual"):
+            if not first:
+                report.add(
+                    SEV_INFO, URDF_EXTRA_VISUAL,
+                    f"link '{name}' has more than one <visual>; extra ones are skipped",
+                    name,
+                )
+                continue
+            v = _make_shape(el, name, li, named)
+            if v is None:
+                continue
+            first = False
+            if v.kind == "mesh":
+                _resolve_mesh_visual(v, urdf_dir, search_roots, report)
+            visuals.append(v)
+        for el in link_el.findall("collision"):
+            v = _make_shape(el, name, li, named)
+            if v is None:
+                continue
+            if v.kind == "mesh":
+                _resolve_mesh_visual(v, urdf_dir, search_roots, None)
+            collisions.append(v)
+    return visuals, collisions

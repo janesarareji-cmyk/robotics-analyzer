@@ -22,7 +22,7 @@ from typing import Any
 
 
 # Current file format version. Increment on breaking schema changes.
-PROJECT_FORMAT_VERSION = "1.0.0"
+PROJECT_FORMAT_VERSION = "1.1.0"
 
 
 @dataclass
@@ -114,6 +114,9 @@ class ProjectData:
     robot_model: Any = None                            # Populated in R2 (cb.RobotModel)
     physical_properties: dict[str, Any] | None = None  # Populated in R3
     file_path: str | None = None                       # Set after first save
+    visuals: list[Any] = field(default_factory=list)       # R3.5 LinkVisual
+    collisions: list[Any] = field(default_factory=list)    # R3.5 LinkVisual
+    asset_dir: str | None = None   # temp dir with extracted meshes (R3.5)
 
     def __post_init__(self) -> None:
         """Ensure robot_model is always a valid RobotModel instance."""
@@ -140,6 +143,13 @@ class ProjectData:
     def touch(self) -> None:
         """Mark the project as modified (update timestamp)."""
         self.metadata.touch()
+
+    def cleanup_assets(self) -> None:
+        """Remove the temp dir of extracted meshes, if any."""
+        if self.asset_dir:
+            import shutil
+            shutil.rmtree(self.asset_dir, ignore_errors=True)
+            self.asset_dir = None
 
     @property
     def name(self) -> str:

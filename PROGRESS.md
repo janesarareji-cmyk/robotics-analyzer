@@ -7,13 +7,13 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R3 --- Import (status: `in-progress`)
--   **Next substage:** R3.5 --- Meshes and assets
+-   **Next substage:** R3.6 --- Import validation + error report
 -   **Owner now:** Sonnet orchestrator + Builder subagents
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R3 (Builder builds R3.2 to R3.7, runs gate, sets `stage-ready-for-review`, stops)
 -   **Spec pack:** `docs/specs/R3-spec.md`
 -   **Stage R2 gate: PASSED** (Reviewer verified: CTest 5/5, pytest 146/146). Tag `stage-R2-done` = `91a53a0`.
--   **Last known test count (2026-11-11, after R3.4):** CTest 5 targets; pytest 216 passed.
+-   **Last known test count (2026-11-11, after R3.5):** CTest 5 targets; pytest 242 passed.
 
 ### New agent? Read in this order
 
@@ -76,7 +76,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R3.2  | Compiled kinematic model + tree FK        | test_fk.cpp, test_compiled.cpp, test_fk_tree.py | committed |
 | R3.3  | URDF parser → URM (no meshes)             | test_urdf_import.py                | committed |
 | R3.4  | UI for tree/origin_axis joints            | test_ui_tree.py                    | committed |
-| R3.5  | Mesh/asset resolution + visual meshes     | test_urdf_meshes.py                | planned  |
+| R3.5  | Mesh/asset resolution + visual meshes     | test_urdf_meshes.py                | committed |
 | R3.6  | Import validation + error report          | test_import_report.py              | planned  |
 | R3.7  | Physical properties (import/estimate/manual) | test_physical_props.py          | planned  |
 | R3.8  | CAD import (mini-stage R3b, spec after R3.7) | tbd                | planned  |

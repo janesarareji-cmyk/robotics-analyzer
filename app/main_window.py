@@ -125,6 +125,10 @@ class MainWindow(QMainWindow):
         self._action_import_urdf.setStatusTip("Import a robot from a URDF file")
         self._action_import_urdf.triggered.connect(self._on_import_urdf)
         self._menu_import.addAction(self._action_import_urdf)
+        self._action_mesh_paths = QAction("Mesh search &paths...", self)
+        self._action_mesh_paths.setStatusTip("Folders searched for package:// meshes")
+        self._action_mesh_paths.triggered.connect(self._on_mesh_search_paths)
+        self._menu_import.addAction(self._action_mesh_paths)
 
         file_menu.addSeparator()
 
@@ -181,6 +185,11 @@ class MainWindow(QMainWindow):
         self._action_show_tcp.setChecked(True)
         self._menu_robot.addAction(self._action_show_tcp)
 
+        self._action_show_visuals = QAction("Show &Visuals", self)
+        self._action_show_visuals.setCheckable(True)
+        self._action_show_visuals.setChecked(True)
+        self._menu_robot.addAction(self._action_show_visuals)
+
         # Robot menu (top-level)
         robot_menu = menubar.addMenu("&Robot")
         self._action_set_tcp = QAction("Set &TCP link...", self)
@@ -236,6 +245,7 @@ class MainWindow(QMainWindow):
         self._action_show_frames.toggled.connect(self._viewport.robot_view.set_show_frames)
         self._action_show_links.toggled.connect(self._viewport.robot_view.set_show_links)
         self._action_show_tcp.toggled.connect(self._viewport.robot_view.set_show_tcp)
+        self._action_show_visuals.toggled.connect(self._viewport.robot_view.set_show_visuals)
 
     def _setup_dock_panels(self) -> None:
         """Create and place all dock panels."""
@@ -323,6 +333,8 @@ class MainWindow(QMainWindow):
         self._action_set_tcp.setEnabled(True)
         self._update_title()
         self.set_status(f"Project '{project.name}' opened.")
+
+        self._viewport.robot_view.set_visuals(project.visuals)
 
         # Load robot model into DH editor and Joint panel
         if project.robot_model is not None:
@@ -417,7 +429,8 @@ class MainWindow(QMainWindow):
     def import_urdf_file(self, path: str) -> None:
         """Run the URDF import in a worker task; result handled on the GUI thread."""
         self.set_status(f"Importing {path} ...")
-        task = self._task_runner.submit_fn(lambda: import_urdf(path))
+        roots = self._settings.mesh_search_roots()
+        task = self._task_runner.submit_fn(lambda: import_urdf(path, roots))
         task.signals.result.connect(self._on_urdf_import_result)
         task.signals.error.connect(self._on_urdf_import_failed)
 
@@ -432,11 +445,20 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "URDF Import Failed", report.to_text())
             return
         name = result.model.metadata.name or "Imported Robot"
-        if not self._project_controller.import_robot(self, result.model, name):
+        if not self._project_controller.import_robot(
+            self, result.model, name, result.visuals, result.collisions
+        ):
             return
         self.log(f"[INFO] URDF imported: '{name}'.")
         if report.by_severity("warning"):
             QMessageBox.warning(self, "URDF Import Warnings", report.to_text())
+
+    def _on_mesh_search_paths(self) -> None:
+        """Handle File > Import > Mesh search paths."""
+        from app.panels.mesh_paths_dialog import MeshPathsDialog
+        dlg = MeshPathsDialog(self._settings.mesh_search_roots(), self)
+        if dlg.exec():
+            self._settings.set_mesh_search_roots(dlg.roots())
 
     def _on_set_tcp_link(self) -> None:
         """Handle Robot > Set TCP link."""

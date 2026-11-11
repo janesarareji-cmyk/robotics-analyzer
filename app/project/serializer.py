@@ -13,8 +13,10 @@ File format (.robotproj = ZIP):
 from __future__ import annotations
 
 import json
+import logging
+import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import core_bridge as cb
@@ -36,6 +38,10 @@ _META_FILE = "project_metadata.json"
 _ROBOT_FILE = "robot_model.json"
 _PHYSICS_FILE = "physical_properties.json"
 _SIM_FILE = "simulation_settings.json"
+_VISUALS_FILE = "visuals.json"
+_ASSET_DIR = "assets"
+
+log = logging.getLogger("robotics_analyzer.project")
 
 
 class ProjectSerializationError(Exception):
@@ -62,6 +68,7 @@ def save(project: ProjectData, path: str | Path) -> None:
 
     # Update timestamp before saving
     project.touch()
+    project.metadata.format_version = PROJECT_FORMAT_VERSION
 
     try:
         with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -74,6 +81,7 @@ def save(project: ProjectData, path: str | Path) -> None:
                 _write_json(zf, _ROBOT_FILE, {})
             _write_json(zf, _PHYSICS_FILE, project.physical_properties or {})
             _write_json(zf, _SIM_FILE, project.simulation_settings.to_dict())
+            _write_visuals(zf, project)
     except (OSError, zipfile.BadZipFile) as exc:
         raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
 
@@ -126,6 +134,7 @@ def load(path: str | Path) -> ProjectData:
             )
             sim_dict = _read_json(zf, _SIM_FILE) if _SIM_FILE in names else {}
             simulation_settings = SimulationSettings.from_dict(sim_dict)
+            visuals, collisions, asset_dir = _read_visuals(zf, names)
 
     except zipfile.BadZipFile as exc:
         raise ProjectSerializationError(
@@ -144,6 +153,9 @@ def load(path: str | Path) -> ProjectData:
         robot_model=robot_model,
         physical_properties=physical_properties if physical_properties else None,
         file_path=str(path),
+        visuals=visuals,
+        collisions=collisions,
+        asset_dir=asset_dir,
     )
 
 
@@ -155,6 +167,78 @@ def _write_json(zf: zipfile.ZipFile, name: str, data: Any) -> None:
     """Write a dict as JSON to a zip archive member."""
     text = json.dumps(data, indent=INDENT, ensure_ascii=False)
     zf.writestr(name, text.encode(ENCODING))
+
+
+def _write_visuals(zf: zipfile.ZipFile, project: ProjectData) -> None:
+    """Write visuals.json and copy each distinct mesh file into assets/."""
+    name_of: dict[str, str] = {}     # source abs path -> archive name
+    used: set[str] = set()
+
+    def archive_name(src: str) -> str:
+        if src in name_of:
+            return name_of[src]
+        base = Path(src).name
+        stem, suffix = Path(base).stem, Path(base).suffix
+        cand, n = base, 0
+        while cand in used:
+            n += 1
+            cand = f"{stem}_{n}{suffix}"
+        used.add(cand)
+        zf.write(src, f"{_ASSET_DIR}/{cand}")
+        name_of[src] = cand
+        return cand
+
+    def dump(items: list[Any]) -> list[dict[str, Any]]:
+        out = []
+        for v in items:
+            d = v.to_dict()
+            src = d.get("mesh_path")
+            if src and not d.get("fallback") and Path(src).is_file():
+                d["mesh_path"] = f"{_ASSET_DIR}/{archive_name(src)}"
+            out.append(d)
+        return out
+
+    _write_json(zf, _VISUALS_FILE, {
+        "visuals": dump(project.visuals),
+        "collisions": dump(project.collisions),
+    })
+
+
+def _read_visuals(zf: zipfile.ZipFile, names: list[str]):
+    """Return (visuals, collisions, asset_dir). Old 1.0.0 files: empty lists."""
+    from app.importers.visuals import LinkVisual
+
+    if _VISUALS_FILE not in names:
+        return [], [], None
+    data = _read_json(zf, _VISUALS_FILE)
+    asset_names = [n for n in names
+                   if n.startswith(_ASSET_DIR + "/") and not n.endswith("/")]
+    asset_dir = None
+    if asset_names:
+        asset_dir = tempfile.mkdtemp(prefix="robotproj_assets_")
+        for n in asset_names:
+            target = Path(asset_dir) / PurePosixPath(n).name   # no zip-slip
+            target.write_bytes(zf.read(n))
+
+    def load(items: list[dict[str, Any]]) -> list[Any]:
+        out = []
+        for d in items:
+            v = LinkVisual.from_dict(d)
+            mp = v.mesh_path
+            if mp and mp.startswith(_ASSET_DIR + "/"):
+                real = Path(asset_dir) / PurePosixPath(mp).name if asset_dir else None
+                if real is not None and real.is_file():
+                    v.mesh_path = str(real)
+                else:
+                    log.warning("Missing asset '%s' in project archive; "
+                                "placeholder cube is used", mp)
+                    v.mesh_path = None
+                    v.fallback = True
+            out.append(v)
+        return out
+
+    return (load(data.get("visuals", [])), load(data.get("collisions", [])),
+            asset_dir)
 
 
 def _read_json(zf: zipfile.ZipFile, name: str) -> Any:

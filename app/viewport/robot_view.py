@@ -37,6 +37,13 @@ class RobotView:
         self._show_frames = True
         self._show_links = True
         self._show_tcp = True
+        self._show_visuals = True
+
+        # R3.5 visuals: data survives actor rebuilds; actors are recreated.
+        self._visuals: list[Any] = []
+        self._visual_actors: list[Any] = []
+        self._visual_isos: list[np.ndarray] = []
+        self._mesh_cache: dict[Any, Any] = {}
 
         self._current_joint_count: int | None = None
         self._current_joint_types: list[Any] = []
@@ -55,6 +62,7 @@ class RobotView:
         self._polyline_mesh: Any = None
         self._last_points: np.ndarray | None = None
         self._last_scale: float | None = None
+        self._visual_links: list[int] = []
 
     # ------------------------------------------------------------------
     # Properties & Getters
@@ -76,6 +84,15 @@ class RobotView:
     @property
     def show_tcp(self) -> bool:
         return self._show_tcp
+
+    @property
+    def show_visuals(self) -> bool:
+        return self._show_visuals
+
+    @property
+    def visual_actors(self) -> list[Any]:
+        """Actors of the drawn visuals (same order as the stored visuals; skipped ones absent)."""
+        return list(self._visual_actors)
 
     @property
     def frame_actors(self) -> list[Any]:
@@ -171,12 +188,72 @@ class RobotView:
             self._tcp_actor.visibility = self._show_tcp
         self._render()
 
+    def set_show_visuals(self, show: bool) -> None:
+        """Toggle visibility of visual geometry (independent of frames)."""
+        self._show_visuals = bool(show)
+        for actor in self._visual_actors:
+            actor.visibility = self._show_visuals
+        self._render()
+
+    # ------------------------------------------------------------------
+    # Visuals (R3.5)
+    # ------------------------------------------------------------------
+
+    def set_visuals(self, visuals: Any) -> None:
+        """Store the link visuals and create one actor per drawn visual."""
+        self._visuals = list(visuals or [])
+        self._mesh_cache.clear()
+        self._build_visual_actors()
+        self._render()
+
+    def _remove_visual_actors(self) -> None:
+        for actor in self._visual_actors:
+            try:
+                self._plotter.remove_actor(actor)
+            except Exception:
+                pass
+        self._visual_actors.clear()
+        self._visual_isos.clear()
+        self._visual_links.clear()
+
+    def _build_visual_actors(self) -> None:
+        from app.importers.visuals import load_visual_mesh, visual_origin_iso
+
+        self._remove_visual_actors()
+        for v in self._visuals:
+            mesh = load_visual_mesh(v, self.triad_length, self._mesh_cache)
+            if mesh is None:        # too large: not drawn
+                continue
+            rgba = list(v.rgba)
+            actor = self._plotter.add_mesh(
+                mesh, color=rgba[:3], opacity=rgba[3], reset_camera=False
+            )
+            iso = visual_origin_iso(v)
+            actor.user_matrix = iso
+            actor.visibility = self._show_visuals
+            self._visual_actors.append(actor)
+            self._visual_isos.append(iso)
+            self._visual_links.append(v.link_index)
+
+    def _update_visual_matrices(self, frames: list[np.ndarray]) -> None:
+        for actor, iso, li in zip(self._visual_actors, self._visual_isos,
+                                  self._visual_links):
+            if 0 <= li < len(frames):
+                actor.user_matrix = frames[li] @ iso
+
     # ------------------------------------------------------------------
     # Update API
     # ------------------------------------------------------------------
 
     def clear(self) -> None:
-        """Remove all robot actors from the plotter."""
+        """Remove all robot actors (incl. visuals) from the plotter."""
+        self._visuals = []
+        self._mesh_cache.clear()
+        self._clear_actors()
+
+    def _clear_actors(self) -> None:
+        """Remove actors; keep the stored visual data."""
+        self._remove_visual_actors()
         for actor in self.actors:
             if actor is not None:
                 try:
@@ -339,7 +416,7 @@ class RobotView:
         """Recreate all PyVista actors for the robot."""
         import pyvista as pv
 
-        self.clear()
+        self._clear_actors()
 
         scale = self._calculate_scale(model)
         triad_len = scale
@@ -433,6 +510,10 @@ class RobotView:
         self._current_convention = model.convention
         self._last_scale = scale
 
+        # Visuals (fallback cubes depend on the triad length)
+        self._build_visual_actors()
+        self._update_visual_matrices(frames)
+
     def _update_in_place(self, model: Any, frames: list[np.ndarray], tcp: np.ndarray,
                          fk_result: dict[str, Any]) -> None:
         """Update existing actor transforms and polyline points in place."""
@@ -453,6 +534,8 @@ class RobotView:
         pairs = joint_links(model)
         for actor, jidx in zip(self._marker_actors, self._marker_joints):
             actor.user_matrix = frames[pairs[jidx][1]]
+
+        self._update_visual_matrices(frames)
 
     def _render(self) -> None:
         """Trigger viewport render if available."""
