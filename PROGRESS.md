@@ -6,9 +6,9 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R4 --- Kinematics and dynamics (status: `stage-ready-for-review`)
--   **Next substage:** none (R4.1 to R4.10 committed; waiting for Sonnet review of stage R4)
--   **Owner now:** Sonnet reviewer
+-   **Stage:** R4 --- Kinematics and dynamics (status: `stage-approved`)
+-   **Next substage:** R5 (spec pack docs/specs/R5-spec.md not written yet: waiting for user go; driver update before R5.1, see Risks)
+-   **Owner now:** Sonnet orchestrator
 -   **Blockers:** none
 -   **Review mode:** stage-batch, BLOCKING at end of R4
 -   **Spec pack:** `docs/specs/R4-spec.md`
@@ -17,6 +17,7 @@ every handoff. Keep it short.
 -   **Stage R3 gate (Builder run):** milestone `tests/python/test_milestone_r3.py` PASS (6 tests: 1 fixture-shape, 1 full flow items 1-6, 4 broken-fixture cases item 7). Items 1,2,3,4,5,6,7,9,10 checked. `run_tests.ps1` not used (execution policy), same commands run by hand. `build/` and binaries not tracked. `graphify update .` run, `graph.json` committed. Item 8 (docs per module): only `docs/import-report.md` and `docs/urm-schema-v2.md` exist; no separate one-page docs for compiled model, visuals/assets, physical panel (not done, reviewer decide). Item 5 (GPU) n/a. No product code changed in the milestone. Tag `stage-R3-done`. Milestone commit `d329649`.
 
 -   **Stage R4 gate (Builder run, 2026-11-11):** milestone `tests/python/test_milestone_r4.py` PASS (6 tests: import+TCP l6, IK listed/sorted/applied vs independent numpy FK, singularity flag + sigma_min vs numpy SVD of numeric Jacobian, torques vs `numpy_dynamics` at 1e-8 rel + gravity linearity, FD/RNEA round trip + 0.5 s RK4 energy |dE|/E0 < 1e-8, save/close/open identical). CTest 8/8 passed (`ctest --test-dir build -C Release`); pytest 461 passed (455 before + 6 new). `run_tests.ps1` not used (execution policy), same commands run by hand after `cmake --build build --config Release`. Gate items: 1 rows R4.1-R4.10 committed; 2 CTest + pytest green; 3 milestone green; 4 numerical references green (closed-form, numpy Lagrangian, numeric Jacobian); 5 GPU/CPU equivalence n/a (R5 onward); 6 `graphify update .` run, `graph.json` committed; 7 no new dependency; 8 docs `docs/jacobian-ik.md`, `docs/dynamics.md`, `docs/analysis-panels.md` written, `docs/compiled-model-layout.md` re-checked against code (matches); 9 this file; 10 earlier milestones (R2, R3) still green in the full pytest run. `build/` and binaries not tracked. Spec item 8 (Pinocchio validator) NOT done (needs user decision). No product code changed. Milestone commit `51f15ed`. Tag `stage-R4-done` local only (on the `docs(progress): R4 ready for review` commit), no remote, not pushed. Unrelated working-tree changes left uncommitted: `tests/python/fixtures/robot_model_v1.json` and some `graphify-out/` files.
+-   Stage R4 review (Sonnet, 2026-11-11): APPROVED. Independent run: CTest 8/8, pytest 461. Verified: IK 2R finds both solutions with n_starts=30 for seeds 0..9 (tests use 60). Worst relative errors: M vs numpy oracle 5.8e-13, RNEA/FD round trip 1.4e-14, energy drift 2.5e-14. Tag stage-R4-done = b532f85. Accepted deviations: adaptive IK damping; weighted-row convergence check; gravity torque = +dV/dq (spec sign fixed in e1ea059); fixed-joint merge into parent; Richardson numeric Jacobian in the oracle. Not done on purpose: Pinocchio validator (R4-late, user decision), viewport target dragging (R6 backlog), friction not stored in URM.
 -   Stage R3 review (Sonnet, 2026-11-11): APPROVED. Independent run CTest 6/6, pytest 302. Gate item 8 docs fixed in 2d3d304. Tag stage-R3-done = 6249b0e (docs commit 2d3d304 follows the tag). Accepted deviations: R3.2 theta0/d0 in `pre`; legacy 0/0 serial fallback (effective_links); R3.7 multi-link total-mass estimate shared by volume. R4 first item: unify joint_links() with effective_links.
 
 ### New agent? Read in this order
@@ -84,16 +85,16 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R3.6  | Import validation + error report          | test_import_report.py              | stage-approved |
 | R3.7  | Physical properties (import/estimate/manual) | test_physical_props.py, test_urm.cpp | stage-approved |
 | R3.8  | CAD import (mini-stage R3b, spec after R3.7) | tbd                | planned  |
-| R4.1 | Compiled model freeze + to_arrays | test_compiled_arrays.py, test_compiled_arrays.cpp | committed |
-| R4.2 | Jacobian | test_jacobian.py | committed |
-| R4.3 | Numerical IK | test_ik.py | committed |
-| R4.4 | Multiple IK solutions | test_ik_multi.py | committed |
-| R4.5 | Singularity indicators | test_singularity.py | committed |
-| R4.6 | Inverse dynamics (RNEA) | test_dynamics.cpp, test_dynamics.py | committed |
-| R4.7 | Mass matrix + forward dynamics | test_dynamics.cpp, test_mass_matrix.py | committed |
-| R4.8 | Energy and torque tools | test_energy.py | committed |
-| R4.9 | IK + analysis panels | test_ui_kin_dyn.py | committed |
-| R4.10 | R4 milestone | test_milestone_r4.py | committed |
+| R4.1 | Compiled model freeze + to_arrays | test_compiled_arrays.py, test_compiled_arrays.cpp | stage-approved |
+| R4.2 | Jacobian | test_jacobian.py | stage-approved |
+| R4.3 | Numerical IK | test_ik.py | stage-approved |
+| R4.4 | Multiple IK solutions | test_ik_multi.py | stage-approved |
+| R4.5 | Singularity indicators | test_singularity.py | stage-approved |
+| R4.6 | Inverse dynamics (RNEA) | test_dynamics.cpp, test_dynamics.py | stage-approved |
+| R4.7 | Mass matrix + forward dynamics | test_dynamics.cpp, test_mass_matrix.py | stage-approved |
+| R4.8 | Energy and torque tools | test_energy.py | stage-approved |
+| R4.9 | IK + analysis panels | test_ui_kin_dyn.py | stage-approved |
+| R4.10 | R4 milestone | test_milestone_r4.py | stage-approved |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.
