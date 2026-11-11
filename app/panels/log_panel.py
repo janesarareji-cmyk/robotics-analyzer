@@ -36,3 +36,11 @@ class LogPanel(QWidget):
     def clear_log(self) -> None:
         """Clear all log messages."""
         self._text.clear()
+
+    def toPlainText(self) -> str:
+        """Return the current log text."""
+        return self._text.toPlainText()
+
+    def text(self) -> str:
+        """Return the current log text."""
+        return self._text.toPlainText()

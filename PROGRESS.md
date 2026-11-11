@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.7 --- Viewport: links, frames, TCP (planned)
--   **Owner now:** Builder
+-   **Substage:** R2.7 --- Viewport: links, frames, TCP (ready for review)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -49,7 +49,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | approved |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | approved (follow-ups → R2.6) |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | approved |
-| R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
+| R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | ready-for-review |
 | R2.8  | Joint control panel + TCP pose readout    | test_joint_panel.py                | planned |
 | R2.9  | 3-DOF end-to-end milestone test           | test_milestone_r2.py               | planned |
 
@@ -271,7 +271,13 @@ Tests `tests/python/test_viewport_robot.py` (offscreen, follow `test_viewport_in
 
 Done when: `.\run_tests.ps1` green, `graphify update .` run, row R2.7 set to `ready-for-review`, commit `R2.7: robot viewport`.
 
-Changed files (expected): `app/viewport/` (new robot_view + existing viewport hook), `app/main_window.py`, `tests/python/test_viewport_robot.py`.
+Changed files:
+- `app/viewport/viewport_widget.py`
+- `app/viewport/robot_view.py`
+- `app/viewport/__init__.py`
+- `app/main_window.py`
+- `app/panels/log_panel.py`
+- `tests/python/test_viewport_robot.py`
 
 ### R2.8 onward
 

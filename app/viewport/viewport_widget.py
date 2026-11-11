@@ -18,7 +18,9 @@ class ViewportWidget(QWidget):
         super().__init__(parent)
         # Lazy import — VTK must NOT load at module import time
         from pyvistaqt import QtInteractor  # noqa: PLC0415
+        from app.viewport.robot_view import RobotView  # noqa: PLC0415
         self._plotter = QtInteractor(parent=self)
+        self._robot_view = RobotView(self._plotter)
         if bg_color:
             self._plotter.set_background(bg_color)
         layout = QVBoxLayout(self)
@@ -30,6 +32,11 @@ class ViewportWidget(QWidget):
     def plotter(self):
         """Return the underlying PyVista plotter."""
         return self._plotter
+
+    @property
+    def robot_view(self):
+        """Return the RobotView manager."""
+        return self._robot_view
 
     def add_mesh(self, mesh, **kwargs):
         """Add a PyVista mesh to the viewport."""

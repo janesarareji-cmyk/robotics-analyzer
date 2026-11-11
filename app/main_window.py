@@ -139,6 +139,25 @@ class MainWindow(QMainWindow):
         self._action_view_log.setChecked(True)
         view_menu.addAction(self._action_view_log)
 
+        # Robot submenu in View menu
+        view_menu.addSeparator()
+        self._menu_robot = view_menu.addMenu("&Robot")
+
+        self._action_show_frames = QAction("Show &Frames", self)
+        self._action_show_frames.setCheckable(True)
+        self._action_show_frames.setChecked(True)
+        self._menu_robot.addAction(self._action_show_frames)
+
+        self._action_show_links = QAction("Show &Links", self)
+        self._action_show_links.setCheckable(True)
+        self._action_show_links.setChecked(True)
+        self._menu_robot.addAction(self._action_show_links)
+
+        self._action_show_tcp = QAction("Show &TCP", self)
+        self._action_show_tcp.setCheckable(True)
+        self._action_show_tcp.setChecked(True)
+        self._menu_robot.addAction(self._action_show_tcp)
+
         # Help menu
         help_menu = menubar.addMenu("&Help")
 
@@ -181,6 +200,11 @@ class MainWindow(QMainWindow):
         bg_color = self._settings.viewport_bg_color()
         self._viewport = ViewportWidget(parent=self, bg_color=bg_color)
         self.setCentralWidget(self._viewport)
+
+        # Wire View > Robot actions to RobotView toggles
+        self._action_show_frames.toggled.connect(self._viewport.robot_view.set_show_frames)
+        self._action_show_links.toggled.connect(self._viewport.robot_view.set_show_links)
+        self._action_show_tcp.toggled.connect(self._viewport.robot_view.set_show_tcp)
 
     def _setup_dock_panels(self) -> None:
         """Create and place all dock panels."""
@@ -262,6 +286,9 @@ class MainWindow(QMainWindow):
             if errors:
                 self.log(f"[WARNING] Validation errors: {'; '.join(errors)}")
 
+            # Update 3D viewport and reset camera on project open
+            self._update_robot_view(reset_camera=True)
+
     def _on_dh_editor_changed(self) -> None:
         """Handle edits made directly in the DH editor."""
         model = self._dh_editor.get_model()
@@ -275,6 +302,24 @@ class MainWindow(QMainWindow):
         """Handle robot model replacement from controller."""
         if self._dh_editor.get_model() is not model:
             self._dh_editor.set_model(model)
+        # Update 3D viewport without resetting camera
+        self._update_robot_view(reset_camera=False)
+
+    def _update_robot_view(self, reset_camera: bool = False) -> None:
+        """Compute FK and update the viewport robot visualization."""
+        if not self._project_controller.has_project:
+            return
+        model = self._project_controller.robot
+        if model is None:
+            return
+        try:
+            import core_bridge as cb
+            fk_res = cb.fk(model)
+            self._viewport.robot_view.update(model, fk_res)
+            if reset_camera:
+                self._viewport.reset_camera()
+        except Exception as exc:
+            self.log(f"[WARNING] Forward kinematics failed: {exc}")
 
     def _on_project_saved(self, project: ProjectData) -> None:
         """Update UI when a project is saved."""
@@ -392,3 +437,8 @@ class MainWindow(QMainWindow):
     def dh_dock(self) -> QDockWidget:
         """Return the DH editor dock widget."""
         return self._dh_dock
+
+    @property
+    def robot_view(self) -> Any:
+        """Return the RobotView visualization manager."""
+        return self._viewport.robot_view
