@@ -31,7 +31,8 @@ every handoff. Keep it short.
 
 Status values: `planned` · `in-progress` · `ready-for-review` ·
 `changes-requested` · `approved` · `blocked` · `stage-ready-for-review` ·
-`stage-approved` · `stage-changes-requested`
+`stage-approved` · `stage-changes-requested` · `committed` (substage
+implemented, tests green, committed, waiting for stage review; used from Stage R3)
 
 Stage-batch flow (from R3): Builder builds all substages of a stage, then sets
 `stage-ready-for-review`. Reviewer sets `stage-approved` or `stage-changes-requested`.
@@ -371,6 +372,7 @@ Changed files: `app/main_window.py`, `app/panels/dh_editor.py`, `app/project/pro
 ### R3 plan (outline)
 
 Order: R3.1 schema → R3.2 compiled FK → R3.3 URDF parse → R3.4 UI → R3.5 meshes → R3.6 import report → R3.7 physical props → R3.8 CAD (re-plan). One spec at a time; Reviewer writes the next after approval. At the start of R3.1, Builder runs `graphify update .` first (R2.9 graph may be a few minutes stale).
+Spec pack for R3.2 to R3.7 + stage milestone: `docs/specs/R3-spec.md` (R3.1 spec stays here). R3.8 CAD is re-planned by Reviewer after R3.7.
 
 ### R3.1 --- URM schema v2: tree + origin/axis joints (C++ core + bindings + tests)
 
