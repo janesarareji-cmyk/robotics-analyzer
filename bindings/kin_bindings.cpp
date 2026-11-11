@@ -16,6 +16,7 @@
 #include "kin/compiled_arrays.hpp"
 #include "kin/jacobian.hpp"
 #include "kin/ik.hpp"
+#include "kin/ik_multi.hpp"
 #include <stdexcept>
 #include "urm/robot_model.hpp"
 
@@ -66,6 +67,56 @@ static py::dict compiled_arrays_to_dict(const kin::CompiledArrays& a) {
     d["tool"] = to_np(a.tool, {4, 4});
     return d;
 }
+
+static kin::IKOptions parse_ik_options(const py::object& options) {
+
+        kin::IKOptions o;
+
+        if (!options.is_none()) {
+
+            for (auto item : options.cast<py::dict>()) {
+
+                const std::string k = py::str(item.first);
+
+                py::handle v = item.second;
+
+                if (k == "position_only") o.position_only = v.cast<bool>();
+
+                else if (k == "weights") {
+
+                    auto w = v.cast<std::vector<double>>();
+
+                    if (w.size() != 6) throw std::invalid_argument("solve_ik: weights needs 6 values");
+
+                    std::copy(w.begin(), w.end(), o.weights.begin());
+
+                }
+
+                else if (k == "damping") o.damping = v.cast<double>();
+
+                else if (k == "max_iter") o.max_iter = v.cast<int>();
+
+                else if (k == "tol_pos") o.tol_pos = v.cast<double>();
+
+                else if (k == "tol_rot") o.tol_rot = v.cast<double>();
+
+                else if (k == "max_step") o.max_step = v.cast<double>();
+
+                else if (k == "enforce_limits") o.enforce_limits = v.cast<bool>();
+
+                else if (k == "null_gain") o.null_gain = v.cast<double>();
+
+                else throw std::invalid_argument("solve_ik: unknown option '" + k + "'");
+
+            }
+
+        }
+
+    return o;
+
+}
+
+
 
 void bind_kin(py::module_& m) {
     py::class_<kin::CompiledModel>(m, "CompiledModel")
@@ -122,27 +173,7 @@ void bind_kin(py::module_& m) {
     m.def("solve_ik", [](const kin::CompiledModel& cm, const std::vector<double>& lo,
                          const std::vector<double>& hi, const Eigen::Matrix4d& target,
                          const std::vector<double>& q0, const py::object& options) {
-        kin::IKOptions o;
-        if (!options.is_none()) {
-            for (auto item : options.cast<py::dict>()) {
-                const std::string k = py::str(item.first);
-                py::handle v = item.second;
-                if (k == "position_only") o.position_only = v.cast<bool>();
-                else if (k == "weights") {
-                    auto w = v.cast<std::vector<double>>();
-                    if (w.size() != 6) throw std::invalid_argument("solve_ik: weights needs 6 values");
-                    std::copy(w.begin(), w.end(), o.weights.begin());
-                }
-                else if (k == "damping") o.damping = v.cast<double>();
-                else if (k == "max_iter") o.max_iter = v.cast<int>();
-                else if (k == "tol_pos") o.tol_pos = v.cast<double>();
-                else if (k == "tol_rot") o.tol_rot = v.cast<double>();
-                else if (k == "max_step") o.max_step = v.cast<double>();
-                else if (k == "enforce_limits") o.enforce_limits = v.cast<bool>();
-                else if (k == "null_gain") o.null_gain = v.cast<double>();
-                else throw std::invalid_argument("solve_ik: unknown option '" + k + "'");
-            }
-        }
+        kin::IKOptions o = parse_ik_options(options);
         Eigen::Isometry3d T(target);
         kin::IKResult r = kin::solve_ik(cm, lo, hi, T, q0, o);
         py::dict d;
@@ -156,6 +187,28 @@ void bind_kin(py::module_& m) {
     }, py::arg("cm"), py::arg("lo"), py::arg("hi"), py::arg("target"), py::arg("q0"),
        py::arg("options") = py::none(),
        "Damped least squares IK to a 4x4 world TCP target. Returns dict.");
+
+    m.def("solve_ik_multi", [](const kin::CompiledModel& cm, const std::vector<double>& lo,
+                               const std::vector<double>& hi, const Eigen::Matrix4d& target,
+                               const std::vector<double>& q_current, const py::object& options,
+                               int n_starts, uint64_t seed, double dedupe_tol) {
+        kin::IKOptions o = parse_ik_options(options);
+        Eigen::Isometry3d T(target);
+        auto sols = kin::solve_ik_multi(cm, lo, hi, T, q_current, o, n_starts, seed, dedupe_tol);
+        py::list out;
+        for (const auto& s : sols) {
+            py::dict d;
+            d["q"] = s.q;
+            d["pos_error"] = s.pos_error;
+            d["rot_error"] = s.rot_error;
+            d["distance"] = s.distance;
+            out.append(d);
+        }
+        return out;
+    }, py::arg("cm"), py::arg("lo"), py::arg("hi"), py::arg("target"), py::arg("q_current"),
+       py::arg("options") = py::none(), py::arg("n_starts") = 30, py::arg("seed") = 42,
+       py::arg("dedupe_tol") = 1e-3,
+       "Multi-start IK: distinct validated solutions sorted by distance to q_current.");
 
     m.def("compile_arrays", [](const urm::RobotModel& model) {
         return compiled_arrays_to_dict(kin::to_arrays(kin::compile(model)));

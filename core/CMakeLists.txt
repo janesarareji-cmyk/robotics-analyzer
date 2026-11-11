@@ -6,6 +6,7 @@ add_library(core_lib STATIC
     kin/compiled_arrays.cpp
     kin/jacobian.cpp
     kin/ik.cpp
+    kin/ik_multi.cpp
 )
 
 target_include_directories(core_lib PUBLIC
