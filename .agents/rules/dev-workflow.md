@@ -1,0 +1,81 @@
+---
+trigger: always_on
+description: Development workflow, agent roles, build pipeline, and stage/substage testing rules for this project.
+---
+
+## Development Workflow
+
+### Agent Roles
+
+| Agent | Model | Where | Role |
+|-------|-------|-------|------|
+| Builder | Gemini 3.8 Medium | Antigravity | Write code, implement features, scaffold files, run builds and tests |
+| Orchestrator / Reviewer | Claude Sonnet 5.5 | Claude Code (user talks to it here) | Default. Review code quality, correctness, architecture compliance; plan substages; pick the model tier for each task |
+| Helper | Claude Haiku | Claude Code subagents | Simple work: file search, reading/summarizing files, running tests and reporting output, updating PROGRESS.md, checking tags and paths |
+| Advisor | Claude Opus | Claude Code `/advisor` or Opus subagent | ONLY very difficult work: numerical-method or architecture decisions, IK/dynamics correctness disputes, CUDA memory design, a fix that failed twice |
+
+The user drives the work. The user talks to the Orchestrator in Claude Code. The Builder works inside Antigravity.
+
+### Claude Model Tiering (token saving)
+
+- Sonnet 5.5 orchestrates by default and adjusts the tier per task.
+- Delegate to Haiku when the task needs no judgement (search, read, run, report, bookkeeping).
+- Escalate to Opus only when Sonnet is not confident in the answer, or the cost of a wrong answer is high (core math, GPU memory model, schema design that later stages depend on).
+- Drop back to Sonnet/Haiku as soon as the hard part is done.
+- Record every Opus consultation in `PROGRESS.md` → "Decisions".
+
+### Progress File
+
+`PROGRESS.md` (repo root) is the shared handoff file between Builder and Reviewer.
+Read it at the start of every session. Update the substage log row and "Current"
+section at every handoff. Follow the handoff protocol inside that file.
+
+### Workflow Per Substage
+
+0. **Gemini (Builder)** reads `PROGRESS.md`, then runs `graphify update .` and checks the graph BEFORE writing code. Use `graphify query` to find files that are new or changed since the last session, and existing code to reuse. Do not create a file or class that already exists in the graph.
+1. **Gemini (Builder)** implements the substage: writes code, runs commands, verifies it compiles/runs.
+2. **Gemini (Builder)** runs `graphify update .` after every build to keep the knowledge graph current.
+3. **Claude (Reviewer)** reads `graphify-out/GRAPH_REPORT.md` and queries the graph (`graphify query`) to get full context BEFORE reviewing any code.
+4. **Claude (Reviewer)** reviews the code and reports findings in Caveman English (per agent-styles rule).
+5. **Gemini (Builder)** applies fixes if needed, rebuilds, updates graphify again.
+6. Repeat until substage is clean.
+
+### Stage Completion Gate
+
+A **stage** consists of multiple **substages**.
+
+The stage is considered complete ONLY when ALL of the following pass:
+- All substage unit tests pass (CTest or Python test framework).
+- All numerical reference tests pass (FK, IK, Jacobians, dynamics — where applicable).
+- GPU/CPU equivalence tests pass (where applicable from R5 onward).
+- Claude has reviewed and approved the final build.
+- `graphify update .` has been run and `graphify-out/graph.json` is current.
+
+Do NOT proceed to the next stage until the current stage's gate passes.
+
+### Error Substage Rule
+
+If a substage fails during implementation or testing, do NOT skip it or move on.
+Instead, insert a new substage immediately after the failing one, named `<stage>.<n>-fix`.
+Example: if R0.4 fails, insert R0.4-fix before R0.5.
+The fix substage has one goal: make the previous substage pass its test gate.
+Only after the fix substage passes do you advance to the original next substage.
+This keeps the sequence strictly linear. No substage is skipped. No substage is left broken.
+
+### Key Rules
+
+- Git (Builder owns commits): after each substage is implemented and its tests pass, Gemini commits with message `R<x>.<y>: <summary>`. Review fixes get their own commit `R<x>.<y>-fix: <summary>`. Commit `PROGRESS.md` and `graphify-out/graph.json` in the same commit. Never commit `build/` or binaries (see `.gitignore`). Do not rewrite history. Do not push unless the user asks.
+- Implement one substage at a time. Do not start the next substage until the current one compiles, runs, and has passing tests.
+- Keep the application runnable after every substage.
+- Do not add new dependencies without first verifying Windows compatibility in a proof-of-compatibility build.
+- Benchmark before optimizing. Record hardware/software versions with every benchmark.
+- Each feature requires tests and documentation before it is marked complete.
+
+### Hardware Context (OMEN 16)
+
+- GPU: NVIDIA RTX 5060 Laptop — **8 GB VRAM** (8151 MiB, confirmed by nvidia-smi)
+- RAM: 24 GB system RAM
+- CPU: AMD Ryzen 9 HX series
+
+GPU memory budget: 8 GB VRAM is the hard ceiling. Design all CUDA batch sizes, chunk sizes, and memory allocation strategies with this limit. Never hardcode batch sizes; always compute dynamically from available VRAM.
+
