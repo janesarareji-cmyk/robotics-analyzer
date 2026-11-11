@@ -231,17 +231,26 @@ std::string to_json(const RobotModel& model, int indent) {
 }
 
 static void parse_pose(const json& j, const std::string& key, Pose& pose) {
-    if (!j.contains(key) || !j[key].is_object()) {
+    if (!j.contains(key)) {
         return;
     }
+    if (!j[key].is_object()) {
+        throw std::runtime_error("pose '" + key + "' must be an object");
+    }
     const auto& jp = j[key];
-    if (jp.contains("xyz") && jp["xyz"].is_array()) {
+    if (jp.contains("xyz")) {
+        if (!jp["xyz"].is_array()) {
+            throw std::runtime_error("pose '" + key + ".xyz' must be an array");
+        }
         auto xyz_vec = jp["xyz"].get<std::vector<double>>();
         for (size_t i = 0; i < 3 && i < xyz_vec.size(); ++i) {
             pose.xyz[i] = xyz_vec[i];
         }
     }
-    if (jp.contains("rpy") && jp["rpy"].is_array()) {
+    if (jp.contains("rpy")) {
+        if (!jp["rpy"].is_array()) {
+            throw std::runtime_error("pose '" + key + ".rpy' must be an array");
+        }
         auto rpy_vec = jp["rpy"].get<std::vector<double>>();
         for (size_t i = 0; i < 3 && i < rpy_vec.size(); ++i) {
             pose.rpy[i] = rpy_vec[i];
@@ -250,129 +259,173 @@ static void parse_pose(const json& j, const std::string& key, Pose& pose) {
 }
 
 RobotModel from_json(const std::string& json_str) {
-    json j;
     try {
-        j = json::parse(json_str);
-    } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("failed to parse robot model JSON: ") + e.what());
-    }
-
-    RobotModel model;
-
-    // 1. schema_version check
-    int version = j.value("schema_version", 1);
-    if (version > 1) {
-        throw std::runtime_error("unsupported schema_version " + std::to_string(version));
-    }
-    model.schema_version = version;
-
-    // 2. convention handling (with legacy use_mdh fallback)
-    if (j.contains("convention")) {
-        std::string conv_str = j.value("convention", "standard");
-        if (conv_str == "standard") {
-            model.convention = DHConvention::Standard;
-        } else if (conv_str == "modified") {
-            model.convention = DHConvention::Modified;
-        } else {
-            throw std::runtime_error("unknown convention: " + conv_str);
+        json j = json::parse(json_str);
+        if (!j.is_object()) {
+            throw std::runtime_error("invalid robot model JSON: root must be an object");
         }
-    } else {
-        // Legacy fallback: check each joint's "use_mdh"
-        int mdh_count = 0;
-        int joint_count = 0;
-        if (j.contains("joints") && j["joints"].is_array()) {
-            joint_count = static_cast<int>(j["joints"].size());
-            for (const auto& jj : j["joints"]) {
-                if (jj.value("use_mdh", false)) {
-                    ++mdh_count;
-                }
-            }
+
+        RobotModel model;
+
+        // 1. schema_version check [R2.4-3]
+        int version = 1;
+        if (j.contains("schema_version")) {
+            version = j["schema_version"].get<int>();
         }
-        if (joint_count > 0 && mdh_count == joint_count) {
-            model.convention = DHConvention::Modified;
-        } else if (mdh_count == 0) {
-            model.convention = DHConvention::Standard;
-        } else {
-            throw std::runtime_error("mixed use_mdh in legacy JSON");
+        if (version < 1 || version > 1) {
+            throw std::runtime_error("unsupported schema_version " + std::to_string(version));
         }
-    }
+        model.schema_version = version;
 
-    // 3. metadata
-    if (j.contains("metadata")) {
-        const auto& m = j["metadata"];
-        model.metadata.name = m.value("name", "Unnamed Robot");
-        model.metadata.description = m.value("description", "");
-        model.metadata.author = m.value("author", "");
-        model.metadata.version = m.value("version", "1.0.0");
-    }
-
-    // 4. base and tool poses (default identity if missing)
-    parse_pose(j, "base", model.base);
-    parse_pose(j, "tool", model.tool);
-
-    // 5. links
-    if (j.contains("links") && j["links"].is_array()) {
-        for (const auto& jl : j["links"]) {
-            Link link;
-            link.name = jl.value("name", "");
-            link.geometry_file = jl.value("geometry_file", "");
-            if (jl.contains("inertia")) {
-                const auto& ji = jl["inertia"];
-                link.inertia.mass = ji.value("mass", 1.0);
-                if (ji.contains("com") && ji["com"].is_array()) {
-                    auto com_vec = ji["com"].get<std::vector<double>>();
-                    for (size_t i = 0; i < 3 && i < com_vec.size(); ++i) {
-                        link.inertia.com[i] = com_vec[i];
-                    }
-                }
-                if (ji.contains("inertia_tensor") && ji["inertia_tensor"].is_array()) {
-                    auto tensor_vec = ji["inertia_tensor"].get<std::vector<double>>();
-                    for (size_t i = 0; i < 6 && i < tensor_vec.size(); ++i) {
-                        link.inertia.inertia_tensor[i] = tensor_vec[i];
-                    }
-                }
-            }
-            model.links.push_back(link);
-        }
-    }
-
-    // 6. joints
-    if (j.contains("joints") && j["joints"].is_array()) {
-        for (const auto& jj : j["joints"]) {
-            Joint joint;
-            joint.name = jj.value("name", "");
-            std::string t_str = jj.value("type", "revolute");
-            joint.type = joint_type_from_str(t_str);
-
-            if (jj.contains("dh")) {
-                const auto& jdh = jj["dh"];
-                joint.dh.a = jdh.value("a", 0.0);
-                joint.dh.alpha = jdh.value("alpha", 0.0);
-                joint.dh.d = jdh.value("d", 0.0);
-                joint.dh.theta = jdh.value("theta", 0.0);
-            }
-            if (jj.contains("mdh")) {
-                const auto& jmdh = jj["mdh"];
-                joint.mdh.a = jmdh.value("a", 0.0);
-                joint.mdh.alpha = jmdh.value("alpha", 0.0);
-                joint.mdh.d = jmdh.value("d", 0.0);
-                joint.mdh.theta = jmdh.value("theta", 0.0);
-            }
-            if (jj.contains("limits")) {
-                const auto& jl = jj["limits"];
-                joint.limits.lower = jl.value("lower", -M_PI);
-                joint.limits.upper = jl.value("upper", M_PI);
-                joint.limits.vel = jl.value("vel", 1.0);
-                joint.limits.effort = jl.value("effort", 100.0);
+        // 2. convention handling (with legacy use_mdh fallback)
+        if (j.contains("convention")) {
+            std::string conv_str = j.value("convention", "standard");
+            if (conv_str == "standard") {
+                model.convention = DHConvention::Standard;
+            } else if (conv_str == "modified") {
+                model.convention = DHConvention::Modified;
             } else {
-                joint.limits = default_limits(joint.type);
+                throw std::runtime_error("unknown convention: " + conv_str);
             }
-            joint.q = jj.value("q", 0.0);
-            model.joints.push_back(joint);
+        } else {
+            // Legacy fallback: check each joint's "use_mdh"
+            int mdh_count = 0;
+            int joint_count = 0;
+            if (j.contains("joints") && j["joints"].is_array()) {
+                joint_count = static_cast<int>(j["joints"].size());
+                for (const auto& jj : j["joints"]) {
+                    if (jj.value("use_mdh", false)) {
+                        ++mdh_count;
+                    }
+                }
+            }
+            if (joint_count > 0 && mdh_count == joint_count) {
+                model.convention = DHConvention::Modified;
+            } else if (mdh_count == 0) {
+                model.convention = DHConvention::Standard;
+            } else {
+                throw std::runtime_error("mixed use_mdh in legacy JSON");
+            }
         }
-    }
 
-    return model;
+        // 3. metadata
+        if (j.contains("metadata")) {
+            if (!j["metadata"].is_object()) {
+                throw std::runtime_error("'metadata' must be an object");
+            }
+            const auto& m = j["metadata"];
+            model.metadata.name = m.value("name", "Unnamed Robot");
+            model.metadata.description = m.value("description", "");
+            model.metadata.author = m.value("author", "");
+            model.metadata.version = m.value("version", "1.0.0");
+        }
+
+        // 4. base and tool poses (default identity if missing)
+        parse_pose(j, "base", model.base);
+        parse_pose(j, "tool", model.tool);
+
+        // 5. links
+        if (j.contains("links")) {
+            if (!j["links"].is_array()) {
+                throw std::runtime_error("'links' must be an array");
+            }
+            for (const auto& jl : j["links"]) {
+                if (!jl.is_object()) {
+                    throw std::runtime_error("each link in 'links' must be an object");
+                }
+                Link link;
+                link.name = jl.value("name", "");
+                link.geometry_file = jl.value("geometry_file", "");
+                if (jl.contains("inertia")) {
+                    if (!jl["inertia"].is_object()) {
+                        throw std::runtime_error("link 'inertia' must be an object");
+                    }
+                    const auto& ji = jl["inertia"];
+                    link.inertia.mass = ji.value("mass", 1.0);
+                    if (ji.contains("com")) {
+                        if (!ji["com"].is_array()) {
+                            throw std::runtime_error("inertia 'com' must be an array");
+                        }
+                        auto com_vec = ji["com"].get<std::vector<double>>();
+                        for (size_t i = 0; i < 3 && i < com_vec.size(); ++i) {
+                            link.inertia.com[i] = com_vec[i];
+                        }
+                    }
+                    if (ji.contains("inertia_tensor")) {
+                        if (!ji["inertia_tensor"].is_array()) {
+                            throw std::runtime_error("inertia 'inertia_tensor' must be an array");
+                        }
+                        auto tensor_vec = ji["inertia_tensor"].get<std::vector<double>>();
+                        for (size_t i = 0; i < 6 && i < tensor_vec.size(); ++i) {
+                            link.inertia.inertia_tensor[i] = tensor_vec[i];
+                        }
+                    }
+                }
+                model.links.push_back(link);
+            }
+        }
+
+        // 6. joints
+        if (j.contains("joints")) {
+            if (!j["joints"].is_array()) {
+                throw std::runtime_error("'joints' must be an array");
+            }
+            for (const auto& jj : j["joints"]) {
+                if (!jj.is_object()) {
+                    throw std::runtime_error("each joint in 'joints' must be an object");
+                }
+                Joint joint;
+                joint.name = jj.value("name", "");
+                std::string t_str = jj.value("type", "revolute");
+                joint.type = joint_type_from_str(t_str);
+
+                if (jj.contains("dh")) {
+                    if (!jj["dh"].is_object()) {
+                        throw std::runtime_error("joint 'dh' must be an object");
+                    }
+                    const auto& jdh = jj["dh"];
+                    joint.dh.a = jdh.value("a", 0.0);
+                    joint.dh.alpha = jdh.value("alpha", 0.0);
+                    joint.dh.d = jdh.value("d", 0.0);
+                    joint.dh.theta = jdh.value("theta", 0.0);
+                }
+                if (jj.contains("mdh")) {
+                    if (!jj["mdh"].is_object()) {
+                        throw std::runtime_error("joint 'mdh' must be an object");
+                    }
+                    const auto& jmdh = jj["mdh"];
+                    joint.mdh.a = jmdh.value("a", 0.0);
+                    joint.mdh.alpha = jmdh.value("alpha", 0.0);
+                    joint.mdh.d = jmdh.value("d", 0.0);
+                    joint.mdh.theta = jmdh.value("theta", 0.0);
+                }
+
+                // [R2.4-2] Start from default_limits and override only present keys
+                joint.limits = default_limits(joint.type);
+                if (jj.contains("limits")) {
+                    if (!jj["limits"].is_object()) {
+                        throw std::runtime_error("joint 'limits' must be an object");
+                    }
+                    const auto& jl = jj["limits"];
+                    if (jl.contains("lower"))  joint.limits.lower  = jl["lower"].get<double>();
+                    if (jl.contains("upper"))  joint.limits.upper  = jl["upper"].get<double>();
+                    if (jl.contains("vel"))    joint.limits.vel    = jl["vel"].get<double>();
+                    if (jl.contains("effort")) joint.limits.effort = jl["effort"].get<double>();
+                }
+
+                if (jj.contains("q")) {
+                    joint.q = jj["q"].get<double>();
+                }
+                model.joints.push_back(joint);
+            }
+        }
+
+        return model;
+    } catch (const std::runtime_error&) {
+        throw; // Let our own std::runtime_error pass through unchanged
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("invalid robot model JSON: ") + e.what());
+    }
 }
 
 } // namespace urm

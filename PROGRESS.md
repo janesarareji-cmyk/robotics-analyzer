@@ -7,8 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R2 --- Custom robot modelling
--   **Substage:** R2.4 --- URM hardening (changes requested)
--   **Owner now:** Builder
+-   **Substage:** R2.4 --- URM hardening (review fixes applied)
+-   **Owner now:** Reviewer
 -   **Blockers:** none known
 
 ## Handoff protocol
@@ -46,7 +46,7 @@ Status values: `planned` · `in-progress` · `ready-for-review` ·
 | R2.1  | URM schema + JSON round-trip              | tests/cpp/test_urm.cpp             | approved (follow-ups → R2.4) |
 | R2.2  | URM pybind11 bindings                     | tests/python/test_urm_bridge.py    | approved |
 | R2.3  | DH editor widget                          | tests/python/test_dh_editor.py     | approved (wiring → R2.6) |
-| R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | changes-requested |
+| R2.4  | URM hardening                             | test_urm.cpp, test_urm_bridge.py   | ready-for-review |
 | R2.5  | FK engine (DH + MDH), C++ + bindings      | test_fk.cpp, test_fk_bridge.py     | planned |
 | R2.6  | Wire model + DH editor into app/project   | test_robot_in_project.py           | planned |
 | R2.7  | Viewport: links, frames, TCP              | test_viewport_robot.py             | planned |
@@ -136,9 +136,8 @@ Spec written by Reviewer when R2.4 is approved.
 
 ## Open review items
 
--   **R2.4 review (2026-11-11)** --- build OK, ctest 4/4, pytest 111/111.
-    Fix items below, then set `ready-for-review`. Commit `R2.4-fix: <summary>`.
--   [R2.4-1] (must) `from_json` only wraps `json::parse`. Later
+-   **R2.4 review (2026-11-11)** --- build OK, ctest 4/4, pytest 112/112.
+-   [R2.4-1] (fixed — pending review) (must) `from_json` only wraps `json::parse`. Later
     `j.value(...)` / `.get<>()` calls throw `nlohmann::json::type_error`,
     which is NOT a `std::runtime_error`. Spec item 8 not met. Fix: wrap the
     whole body of `from_json` after parse; catch `nlohmann::json::exception`
@@ -148,13 +147,13 @@ Spec written by Reviewer when R2.4 is approved.
     `std::runtime_error`): `[]`; `{"schema_version": "2"}`;
     `{"joints":[{"name":"j","type":"revolute","q":"abc"}]}`;
     `{"links":[{"inertia":{"com":"x"}}]}`.
--   [R2.4-2] (must) `"limits"` object present but missing `lower`/`upper`
+-   [R2.4-2] (fixed — pending review) (must) `"limits"` object present but missing `lower`/`upper`
     → falls back to ±π even for prismatic. Fix: start from
     `default_limits(joint.type)` and override only the keys present. Test:
     prismatic with `"limits": {"vel": 2.0}` → lower 0, upper 0.5, vel 2.0.
--   [R2.4-3] (must) `schema_version < 1` accepted. Throw
+-   [R2.4-3] (fixed — pending review) (must) `schema_version < 1` accepted. Throw
     `unsupported schema_version N` for N < 1 too. Test with 0.
--   [R2.4-4] (info, no code) Python: `model.base.xyz[0] = 1.0` changes a
+-   [R2.4-4] (fixed — pending review) (info, no code) Python: `model.base.xyz[0] = 1.0` changes a
     copy, silently lost; must assign whole list `model.base.xyz = [...]`.
     DH editor (R2.6) must do this. Add one Python test that documents it:
     assign whole list → value sticks.

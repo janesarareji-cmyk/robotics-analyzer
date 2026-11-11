@@ -149,7 +149,7 @@ bool test_json_round_trip() {
     return true;
 }
 
-// Test 5: schema_version behavior
+// Test 5: schema_version behavior [R2.4-3]
 bool test_schema_version() {
     // Missing schema_version in JSON -> defaults to 1
     std::string no_ver_json = R"({
@@ -176,6 +176,23 @@ bool test_schema_version() {
     }
     if (!threw) {
         std::cerr << "Expected schema_version 2 to throw runtime_error\n";
+        return false;
+    }
+
+    // schema_version < 1 (e.g. 0) throws runtime_error [R2.4-3]
+    std::string v0_json = R"({
+        "schema_version": 0,
+        "metadata": {"name": "PastBot"},
+        "joints": []
+    })";
+    threw = false;
+    try {
+        urm::from_json(v0_json);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    if (!threw) {
+        std::cerr << "Expected schema_version 0 to throw runtime_error\n";
         return false;
     }
 
@@ -264,7 +281,7 @@ bool test_base_tool_poses() {
     return true;
 }
 
-// Test 8: default_limits function and JSON fallback
+// Test 8: default_limits function and JSON fallback [R2.4-2]
 bool test_default_limits() {
     auto r_lim = urm::default_limits(urm::JointType::Revolute);
     if (std::abs(r_lim.lower - (-M_PI)) > 1e-9 || std::abs(r_lim.upper - M_PI) > 1e-9) {
@@ -297,6 +314,23 @@ bool test_default_limits() {
         std::abs(m.joints[1].limits.upper - 0.5) > 1e-9 ||
         std::abs(m.joints[2].limits.upper - 0.0) > 1e-9) {
         std::cerr << "JSON fallback to default_limits failed\n";
+        return false;
+    }
+
+    // [R2.4-2] Prismatic with partial limits (only vel specified) preserves default lower and upper
+    std::string json_prism_vel = R"({
+        "joints": [
+            {"name": "j_prism_vel", "type": "prismatic", "limits": {"vel": 2.0}}
+        ]
+    })";
+    urm::RobotModel m_pvel = urm::from_json(json_prism_vel);
+    if (std::abs(m_pvel.joints[0].limits.lower - 0.0) > 1e-9 ||
+        std::abs(m_pvel.joints[0].limits.upper - 0.5) > 1e-9 ||
+        std::abs(m_pvel.joints[0].limits.vel - 2.0) > 1e-9 ||
+        std::abs(m_pvel.joints[0].limits.effort - 100.0) > 1e-9) {
+        std::cerr << "Prismatic partial limits override failed: got lower="
+                  << m_pvel.joints[0].limits.lower << ", upper=" << m_pvel.joints[0].limits.upper
+                  << ", vel=" << m_pvel.joints[0].limits.vel << "\n";
         return false;
     }
 
@@ -368,31 +402,39 @@ bool test_validate() {
     return true;
 }
 
-// Test 10: malformed JSON and unknown joint type throw runtime_error
+// Test 10: malformed JSON, root non-object, and type errors throw runtime_error [R2.4-1]
 bool test_malformed_json_and_unknown_type() {
-    // Malformed JSON
-    bool threw = false;
-    try {
-        urm::from_json("{not valid json}");
-    } catch (const std::runtime_error&) {
-        threw = true;
-    }
-    if (!threw) {
-        std::cerr << "Expected malformed JSON to throw runtime_error\n";
-        return false;
-    }
+    auto check_throws_runtime_error = [](const std::string& input, const std::string& desc) -> bool {
+        bool threw = false;
+        try {
+            urm::from_json(input);
+        } catch (const std::runtime_error&) {
+            threw = true;
+        }
+        if (!threw) {
+            std::cerr << "Expected " << desc << " to throw std::runtime_error\n";
+            return false;
+        }
+        return true;
+    };
 
-    // Unknown joint type
-    threw = false;
-    try {
-        urm::from_json(R"({"joints": [{"name": "j", "type": "spherical"}]})");
-    } catch (const std::runtime_error&) {
-        threw = true;
-    }
-    if (!threw) {
-        std::cerr << "Expected unknown joint type 'spherical' to throw runtime_error\n";
-        return false;
-    }
+    // 1. Malformed JSON syntax
+    if (!check_throws_runtime_error("{not valid json}", "malformed JSON syntax")) return false;
+
+    // 2. Root is array, not object [R2.4-1]
+    if (!check_throws_runtime_error("[]", "root array []")) return false;
+
+    // 3. schema_version is string "2" (type error) [R2.4-1]
+    if (!check_throws_runtime_error(R"({"schema_version": "2"})", "schema_version as string")) return false;
+
+    // 4. joint q is string "abc" (type error) [R2.4-1]
+    if (!check_throws_runtime_error(R"({"joints":[{"name":"j","type":"revolute","q":"abc"}]})", "joint q as string")) return false;
+
+    // 5. inertia com is string "x" (type error) [R2.4-1]
+    if (!check_throws_runtime_error(R"({"links":[{"inertia":{"com":"x"}}]})", "inertia com as string")) return false;
+
+    // 6. Unknown joint type
+    if (!check_throws_runtime_error(R"({"joints": [{"name": "j", "type": "spherical"}]})", "unknown joint type")) return false;
 
     std::cout << "PASS: test_malformed_json_and_unknown_type\n";
     return true;

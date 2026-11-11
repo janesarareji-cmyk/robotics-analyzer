@@ -218,6 +218,15 @@ def test_from_json_bad_json_raises_runtime_error():
         cb.RobotModel.from_json('{"joints": [{"name": "j", "type": "bad_type"}]}')
 
 
+def test_pose_whole_list_assignment():
+    """Assigning whole list to pose attributes modifies the C++ struct [R2.4-4]."""
+    robot = cb.RobotModel()
+    robot.base.xyz = [1.5, 2.5, 3.5]
+    assert list(robot.base.xyz) == [1.5, 2.5, 3.5]
+    robot.tool.rpy = [0.1, 0.2, 0.3]
+    assert list(robot.tool.rpy) == [0.1, 0.2, 0.3]
+
+
 def test_urm_repr():
     """RobotModel __repr__ works from Python."""
     robot = cb.RobotModel()
