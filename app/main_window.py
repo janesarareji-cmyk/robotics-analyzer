@@ -449,6 +449,7 @@ class MainWindow(QMainWindow):
         self._action_view_simulation.toggled.connect(self._sim_panel.on_visibility_changed)
         self._sim_panel.state_updated.connect(self._on_sim_state)
         self._sim_panel.log_requested.connect(self.log)
+        self._sim_panel.trajectory_changed.connect(self._on_trajectory_changed)
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
@@ -487,7 +488,11 @@ class MainWindow(QMainWindow):
             self._analysis_panel.set_model(project.robot_model)
             self._workspace_panel.set_model(project.robot_model)
             self._performance_panel.set_model(project.robot_model)
+            traj = project.trajectory
+            self._sim_panel.clear_trajectory()
             self._sim_panel.set_model(project.robot_model, project.simulation_settings)
+            self._sim_panel.set_trajectory(traj)          # drops it if the DOF count differs
+            project.trajectory = self._sim_panel.trajectory
             self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
@@ -551,6 +556,14 @@ class MainWindow(QMainWindow):
         self._ik_panel.notify_q_edited()
         self._analysis_panel.refresh()
         self._sim_panel.notify_q_edited()
+
+    def _on_trajectory_changed(self, traj: Any) -> None:
+        """Waypoint table edited / trajectory dropped: keep it in the project."""
+        project = self._project_controller.current_project
+        if project is None:
+            return
+        project.trajectory = traj
+        self._project_controller.mark_modified()
 
     def _on_sim_state(self, state: Any) -> None:
         """Simulation tick / stop: push state.q to model, joint panel, viewport.

@@ -70,6 +70,7 @@ class SimEngine:
             integrator = make_integrator(integrator, **self._rk45_kwargs(settings))
         self.integrator = integrator
         self.error = None
+        self.torque_fn = None  # optional callable(t, q, qd) -> tau (feedback control, R6.4)
         self.max_steps_per_advance = int(max_steps_per_advance)
         self.clock = SimClock()
         self.lag = 0.0
@@ -136,9 +137,12 @@ class SimEngine:
         s.energy = {"ke": ke, "pe": pe, "total": ke + pe}
 
     def _accel(self, tau):
+        fn = self.torque_fn
+
         def f(t, q, qd):
+            tau_eff = tau if fn is None else fn(t, np.asarray(q, float), np.asarray(qd, float))
             return np.asarray(cb.forward_dynamics(
-                self.dm, list(q), list(qd), list(tau), self.gravity,
+                self.dm, list(q), list(qd), list(tau_eff), self.gravity,
                 self.friction, self.armature), float)
         return f
 
@@ -148,7 +152,8 @@ class SimEngine:
         Cheap part always (tau, qdd); ``full`` adds tau_inv, tcp and energy
         (inverse dynamics + FK + energy, several times the cost of a step).
         """
-        s.tau = self._tau.copy()
+        fn = self.torque_fn
+        s.tau = self._tau.copy() if fn is None else np.asarray(fn(s.t, s.q, s.qd), float)
         s.qdd = self._accel(s.tau)(s.t, s.q, s.qd)
         if full:
             s.tau_inv = np.asarray(cb.inverse_dynamics(
@@ -210,6 +215,29 @@ class SimEngine:
         self._state = new
         self.steps += 1
         return new
+
+    def set_state(self, t, q, qd, qdd=None):
+        """Replace the current state without touching the clock or the initial state.
+
+        ``qdd=None``: derived by forward dynamics (full refresh). Given ``qdd``
+        (kinematic playback): tau and tau_inv = RNEA(q, qd, qdd), plus tcp and energy.
+        """
+        n = self.n_dof
+        s = SimState.zeros(n)
+        s.t = float(t)
+        s.q, s.qd = np.array(q, float), np.array(qd, float)
+        if s.q.shape != (n,) or s.qd.shape != (n,):
+            raise ValueError("q and qd need n_dof entries")
+        if qdd is None:
+            self._finish(s)
+        else:
+            s.qdd = np.array(qdd, float)
+            s.tau_inv = np.asarray(cb.inverse_dynamics(
+                self.dm, list(s.q), list(s.qd), list(s.qdd), self.gravity, self.friction), float)
+            s.tau = s.tau_inv.copy()
+            self._fill(s)
+        self._state = s
+        return s
 
     def refresh(self):
         """Fill tau_inv, tcp and energy of the current state."""

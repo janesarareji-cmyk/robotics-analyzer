@@ -22,7 +22,7 @@ from typing import Any
 
 
 # Current file format version. Increment on breaking schema changes.
-PROJECT_FORMAT_VERSION = "1.1.0"
+PROJECT_FORMAT_VERSION = "1.2.0"
 
 
 @dataclass
@@ -84,6 +84,9 @@ class SimulationSettings:
     rk45_rtol: float = 1e-7
     rk45_dt_min: float = 1e-7
     rk45_dt_max: float = 0.01
+    # Computed-torque tracking gains per DOF (R6.4); None = defaults (Kp 100, Kd 20)
+    track_kp: list[float] | None = None
+    track_kd: list[float] | None = None
 
     def __post_init__(self) -> None:
         if self.integrator not in INTEGRATORS:
@@ -99,6 +102,8 @@ class SimulationSettings:
             "rk45_rtol": self.rk45_rtol,
             "rk45_dt_min": self.rk45_dt_min,
             "rk45_dt_max": self.rk45_dt_max,
+            "track_kp": self.track_kp,
+            "track_kd": self.track_kd,
         }
 
     @classmethod
@@ -112,6 +117,8 @@ class SimulationSettings:
             rk45_rtol=float(data.get("rk45_rtol", 1e-7)),
             rk45_dt_min=float(data.get("rk45_dt_min", 1e-7)),
             rk45_dt_max=float(data.get("rk45_dt_max", 0.01)),
+            track_kp=data.get("track_kp"),
+            track_kd=data.get("track_kd"),
         )
 
 
@@ -137,6 +144,7 @@ class ProjectData:
     visuals: list[Any] = field(default_factory=list)       # R3.5 LinkVisual
     collisions: list[Any] = field(default_factory=list)    # R3.5 LinkVisual
     asset_dir: str | None = None   # temp dir with extracted meshes (R3.5)
+    trajectory: Any = None         # app.sim.trajectory.Trajectory or None (R6.4)
 
     def __post_init__(self) -> None:
         """Ensure robot_model is always a valid RobotModel instance."""

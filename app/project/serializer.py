@@ -39,6 +39,7 @@ _ROBOT_FILE = "robot_model.json"
 _PHYSICS_FILE = "physical_properties.json"
 _SIM_FILE = "simulation_settings.json"
 _VISUALS_FILE = "visuals.json"
+_TRAJ_FILE = "trajectory.json"
 _ASSET_DIR = "assets"
 
 log = logging.getLogger("robotics_analyzer.project")
@@ -82,6 +83,8 @@ def save(project: ProjectData, path: str | Path) -> None:
             _write_json(zf, _PHYSICS_FILE, project.physical_properties or {})
             _write_json(zf, _SIM_FILE, project.simulation_settings.to_dict())
             _write_visuals(zf, project)
+            if getattr(project, "trajectory", None) is not None:
+                _write_json(zf, _TRAJ_FILE, project.trajectory.to_dict())
     except (OSError, zipfile.BadZipFile) as exc:
         raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
 
@@ -135,6 +138,7 @@ def load(path: str | Path) -> ProjectData:
             sim_dict = _read_json(zf, _SIM_FILE) if _SIM_FILE in names else {}
             simulation_settings = SimulationSettings.from_dict(sim_dict)
             visuals, collisions, asset_dir = _read_visuals(zf, names)
+            trajectory = _read_trajectory(zf, names)
 
     except zipfile.BadZipFile as exc:
         raise ProjectSerializationError(
@@ -156,6 +160,7 @@ def load(path: str | Path) -> ProjectData:
         visuals=visuals,
         collisions=collisions,
         asset_dir=asset_dir,
+        trajectory=trajectory,
     )
 
 
@@ -239,6 +244,18 @@ def _read_visuals(zf: zipfile.ZipFile, names: list[str]):
 
     return (load(data.get("visuals", [])), load(data.get("collisions", [])),
             asset_dir)
+
+
+def _read_trajectory(zf: zipfile.ZipFile, names: list[str]) -> Any:
+    """trajectory.json -> Trajectory. Absent (1.0/1.1 files) or invalid: None."""
+    if _TRAJ_FILE not in names:
+        return None
+    from app.sim.trajectory import Trajectory
+    try:
+        return Trajectory.from_dict(_read_json(zf, _TRAJ_FILE))
+    except (KeyError, TypeError, ValueError) as exc:
+        log.warning("Invalid trajectory in project archive ignored: %s", exc)
+        return None
 
 
 def _read_json(zf: zipfile.ZipFile, name: str) -> Any:

@@ -7,7 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R5 --- stage-approved (Sonnet review 2026-11-11)
--   **Next substage:** R6.4 --- Trajectory model + playback (spec `docs/specs/R6-spec.md`)
+-   **Next substage:** R6.5 --- State tracking (spec `docs/specs/R6-spec.md`)
+-   **R6.4 committed:** app/sim/trajectory.py (Waypoint, Trajectory linear/cubic, clamped flag, first t must be 0), app/sim/playback.py (TrajectoryPlayer, kinematic + computed-torque dynamic), app/panels/timeline_panel.py (table, transport, embedded in the Simulation dock), engine `torque_fn` + `set_state()`, `ProjectData.trajectory`, `trajectory.json`, format 1.2.0, `SimulationSettings.track_kp/track_kd` (None = 100 / 20). Tests after R6.4: pytest 773 passed (27 test_trajectory + 16 test_ui_trajectory), CTest 9/9 unchanged (no C++). Notes for R6.5: kinematic playback runs the engine clock (RUNNING) and sets state via `engine.set_state(t, q, qd, qdd)` (qd, qdd from the trajectory, tau = tau_inv = RNEA), not `step`; the recorder must sample `SimPanel.state_updated` / the tick, in both mode paths. Dynamic playback: engine.torque_fn (evaluated at every RK stage) fills `state.tau`. Format test in test_urdf_meshes.py updated to 1.2.0. Invalid table drafts keep the last valid trajectory in the project (playback disabled until the table is valid).
 -   **R6.3 committed:** app/sim/mode.py, app/panels/sim_panel.py (Simulation dock), main_window wiring. Tests after R6.3: pytest 730 passed, CTest 9/9. Notes for R6.4: in KINEMATIC mode the run buttons are disabled (no run clock); trajectory playback must drive kinematic playback through the R6.1 clock. Sim panel controls (dt, integrator, scale, gravity, friction) change the engine only, not project SimulationSettings. Offscreen Qt delivers dock hide events lazily; panel has on_visibility_changed.
 -   **R6.2 committed:** app/sim/integrators.py (euler, rk4, RK45 Dormand-Prince), engine uses make_integrator, lazy engine.refresh() for tau_inv/tcp/energy (step(full=False)), SimulationSettings validates integrator + rk45 fields. RK4 speed 20,500 steps/s on six_dof fixture (no C++ needed). Tests after R6.2: pytest 714 passed, CTest 9/9 unchanged. Also fixed R6.1 bug: Friction.eps is scalar.
 -   **R6.1 committed:** app/sim (SimState, SimClock, SimEngine, rk4 placeholder). Tests after R6.1: pytest 690 passed (CTest 9/9 unchanged, no C++ touched). Note for R6.2: SimEngine._finish runs forward dyn + inverse dyn + FK + energy every step; check the speed floor in R6.2 item 5 and make the extra signals lazy/decimated if needed.
@@ -112,7 +113,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R6.1 | Simulation core | test_sim_core.py | committed |
 | R6.2 | Integrators | test_integrators.py | committed |
 | R6.3 | Manual mode + UI | test_sim_panel.py | committed |
-| R6.4 | Trajectory + playback | test_trajectory.py, test_ui_trajectory.py | planned |
+| R6.4 | Trajectory + playback | test_trajectory.py, test_ui_trajectory.py | committed |
 | R6.5 | State tracking | test_recorder.py | planned |
 | R6.6 | Graph suite | test_graph_series.py, test_ui_graphs.py | planned |
 | R6.7 | Data export | test_export.py | planned |

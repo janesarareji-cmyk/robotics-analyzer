@@ -19,10 +19,12 @@ from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget,
 )
 
-from app.kin_utils import current_q
+from app.kin_utils import current_q, dof_limits
+from app.panels.timeline_panel import TimelinePanel
 from app.sim import SimEngine, make_integrator
 from app.sim import mode as sim_mode
 from app.sim.engine import PAUSED, RUNNING, STOPPED
+from app.sim.playback import TrajectoryPlayer, resolve_gains
 
 MAX_WALL_DT = 0.1   # s; a stalled UI never makes a huge catch-up step
 DEFAULT_FPS = 60.0
@@ -31,6 +33,7 @@ DEFAULT_FPS = 60.0
 class SimPanel(QWidget):
     state_updated = Signal(object)   # SimState; q already final for this tick
     log_requested = Signal(str)
+    trajectory_changed = Signal(object)   # Trajectory or None (relay of the timeline)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -42,6 +45,8 @@ class SimPanel(QWidget):
         self._tau_boxes: list[QDoubleSpinBox] = []
         self._samples: list[tuple[float, np.ndarray]] = []
         self._est_tau = None
+        self._player: TrajectoryPlayer | None = None
+        self._dof_names: list[str] = []
         self._last_tick = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
@@ -108,7 +113,19 @@ class SimPanel(QWidget):
         self._status = QLabel("No robot")
         self._status.setWordWrap(True)
         lay.addWidget(self._status)
+        self._timeline = TimelinePanel()
+        lay.addWidget(self._timeline)
         lay.addStretch(1)
+        tl = self._timeline
+        tl.set_q_provider(lambda: current_q(self._model) if self._model is not None else None)
+        tl.trajectory_changed.connect(self._on_traj_changed)
+        tl.play_requested.connect(self.play_trajectory)
+        tl.pause_requested.connect(self.pause_trajectory)
+        tl.stop_requested.connect(self.stop_trajectory)
+        tl.seek_requested.connect(self.seek_trajectory)
+        tl.speed_changed.connect(self._on_traj_speed)
+        tl.loop_changed.connect(self._on_traj_loop)
+        tl.log_requested.connect(self.log_requested)
 
     # ----------------------------------------------------------- properties
     @property
@@ -118,6 +135,31 @@ class SimPanel(QWidget):
     @property
     def mode(self) -> str:
         return self._mode
+
+    @property
+    def timeline(self) -> TimelinePanel:
+        return self._timeline
+
+    @property
+    def player(self) -> TrajectoryPlayer | None:
+        return self._player
+
+    @property
+    def trajectory(self):
+        """Last valid trajectory (stored in the project)."""
+        return self._timeline.trajectory
+
+    def set_trajectory(self, traj) -> bool:
+        """Show a trajectory loaded from the project (silent). False = dropped (DOF)."""
+        self._discard_player()
+        ok = self._timeline.set_trajectory(traj)
+        self._update_controls()
+        return ok
+
+    def clear_trajectory(self) -> None:
+        self._discard_player()
+        self._timeline.clear()
+        self._update_controls()
 
     @property
     def timer(self) -> QTimer:
@@ -146,6 +188,7 @@ class SimPanel(QWidget):
     def set_model(self, model: Any, settings: Any, reload_settings: bool = True) -> None:
         """Robot opened / replaced / edited / closed (None): new engine, STOPPED."""
         self._timer.stop()
+        self._discard_player()
         old = self._engine
         if old is not None:
             try:
@@ -177,6 +220,10 @@ class SimPanel(QWidget):
             self._engine.clock.on_state_changed.append(self._on_clock)
             self._engine.reset(current_q(model))
         self._rebuild_tau_boxes()
+        if model is not None and model.dof() > 0:
+            self._timeline.set_model(model.dof(), self._dof_names or None, dof_limits(model))
+        else:
+            self._timeline.set_model(0, None, None)
         if self._engine is None:
             self._status.setText(f"No engine: {err}" if err else "No robot")
         self._update_controls()
@@ -193,12 +240,14 @@ class SimPanel(QWidget):
         while self._tau_form.rowCount():
             self._tau_form.removeRow(0)
         self._tau_boxes = []
+        self._dof_names = []
         if self._engine is None:
             return
         names = [f"dof {i}" for i in range(self._engine.n_dof)]
         for j_idx, q_idx in enumerate(self._model.q_index_map()):
             if q_idx >= 0:
                 names[q_idx] = self._model.joints[j_idx].name or names[q_idx]
+        self._dof_names = list(names)
         for name in names:
             sb = QDoubleSpinBox()
             sb.setDecimals(4)
@@ -255,6 +304,7 @@ class SimPanel(QWidget):
 
     def _on_mode_changed(self, mode: str) -> None:
         self._mode = mode
+        self._discard_player()
         if self._engine is not None:
             sim_mode.switch_mode(self._engine, mode)
             self._emit_state()
@@ -293,6 +343,7 @@ class SimPanel(QWidget):
         e = self._engine
         if e is None or self._model is None:
             return
+        self._discard_player()
         if self._mode == sim_mode.KINEMATIC:
             q = current_q(self._model)
             sim_mode.set_kinematic_q(e, q)
@@ -312,7 +363,75 @@ class SimPanel(QWidget):
 
     # --------------------------------------------------------- clock / timer
     def _on_clock(self, new: str, _old: str) -> None:
+        if new == STOPPED:
+            self._discard_player()
         self._update_controls()
+
+    # ------------------------------------------------------ trajectory (R6.4)
+    def _discard_player(self) -> None:
+        if self._player is not None:
+            self._player.detach()
+            self._player = None
+
+    def _on_traj_changed(self, traj) -> None:
+        self._discard_player()
+        self.trajectory_changed.emit(traj)
+        self._update_controls()
+
+    def _ensure_player(self) -> TrajectoryPlayer | None:
+        e, traj = self._engine, self._timeline.playable
+        if e is None or traj is None or traj.n_dof != e.n_dof:
+            return None
+        if self._player is None or self._player.traj is not traj or self._player.mode != self._mode:
+            self._discard_player()
+            kp, kd = resolve_gains(self._settings, e.n_dof)
+            self._player = TrajectoryPlayer(e, traj, self._mode, kp, kd,
+                                            self._timeline.speed, self._timeline.loop)
+        return self._player
+
+    def play_trajectory(self) -> None:
+        e = self._engine
+        if e is None or self._timeline.playable is None:
+            return
+        if self._player is None and e.clock.state != STOPPED:
+            e.stop()   # free-running dynamics: back to the initial state first
+        pl = self._ensure_player()
+        if pl is None:
+            return
+        pl.play()
+        self._last_tick = time.perf_counter()
+        self._update_controls()
+        self._emit_state()
+
+    def pause_trajectory(self) -> None:
+        if self._player is not None:
+            self._player.pause()
+            self._update_controls()
+
+    def stop_trajectory(self) -> None:
+        pl = self._player
+        if pl is not None:
+            pl.stop()
+            self._discard_player()
+            self._timeline.set_position(0.0)
+            self._update_controls()
+            self._emit_state()
+
+    def seek_trajectory(self, t: float) -> None:
+        pl = self._ensure_player()
+        if pl is None:
+            return
+        pl.seek(t)
+        self._update_controls()
+        self._emit_state()
+
+    def _on_traj_speed(self, v: float) -> None:
+        if self._player is not None:
+            self._player.speed = v
+
+    def _on_traj_loop(self, on: bool) -> None:
+        if self._player is not None:
+            self._player.loop = on
 
     def _update_controls(self) -> None:
         e = self._engine
@@ -323,6 +442,11 @@ class SimPanel(QWidget):
         self._btn_resume.setEnabled(en["resume"])
         self._btn_stop.setEnabled(en["stop"])
         has = e is not None
+        pl = self._player
+        can_play = has and self._timeline.playable is not None and st != RUNNING
+        self._timeline.set_transport(
+            can_play, has and pl is not None and st == RUNNING,
+            has and (pl is not None or st in (RUNNING, PAUSED)))
         self._tau_group.setEnabled(has and self._mode == sim_mode.DYNAMIC)
         self._estimate.setEnabled(has and self._mode == sim_mode.KINEMATIC)
         for w in (self._mode_combo, self._integ_combo, self._dt, self._scale,
@@ -366,7 +490,10 @@ class SimPanel(QWidget):
         now = time.perf_counter()
         wall_dt = min(now - self._last_tick, MAX_WALL_DT)
         self._last_tick = now
-        eng.advance(wall_dt)
+        if self._player is not None:
+            self._player.advance(wall_dt)
+        else:
+            eng.advance(wall_dt)
         self._emit_state()
         if eng.error:
             self.log_requested.emit(f"[WARNING] Simulation paused: {eng.error}")
@@ -374,6 +501,8 @@ class SimPanel(QWidget):
     def _emit_state(self) -> None:
         if self._engine is not None:
             self.state_updated.emit(self._engine.state)
+            if self._player is not None:
+                self._timeline.set_position(self._player.t)
         self._refresh_status()
 
     def _refresh_status(self) -> None:
@@ -382,6 +511,11 @@ class SimPanel(QWidget):
             return
         s = e.state
         txt = f"{e.clock.state}  t={s.t:.3f} s  steps={e.steps}  lag={e.lag:.3f} s"
+        if self._player is not None:
+            txt += f"  traj t={self._player.t:.3f}/{self._player.duration:.3f} s"
+            if self._player.mode == sim_mode.DYNAMIC:
+                err = self._player.tracking_error()
+                txt += f"  track err rms={err['rms']:.2e} max={err['max']:.2e} rad"
         if e.error:
             txt += f"  ERROR: {e.error}"
         self._status.setText(txt)
