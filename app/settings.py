@@ -165,6 +165,25 @@ class AppSettings:
         self._settings.setValue(self.KEY_VRAM_BUDGET_MB, max(256, min(7168, int(mb))))
 
     # ------------------------------------------------------------------
+    # Autosave (R8.4)
+    # ------------------------------------------------------------------
+
+    AUTOSAVE_DEFAULT_S = 120
+    AUTOSAVE_MIN_S = 15
+
+    def autosave_interval_s(self) -> int:
+        """Autosave interval in seconds (default 120, minimum 15)."""
+        try:
+            v = int(float(self._settings.value("project/autosave_s", self.AUTOSAVE_DEFAULT_S)))
+        except (TypeError, ValueError):
+            v = self.AUTOSAVE_DEFAULT_S
+        return max(self.AUTOSAVE_MIN_S, v)
+
+    def set_autosave_interval_s(self, seconds: int) -> None:
+        self._settings.setValue("project/autosave_s",
+                                max(self.AUTOSAVE_MIN_S, int(seconds)))
+
+    # ------------------------------------------------------------------
     # Generic access
     # ------------------------------------------------------------------
 

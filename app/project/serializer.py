@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -21,6 +22,7 @@ from typing import Any
 
 import core_bridge as cb
 
+from app.project.migrations import migrate, is_newer, parse_version
 from app.project.project_data import (
     ProjectData,
     ProjectMetadata,
@@ -58,7 +60,8 @@ class ProjectFormatError(ProjectSerializationError):
 def save(project: ProjectData, path: str | Path) -> None:
     """
     Save a ProjectData to a .robotproj file at the given path.
-    Creates the file. Overwrites if it already exists.
+    Atomic (R8.4): written to <name>.tmp, fsynced, then moved over the target.
+    The previous file stays as <name>.prev until the new one is in place.
     Updates project.metadata.modified_at and project.file_path.
 
     Raises ProjectSerializationError on I/O failure.
@@ -73,30 +76,78 @@ def save(project: ProjectData, path: str | Path) -> None:
     project.touch()
     project.metadata.format_version = PROJECT_FORMAT_VERSION
 
-    try:
-        with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            _write_json(zf, _META_FILE, project.metadata.to_dict())
-            if project.robot_model is not None and hasattr(project.robot_model, "to_json"):
-                zf.writestr(_ROBOT_FILE, project.robot_model.to_json().encode(ENCODING))
-            elif isinstance(project.robot_model, dict):
-                _write_json(zf, _ROBOT_FILE, project.robot_model)
-            else:
-                _write_json(zf, _ROBOT_FILE, {})
-            _write_json(zf, _PHYSICS_FILE, project.physical_properties or {})
-            _write_json(zf, _SIM_FILE, project.simulation_settings.to_dict())
-            _write_visuals(zf, project)
-            if getattr(project, "trajectory", None) is not None:
-                _write_json(zf, _TRAJ_FILE, project.trajectory.to_dict())
-            coll = getattr(project, "collision", None)
-            if coll is not None and not coll.is_default():
-                _write_json(zf, _COLLISION_FILE, coll.to_dict())
-            configs = getattr(project, "configs", None)
-            if configs is not None and len(configs) > 0:
-                _write_json(zf, _CONFIGS_FILE, configs.to_dict())
-    except (OSError, zipfile.BadZipFile) as exc:
-        raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
+    write_atomic(project, path)
 
     project.file_path = str(path)
+
+
+def prev_path(path: str | Path) -> Path:
+    """<name>.robotproj.prev: the previous file while a save is in progress."""
+    p = Path(path)
+    return p.with_name(p.name + ".prev")
+
+
+def _write_archive(project: ProjectData, target: Path) -> None:
+    """Write the project ZIP to ``target`` and fsync it."""
+    with zipfile.ZipFile(target, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        _write_json(zf, _META_FILE, project.metadata.to_dict())
+        if project.robot_model is not None and hasattr(project.robot_model, "to_json"):
+            zf.writestr(_ROBOT_FILE, project.robot_model.to_json().encode(ENCODING))
+        elif isinstance(project.robot_model, dict):
+            _write_json(zf, _ROBOT_FILE, project.robot_model)
+        else:
+            _write_json(zf, _ROBOT_FILE, {})
+        _write_json(zf, _PHYSICS_FILE, project.physical_properties or {})
+        _write_json(zf, _SIM_FILE, project.simulation_settings.to_dict())
+        _write_visuals(zf, project)
+        if getattr(project, "trajectory", None) is not None:
+            _write_json(zf, _TRAJ_FILE, project.trajectory.to_dict())
+        coll = getattr(project, "collision", None)
+        if coll is not None and not coll.is_default():
+            _write_json(zf, _COLLISION_FILE, coll.to_dict())
+        configs = getattr(project, "configs", None)
+        if configs is not None and len(configs) > 0:
+            _write_json(zf, _CONFIGS_FILE, configs.to_dict())
+    with open(target, "rb+") as fh:
+        os.fsync(fh.fileno())
+
+
+def write_atomic(project: ProjectData, path: str | Path, keep_prev: bool = True) -> None:
+    """
+    Atomic write of the project archive to ``path`` (does not touch project state).
+    write <name>.tmp + fsync -> old file to <name>.prev -> tmp replaces target
+    -> .prev removed. A kill at any point leaves either the old file, the new
+    file, or (short window) only <name>.prev: it is never a truncated target.
+    Raises ProjectSerializationError; the tmp file is always removed on failure.
+    """
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    prev = prev_path(path)
+    try:
+        _write_archive(project, tmp)
+    except (OSError, zipfile.BadZipFile) as exc:
+        tmp.unlink(missing_ok=True)
+        raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    moved = False
+    try:
+        # never overwrite a good .prev with a damaged target
+        if keep_prev and path.exists() and zipfile.is_zipfile(path):
+            os.replace(path, prev)
+            moved = True
+        os.replace(tmp, path)
+    except OSError as exc:
+        if moved and not path.exists():
+            try:
+                os.replace(prev, path)
+            except OSError:
+                pass
+        tmp.unlink(missing_ok=True)
+        raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
+    if moved:
+        prev.unlink(missing_ok=True)
 
 
 def load(path: str | Path) -> ProjectData:
@@ -125,6 +176,7 @@ def load(path: str | Path) -> ProjectData:
             metadata = ProjectMetadata.from_dict(meta_dict)
 
             _check_format_version(metadata.format_version)
+            file_version = metadata.format_version
 
             if _ROBOT_FILE in names:
                 raw_robot = zf.read(_ROBOT_FILE).decode(ENCODING).strip()
@@ -144,6 +196,11 @@ def load(path: str | Path) -> ProjectData:
                 _read_json(zf, _PHYSICS_FILE) if _PHYSICS_FILE in names else {}
             )
             sim_dict = _read_json(zf, _SIM_FILE) if _SIM_FILE in names else {}
+            # R8.4: chained in-memory migration (file is never rewritten here)
+            docs = {_META_FILE: meta_dict, _SIM_FILE: sim_dict,
+                    _PHYSICS_FILE: physical_properties}
+            steps = migrate(docs, file_version)
+            sim_dict, physical_properties = docs[_SIM_FILE], docs[_PHYSICS_FILE]
             simulation_settings = SimulationSettings.from_dict(sim_dict)
             visuals, collisions, asset_dir = _read_visuals(zf, names)
             trajectory = _read_trajectory(zf, names)
@@ -173,6 +230,7 @@ def load(path: str | Path) -> ProjectData:
         trajectory=trajectory,
         collision=collision,
         configs=configs,
+        migrated_from=file_version if steps else None,
     )
 
 
@@ -302,13 +360,25 @@ def _read_json(zf: zipfile.ZipFile, name: str) -> Any:
 
 def _check_format_version(version: str) -> None:
     """
-    Raise ProjectFormatError if the format version is incompatible.
-    Currently accepts any 1.x.x version.
+    Raise ProjectFormatError for a version this app cannot read:
+    unknown/garbled, other major, or NEWER than PROJECT_FORMAT_VERSION
+    (refused, nothing is written). Older 1.x.x versions are migrated.
     """
-    major = version.split(".")[0] if version else "0"
+    if parse_version(version) is None:
+        raise ProjectFormatError(f"Unknown .robotproj format version: {version!r}.")
+    if is_newer(version):
+        raise ProjectFormatError(
+            f"This project was saved by a newer version of the application "
+            f"(format {version}); this application reads up to "
+            f"{PROJECT_FORMAT_VERSION}. Update the application. The file was not changed."
+        )
+    major = version.split(".")[0]
     current_major = PROJECT_FORMAT_VERSION.split(".")[0]
     if major != current_major:
         raise ProjectFormatError(
             f"Incompatible .robotproj format version: {version!r}. "
             f"This application reads version {current_major}.x.x."
         )
+    from app.project.migrations import MIGRATIONS
+    if version != PROJECT_FORMAT_VERSION and version not in MIGRATIONS:
+        raise ProjectFormatError(f"Unknown .robotproj format version: {version!r}.")

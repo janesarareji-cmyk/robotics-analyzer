@@ -163,6 +163,7 @@ class ProjectData:
     trajectory: Any = None         # app.sim.trajectory.Trajectory or None (R6.4)
     collision: Any = None          # app.planning.collision.CollisionConfig or None (R7.2)
     configs: Any = field(default_factory=ConfigStore)   # named joint configurations (R7.6)
+    migrated_from: str | None = None   # format version of the file if it was migrated (R8.4)
 
     def __post_init__(self) -> None:
         """Ensure robot_model is always a valid RobotModel instance."""

@@ -10,10 +10,20 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QWidget, QFileDialog, QMessageBox, QInputDialog
 
+import json
+import zipfile
+
+from app.project.migrations import is_older, make_backup
 from app.project.project_data import ProjectData
+from app.project.recovery import (
+    load_best,
+    newer_autosave,
+    remove_autosave,
+    write_autosave,
+)
 from app.project.serializer import (
     save as save_project_file,
     load as load_project_file,
@@ -47,11 +57,17 @@ class ProjectController(QObject):
     modified_changed = Signal(bool)
     robot_changed = Signal(object)    # cb.RobotModel
 
-    def __init__(self, settings: AppSettings, parent: QObject | None = None):
+    def __init__(self, settings: AppSettings, parent: QObject | None = None,
+                 autosave_interval_ms: int | None = None):
         super().__init__(parent)
         self._settings = settings
         self._project: ProjectData | None = None
         self._is_modified: bool = False
+        # R8.4 autosave: interval from the setting (default 120 s, min 15 s);
+        # autosave_interval_ms is an injection point for tests.
+        self._autosave_ms_override = autosave_interval_ms
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.timeout.connect(self.autosave_now)
 
     # ------------------------------------------------------------------
     # Public state
@@ -147,8 +163,37 @@ class ProjectController(QObject):
             if not path:
                 return False
 
+        # R8.4: old-format file -> backup once, BEFORE anything is migrated
+        old_version = _peek_old_version(path)
+        if old_version is not None:
+            make_backup(path, old_version)
+
+        recovered = False
+        used_prev = False
+        autosave = newer_autosave(path)
+        if autosave is not None:
+            answer = QMessageBox.question(
+                parent_widget,
+                "Recover Project",
+                f"An autosave newer than '{Path(path).name}' was found "
+                "(the application may have closed unexpectedly).\n\nRecover it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                recovered = True
+            else:
+                remove_autosave(path)
+
         try:
-            project = load_project_file(path)
+            if recovered:
+                project = load_project_file(autosave)
+                project.file_path = str(path)
+            else:
+                project, opened = load_best(path)
+                used_prev = Path(opened) != Path(path)
+                if used_prev:
+                    project.file_path = str(path)
         except ProjectFormatError as exc:
             QMessageBox.critical(
                 parent_widget,
@@ -166,9 +211,16 @@ class ProjectController(QObject):
             log.error("I/O error opening %s: %s", path, exc)
             return False
 
+        if used_prev:
+            QMessageBox.warning(
+                parent_widget,
+                "Previous Copy Opened",
+                f"'{Path(path).name}' could not be read; the previous copy "
+                "(.prev) was opened instead. Save to repair the file.",
+            )
         self._settings.add_recent_project(path)
         self._settings.set_last_project_dir(str(Path(path).parent))
-        self._set_project(project, modified=False)
+        self._set_project(project, modified=recovered or used_prev)
         log.info("Project opened: %s (%s)", project.name, path)
         return True
 
@@ -183,6 +235,9 @@ class ProjectController(QObject):
         if parent_widget is not None and not self._confirm_discard(parent_widget):
             return False
 
+        self._autosave_timer.stop()
+        if self._project.file_path:
+            remove_autosave(self._project.file_path)
         self._project.cleanup_assets()
         self._project = None
         self._is_modified = False
@@ -241,12 +296,60 @@ class ProjectController(QObject):
             self.modified_changed.emit(True)
 
     # ------------------------------------------------------------------
+    # Autosave and recovery (R8.4)
+    # ------------------------------------------------------------------
+
+    @property
+    def autosave_interval_ms(self) -> int:
+        if self._autosave_ms_override is not None:
+            return int(self._autosave_ms_override)
+        return int(self._settings.autosave_interval_s()) * 1000
+
+    def set_autosave_interval_ms(self, ms: int | None) -> None:
+        """Override the interval (tests); None goes back to the setting."""
+        self._autosave_ms_override = ms
+        if self._autosave_timer.isActive():
+            self._autosave_timer.start(self.autosave_interval_ms)
+
+    @property
+    def autosave_active(self) -> bool:
+        """True while the autosave timer runs (only while a project is open)."""
+        return self._autosave_timer.isActive()
+
+    def autosave_now(self) -> Path | None:
+        """
+        Write <name>.autosave.robotproj atomically. Only if a project with a file
+        path is open AND modified. Never shows a dialog. Returns the path or None.
+        """
+        project = self._project
+        if project is None or not self._is_modified or not project.file_path:
+            return None
+        try:
+            return write_autosave(project, project.file_path)
+        except ProjectSerializationError as exc:
+            log.warning("Autosave failed: %s", exc)
+            return None
+
+    def check_startup_recovery(self, parent_widget: QWidget) -> bool:
+        """
+        Startup check: if a recent project has an autosave newer than itself,
+        open it (the open path asks "Recover?"). Returns True if a project was opened.
+        """
+        if self._project is not None:
+            return False
+        for recent in self._settings.recent_projects():
+            if newer_autosave(recent) is not None:
+                return self.open_project(parent_widget, recent)
+        return False
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _save_to_path(self, parent_widget: QWidget, path: str) -> bool:
         """Save the current project to path. Returns True on success."""
         assert self._project is not None
+        old_path = self._project.file_path
         try:
             save_project_file(self._project, path)
         except ProjectSerializationError as exc:
@@ -258,6 +361,9 @@ class ProjectController(QObject):
             log.error("I/O error saving %s: %s", path, exc)
             return False
 
+        remove_autosave(path)
+        if old_path and Path(old_path) != Path(path):
+            remove_autosave(old_path)
         self._settings.add_recent_project(path)
         self._settings.set_last_project_dir(str(Path(path).parent))
         self._is_modified = False
@@ -272,6 +378,7 @@ class ProjectController(QObject):
             self._project.cleanup_assets()
         self._project = project
         self._is_modified = modified
+        self._autosave_timer.start(self.autosave_interval_ms)
         self.project_opened.emit(project)
         self.modified_changed.emit(modified)
 
@@ -292,3 +399,14 @@ class ProjectController(QObject):
             QMessageBox.StandardButton.Cancel,
         )
         return answer == QMessageBox.StandardButton.Discard
+
+
+def _peek_old_version(path: str) -> str | None:
+    """Format version of an OLDER file (needs a backup before migration), else None."""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            meta = json.loads(zf.read("project_metadata.json").decode("utf-8"))
+        v = meta.get("format_version")
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile, AttributeError):
+        return None
+    return v if isinstance(v, str) and is_older(v) else None

@@ -36,4 +36,5 @@ def create_app(log_level: str = "INFO"):
 if __name__ == "__main__":
     app, window, logger = create_app()
     window.show()
+    window.project_controller.check_startup_recovery(window)   # R8.4
     sys.exit(app.exec())
