@@ -32,3 +32,5 @@ desktop.ini
 # Secrets
 .env
 *.env
+
+dist/
