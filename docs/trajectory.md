@@ -27,3 +27,11 @@ The project zip gets an optional `trajectory.json`:
  "waypoints": [{"t": 0.0, "q": [..]}, ...]}
 ```
 `PROJECT_FORMAT_VERSION` = 1.2.0. Files 1.0.x and 1.1.x (no trajectory file) still load with `trajectory = None`. An invalid trajectory file is ignored with a warning. A trajectory whose DOF count differs from the robot is dropped (with a log line) on open and when the robot changes.
+
+## Project format 1.3.0 (R7)
+`PROJECT_FORMAT_VERSION` = 1.3.0. Two more optional members, both absent in files 1.0.x-1.2.x
+(they load with `collision = None` and an empty config store):
+-   `collision.json`: `{"format", "fit_mode", "acm_edits": [[a, b, bool], ...], "environment": [{"name", "kind", "params", "xyz", "rpy"}]}`; written only when not default (`docs/collision.md`).
+-   `configs.json`: named joint poses `{name: [q...]}` (ghost panel); poses whose length differs from the robot DOF are dropped with a log line on open and when the robot changes.
+`trajectory.json` is unchanged. A planned path sent to the editor is stored like any trajectory.
+Milestone R7 (`tests/python/test_milestone_r7.py`): trajectory, collision settings and configs are identical after save, close, open.
