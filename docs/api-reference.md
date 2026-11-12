@@ -7,7 +7,7 @@ do this; for a standalone script set `PYTHONPATH` to the repo root and `bindings
 
 ## Version and compatibility rule
 
-`robotics_api.__api_version__ = "1.0"` (`MAJOR.MINOR`, semantic):
+`robotics_api.__api_version__ = "1.1"` (`MAJOR.MINOR`, semantic; 1.1 added `export_urdf` and `generate_report`):
 
 -   MINOR (1.0 -> 1.1): additive only (new function, new optional argument, new key in a returned dict,
     new attribute). A script written for `1.x` keeps working on every later `1.y`.
@@ -78,6 +78,11 @@ URDF roll-pitch-yaw). `size`: box `[x, y, z]` m, sphere radius m, cylinder / cap
     `volume_err_bound`, `filled`, `voxel_size`, `origin`, `dims`, `keys`, `count`, `centers` `(filled, 3)`.
 -   `export_csv(result, path, names=None, meta=None)` and `export_npz(result, path, names=None, meta=None)`:
     write a `simulate` result (format: docstring of `app/sim/export.py`, `docs/graphs.md`); return the row count.
+-   `export_urdf(robot, path, copy_meshes=True)` (1.1) -> `{"path", "meshes", "warnings"}`: write the robot as URDF
+    (DH joints become origin/axis, meshes copied to `meshes/` next to the file, see `docs/reports.md`).
+-   `generate_report(robot, path, result=None, workspace_result=None, plan=None, fmt=None)` (1.1) ->
+    `{"path", "format", "pages", "missing"}`: HTML or PDF robot report; `result` = `simulate` dict (graphs),
+    `workspace_result` = `workspace` dict, `plan` = path array. Missing sections are listed, never an error.
 
 ## Errors
 

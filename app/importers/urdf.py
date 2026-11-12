@@ -302,6 +302,10 @@ def _build(root: ET.Element, report: ImportReport, urdf_dir: Path,
     for i, name in enumerate(order):
         if depth[name] > depth[order[tcp_idx]]:
             tcp_idx = i
+    # R8.3: our own exporter writes <robotics_analyzer tcp_link="name"/>; other tools ignore it.
+    hint = root.find("robotics_analyzer")
+    if hint is not None and hint.get("tcp_link") in index:
+        tcp_idx = index[hint.get("tcp_link")]
 
     model = cb.RobotModel()
     md = cb.RobotMetadata()

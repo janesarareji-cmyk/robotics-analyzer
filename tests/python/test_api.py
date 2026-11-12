@@ -116,7 +116,7 @@ def seg_hits_rect(p, q, lo, hi):
 
 # ------------------------------------------------------------------------------ version
 def test_api_version_string():
-    assert api.__api_version__ == "1.0"
+    assert api.__api_version__ == "1.1"
     assert re.fullmatch(r"\d+\.\d+", api.__api_version__)
     assert "Versioning" in api.__doc__ and "MINOR" in api.__doc__
 

@@ -155,6 +155,15 @@ class MainWindow(QMainWindow):
         self._action_export_graph.triggered.connect(lambda: self.export_data("graph", None))
         for a in (self._action_export_run_csv, self._action_export_run_npz, self._action_export_graph):
             self._menu_export.addAction(a)
+        self._menu_export.addSeparator()
+        self._action_export_report = QAction("&Report (HTML/PDF)...", self)
+        self._action_export_report.triggered.connect(self.export_report)
+        self._action_export_urdf = QAction("&URDF...", self)
+        self._action_export_urdf.triggered.connect(self.export_urdf_file)
+        self._action_export_meshes = QAction("&Meshes...", self)
+        self._action_export_meshes.triggered.connect(self.export_meshes_files)
+        for a in (self._action_export_report, self._action_export_urdf, self._action_export_meshes):
+            self._menu_export.addAction(a)
 
         file_menu.addSeparator()
         self._action_run_script = QAction("Run &script...", self)
@@ -909,6 +918,115 @@ class MainWindow(QMainWindow):
         task.signals.error.connect(lambda m: (self.log(f"[ERROR] Export failed: {m}"),
                                               QMessageBox.warning(self, "Export", f"Export failed.\n\n{m}")))
         self._export_task = task
+
+    # ------------------------------------------------------------------
+    # File > Export > Report / URDF / Meshes (R8.3)
+    # ------------------------------------------------------------------
+
+    def _export_task_run(self, work, done, what: str) -> None:
+        """Run ``work()`` in a worker; ``done(result)`` runs on the GUI thread. Signals are
+        connected before the task starts and the task is kept in ``self._export_task2``."""
+        from app.task_runner import FunctionTask
+        task = FunctionTask(work)
+        task.signals.result.connect(done)
+        task.signals.error.connect(lambda m: (self.log(f"[ERROR] {what} failed: {m}"),
+                                              QMessageBox.warning(self, "Export", f"{what} failed.\n\n{m}")))
+        self._export_task2 = task
+        self._task_runner.submit(task)
+
+    def _export_project(self, what: str):
+        project = self._project_controller.current_project
+        if project is None or project.robot_model is None or len(project.robot_model.joints) == 0:
+            msg = f"Nothing to export: no robot ({what})."
+            self.log(f"[WARNING] {msg}")
+            QMessageBox.information(self, "Export", msg)
+            return None
+        return project
+
+    def export_report(self) -> None:
+        """File > Export > Report: HTML or PDF of the current robot and results."""
+        from app.reports import report as rp
+        project = self._export_project("report")
+        if project is None:
+            return
+        path, flt = QFileDialog.getSaveFileName(
+            self, "Export report", "", "PDF (*.pdf);;HTML (*.html)")
+        if not path:
+            return
+        low = path.lower()
+        fmt = "pdf" if low.endswith(".pdf") or (not low.endswith(".html") and "pdf" in (flt or "").lower()) else "html"
+        if not low.endswith("." + fmt):
+            path += "." + fmt
+        model, name = project.robot_model, project.metadata.name
+        rec = self._sim_panel.recorder
+        arrays = rec.export_arrays() if rec is not None and len(rec) > 0 else None
+        ws = self._workspace_panel.result
+        plan = self._planning_panel.result
+        cfg = project.collision
+        n_shapes = len(project.collisions or project.visuals or [])
+        self.set_status(f"Exporting {path} ...")
+
+        def work():
+            return rp.build_report_data(model, name, workspace=ws, arrays=arrays, plan=plan,
+                                        collision_config=cfg, n_collision_shapes=n_shapes)
+
+        def done(data):
+            try:
+                if fmt == "pdf":
+                    from app.reports.pdf_report import write_pdf
+                    pages = write_pdf(data, path)
+                    self.log(f"[INFO] Report written: {path} ({pages} page(s))")
+                else:
+                    from app.reports.html_report import write_html
+                    write_html(data, path)
+                    self.log(f"[INFO] Report written: {path}")
+            except Exception as exc:  # noqa: BLE001
+                self.log(f"[ERROR] Report failed: {exc}")
+                QMessageBox.warning(self, "Export", f"Report failed.\n\n{exc}")
+
+        self._export_task_run(work, done, "Report")
+
+    def export_urdf_file(self) -> None:
+        """File > Export > URDF: robot (and its meshes) as a URDF file."""
+        from app.reports.urdf_export import export_urdf
+        project = self._export_project("URDF")
+        if project is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export URDF", "", "URDF (*.urdf)")
+        if not path:
+            return
+        if not path.lower().endswith(".urdf"):
+            path += ".urdf"
+        model, vis, col = project.robot_model, list(project.visuals), list(project.collisions)
+        self.set_status(f"Exporting {path} ...")
+
+        def done(res):
+            n = len(res.meshes)
+            self.log(f"[INFO] URDF written: {path} ({n} mesh file(s))")
+            for w in res.warnings:
+                self.log(f"[WARNING] URDF export: {w}")
+
+        self._export_task_run(lambda: export_urdf(model, path, vis, col), done, "URDF export")
+
+    def export_meshes_files(self) -> None:
+        """File > Export > Meshes: STL files of the visual meshes in a chosen folder."""
+        from app.reports.mesh_export import export_meshes
+        project = self._export_project("meshes")
+        if project is None:
+            return
+        if not project.visuals:
+            msg = "Nothing to export: the robot has no visual shapes."
+            self.log(f"[WARNING] {msg}")
+            QMessageBox.information(self, "Export", msg)
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Export meshes to folder")
+        if not folder:
+            return
+        vis = list(project.visuals)
+        self.set_status(f"Exporting meshes to {folder} ...")
+        self._export_task_run(lambda: export_meshes(vis, folder, "stl"),
+                              lambda paths: self.log(f"[INFO] {len(paths)} mesh file(s) written to {folder}"),
+                              "Mesh export")
 
     def _on_run_script(self) -> None:
         """File -> Run script...: pick a .py file and run it in the script runner."""

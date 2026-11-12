@@ -15,7 +15,7 @@ Quick start::
     T = robot.fk([0.3, -0.4])          # 4x4 TCP pose, metres
 """
 from ._cancel import CancelToken, cancel_scope, check_cancel, is_cancelled
-from .analysis import export_csv, export_npz, workspace
+from .analysis import export_csv, export_npz, export_urdf, generate_report, workspace
 from .errors import (AnalysisError, ComputationError, ExportError, ImportFailed,
                      InvalidArgument, PlanningError, ProjectError, RoboticsApiError,
                      ScriptCancelled, ScriptTimeLimit, SimulationError)
@@ -23,12 +23,13 @@ from .motion import Trajectory, plan, simulate, time_parametrize
 from .project import Project, import_urdf, new_project, open_project, save_project
 from .robot import Robot
 
-__api_version__ = "1.0"
+__api_version__ = "1.1"
 
 __all__ = [
     "__api_version__", "Robot", "Project", "Trajectory",
     "open_project", "new_project", "save_project", "import_urdf",
     "simulate", "plan", "time_parametrize", "workspace", "export_csv", "export_npz",
+    "export_urdf", "generate_report",
     "check_cancel", "is_cancelled", "CancelToken", "cancel_scope",
     "RoboticsApiError", "InvalidArgument", "ProjectError", "ImportFailed", "ComputationError",
     "SimulationError", "PlanningError", "AnalysisError", "ExportError", "ScriptCancelled",

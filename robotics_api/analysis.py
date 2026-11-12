@@ -1,6 +1,8 @@
 """Workspace analysis and data export of the API (R8.1)."""
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 from ._cancel import check_cancel, current_token
@@ -82,3 +84,61 @@ def export_npz(result: dict, path: str, names: list[str] | None = None,
     ``meta``). Returns the row count."""
     from app.sim.export import export_npz as _npz
     return int(_npz(_arrays(result, names), str(path), _meta(meta), None))
+
+
+@guard(ExportError)
+def export_urdf(robot: Robot, path: str, copy_meshes: bool = True) -> dict:
+    """Write the robot as a URDF file (R8.3). DH joints are converted to origin/axis; link
+    visuals and collision shapes are written; mesh files found on disk are copied to a
+    ``meshes`` folder next to ``path`` and referenced by relative paths.
+
+    Returns ``{"path": str, "meshes": [relative mesh paths], "warnings": [str]}``.
+    """
+    from app.reports.urdf_export import export_urdf as _exp
+    res = _exp(robot._model, str(path), robot._visuals, robot._collisions, copy_meshes)
+    return {"path": res.path, "meshes": list(res.meshes), "warnings": list(res.warnings)}
+
+
+@guard(ExportError)
+def generate_report(robot: Robot, path: str, result: dict | None = None,
+                    workspace_result: dict | None = None, plan: Any = None,
+                    fmt: str | None = None) -> dict:
+    """Write a robot report (R8.3) as HTML or PDF; ``fmt`` ("html" / "pdf") defaults to the
+    file extension of ``path``.
+
+    Sections: summary, joint table, DH or origin/axis table, mass and COM; optional:
+    ``workspace_result`` (the dict returned by ``workspace``), ``result`` (the dict returned by
+    ``simulate``: graphs), ``plan`` (a path array from ``plan``: length). A missing optional
+    section is left out and named in the returned ``missing`` list.
+
+    Returns ``{"path": str, "format": str, "pages": int | None, "missing": [str]}``.
+    """
+    import numpy as _np
+    from app.reports.report import build_report_data
+    ext = (fmt or str(path).rsplit(".", 1)[-1]).lower()
+    if ext not in ("html", "pdf"):
+        raise InvalidArgument("fmt must be 'html' or 'pdf'")
+    arrays = _arrays(result, None) if result is not None else None
+    data = build_report_data(robot._model, robot.name, workspace=workspace_result, arrays=arrays)
+    if plan is not None:
+        pts = _np.asarray(plan, dtype=float)
+        if pts.ndim == 2 and len(pts) > 1:
+            data.plan = dict(planner="(api)", success=True, time=0.0, iterations=0,
+                             reason="", n_waypoints=len(pts), violations=None,
+                             length=float(_np.linalg.norm(_np.diff(pts, axis=0), axis=1).sum()))
+            data.missing = [m for m in data.missing if not m.startswith("plan")]
+    pages = None
+    if ext == "html":
+        from app.reports.html_report import write_html
+        write_html(data, path)
+    else:
+        from PySide6.QtGui import QGuiApplication
+        if QGuiApplication.instance() is None:
+            global _QAPP
+            _QAPP = QGuiApplication([])
+        from app.reports.pdf_report import write_pdf
+        pages = write_pdf(data, path)
+    return {"path": str(path), "format": ext, "pages": pages, "missing": list(data.missing)}
+
+
+_QAPP = None
