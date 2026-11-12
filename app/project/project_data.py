@@ -22,7 +22,7 @@ from typing import Any
 
 
 # Current file format version. Increment on breaking schema changes.
-PROJECT_FORMAT_VERSION = "1.2.0"
+PROJECT_FORMAT_VERSION = "1.3.0"
 
 
 @dataclass
@@ -159,6 +159,7 @@ class ProjectData:
     collisions: list[Any] = field(default_factory=list)    # R3.5 LinkVisual
     asset_dir: str | None = None   # temp dir with extracted meshes (R3.5)
     trajectory: Any = None         # app.sim.trajectory.Trajectory or None (R6.4)
+    collision: Any = None          # app.planning.collision.CollisionConfig or None (R7.2)
 
     def __post_init__(self) -> None:
         """Ensure robot_model is always a valid RobotModel instance."""

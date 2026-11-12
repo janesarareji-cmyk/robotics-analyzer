@@ -370,8 +370,8 @@ def test_roundtrip_visuals_and_collisions(tmp_path):
     out = tmp_path / "p.robotproj"
     save(p, out)
     q = load(out)
-    assert PROJECT_FORMAT_VERSION == "1.2.0"
-    assert q.metadata.format_version == "1.2.0"
+    assert PROJECT_FORMAT_VERSION == "1.3.0"
+    assert q.metadata.format_version == "1.3.0"
     assert len(q.visuals) == 1 and len(q.collisions) == 1
     assert q.visuals[0].kind == "mesh"
     assert q.visuals[0].origin_xyz == [0.0, 0.0, 0.1]
@@ -390,7 +390,7 @@ def test_old_project_without_visuals_json_opens(tmp_path):
                 continue
             data = zin.read(n)
             if n == "project_metadata.json":
-                data = data.replace(b'"1.2.0"', b'"1.0.0"')
+                data = data.replace(b'"1.3.0"', b'"1.0.0"')
             zout.writestr(n, data)
     q = load(old)
     assert q.visuals == [] and q.collisions == [] and q.asset_dir is None

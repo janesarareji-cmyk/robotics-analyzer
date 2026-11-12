@@ -40,6 +40,7 @@ _PHYSICS_FILE = "physical_properties.json"
 _SIM_FILE = "simulation_settings.json"
 _VISUALS_FILE = "visuals.json"
 _TRAJ_FILE = "trajectory.json"
+_COLLISION_FILE = "collision.json"
 _ASSET_DIR = "assets"
 
 log = logging.getLogger("robotics_analyzer.project")
@@ -85,6 +86,9 @@ def save(project: ProjectData, path: str | Path) -> None:
             _write_visuals(zf, project)
             if getattr(project, "trajectory", None) is not None:
                 _write_json(zf, _TRAJ_FILE, project.trajectory.to_dict())
+            coll = getattr(project, "collision", None)
+            if coll is not None and not coll.is_default():
+                _write_json(zf, _COLLISION_FILE, coll.to_dict())
     except (OSError, zipfile.BadZipFile) as exc:
         raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
 
@@ -139,6 +143,7 @@ def load(path: str | Path) -> ProjectData:
             simulation_settings = SimulationSettings.from_dict(sim_dict)
             visuals, collisions, asset_dir = _read_visuals(zf, names)
             trajectory = _read_trajectory(zf, names)
+            collision = _read_collision(zf, names)
 
     except zipfile.BadZipFile as exc:
         raise ProjectSerializationError(
@@ -161,6 +166,7 @@ def load(path: str | Path) -> ProjectData:
         collisions=collisions,
         asset_dir=asset_dir,
         trajectory=trajectory,
+        collision=collision,
     )
 
 
@@ -255,6 +261,18 @@ def _read_trajectory(zf: zipfile.ZipFile, names: list[str]) -> Any:
         return Trajectory.from_dict(_read_json(zf, _TRAJ_FILE))
     except (KeyError, TypeError, ValueError) as exc:
         log.warning("Invalid trajectory in project archive ignored: %s", exc)
+        return None
+
+
+def _read_collision(zf: zipfile.ZipFile, names: list[str]) -> Any:
+    """collision.json -> CollisionConfig. Absent (pre 1.3.0 files) or invalid: None."""
+    if _COLLISION_FILE not in names:
+        return None
+    from app.planning.collision import CollisionConfig
+    try:
+        return CollisionConfig.from_dict(_read_json(zf, _COLLISION_FILE))
+    except (KeyError, TypeError, ValueError) as exc:
+        log.warning("Invalid collision data in project archive ignored: %s", exc)
         return None
 
 
