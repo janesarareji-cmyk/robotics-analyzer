@@ -6,15 +6,16 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage:** R6 --- `stage-ready-for-review` (non-blocking). Tag `stage-R6-done` local only, no remote, not pushed.
--   **Next substage:** none until the R6 review. R7 spec pack NOT written: R7 cannot start until Sonnet writes `docs/specs/R7-spec.md`.
+-   **Stage:** R6 --- stage-approved (Sonnet review 2026-11-12)
+-   **Next substage:** R7.1 --- Trajectory generation + constraint checks (spec `docs/specs/R7-spec.md`)
 -   **Stage R6 gate (Builder run, 2026-11-12):** milestone `tests/python/test_milestone_r6.py` PASS (8 tests: items 1-2 import l6 + 4-waypoint cubic trajectory saved/reopened equal; 3 kinematic playback; 4a dynamic computed-torque tracking, 4b energy balance; 5 all 10 graph kinds; 6 CSV+NPZ export; 7 memory + timers; 1 print test). CTest 9/9 (`ctest --test-dir build -C Release`); pytest 824 passed (816 before + 8 new). `run_tests.ps1` not used (execution policy), same commands by hand; C++ not rebuilt (no C++ changed in R6). Gate items: 1 rows R6.1-R6.8 committed; 2 CTest + pytest green; 3 milestone green; 4 numerical references green (below); 5 GPU/CPU equivalence n/a (R5 covers it); 6 `graphify update .` run, `graph.json` committed; 7 new dependency pyqtgraph 0.14.0 proof-built in R6.6 (`requirements.txt`); 8 docs `docs/simulation.md`, `docs/trajectory.md`, `docs/graphs.md` (signals table, units, library, export formats); 9 this file; 10 R2-R5 milestones still green in the full pytest run. `build/` and binaries not tracked. No product code changed in R6.8. Unrelated working-tree change left uncommitted: `tests/python/fixtures/robot_model_v1.json`.
 -   **Stage R6 numbers (six_dof_with_gripper, 7 DOF, TCP l6, RTX/CPU Python path):** trajectory 4 waypoints cubic clamped, 4 s. Kinematic final q error vs last waypoint 0.0 (limit 1e-9), 60 samples at 4x speed, all 14 signals finite. Dynamic computed torque (gravity on, RK4 dt 1 ms, Kp 100 Kd 20): tracking RMS 3.67e-11 rad, max 2.17e-10 rad over 4000 samples (limit 1e-3). Free-motion energy (gravity 0, tau 0, friction 0, RK4 1 ms, 1 s, E0 0.618 J): |dE|/E0 = 6.47e-15 (limit 1e-8). Export CSV and NPZ re-import equal to recorder arrays, max diff 0 (exact %.17g); TCP pos vs independent numpy FK (`numpy_ref.fk_numpy`) 1.67e-16 m (limit 1e-9). Recorder buffer 67,108,704 bytes <= 64 MiB cap (67,108,864), 0 dropped; no active sim/graph timers after stop, hide or close. Other R6 numbers: RK4 20,500 steps/s (R6.2); recorder 0.030 ms/sample (R6.6).
 -   **R6 notes for the reviewer:** sim panel controls (dt, integrator, scale, gravity, friction) change the engine only, not project SimulationSettings. Kinematic mode run buttons are disabled; trajectory playback drives the clock. Recorder clears on STOPPED->RUNNING and reset, not on Stop/Pause. Project format 1.2.0 (`trajectory.json`, old files load). Milestone drives dynamic playback through `player.advance(0.02)` (deterministic) and kinematic playback through the dock QTimer.
+-   Stage R6 review (Sonnet, 2026-11-12): APPROVED. Independent run: CTest 9/9, pytest 824. Read: app/sim/recorder.py, playback.py, export.py, graphs/series.py, trajectory.py, engine.py diff; no blocking defects. Tag stage-R6-done = bcd8f75. Fixed during stage: recorder cleared on Stop (now clears on new run). Accepted: kinematic playback runs the engine clock via set_state; pyqtgraph 0.14; CSV joined table with `# columns` line. Info items (not blocking): (a) prismatic unit shown as revolute for per-joint series; (b) RingBuffer.view() copies full buffer when wrapped (64 MB per live update at cap); (c) dynamic tracking test has tiny error (3.7e-11) because feedforward is exact and start state equals trajectory start: no disturbance case. R7 spec pack written.
 -   **Owner now:** Reviewer (Sonnet)
 -   **Blockers:** none
--   **Review mode:** stage-batch, non-blocking (R6)
--   **Spec pack:** `docs/specs/R6-spec.md` (R7 spec pack to be written by the reviewer)
+-   **Review mode:** stage-batch, non-blocking (R7)
+-   **Spec pack:** `docs/specs/R7-spec.md`
 -   **Stage R2 gate: PASSED** (Reviewer verified: CTest 5/5, pytest 146/146). Tag `stage-R2-done` = `91a53a0`.
 -   **Last known test count (2026-11-11, R3 gate):** CTest 6/6 passed; pytest 302 passed (6 new in `test_milestone_r3.py`).
 -   **Stage R3 gate (Builder run):** milestone `tests/python/test_milestone_r3.py` PASS (6 tests: 1 fixture-shape, 1 full flow items 1-6, 4 broken-fixture cases item 7). Items 1,2,3,4,5,6,7,9,10 checked. `run_tests.ps1` not used (execution policy), same commands run by hand. `build/` and binaries not tracked. `graphify update .` run, `graph.json` committed. Item 8 (docs per module): only `docs/import-report.md` and `docs/urm-schema-v2.md` exist; no separate one-page docs for compiled model, visuals/assets, physical panel (not done, reviewer decide). Item 5 (GPU) n/a. No product code changed in the milestone. Tag `stage-R3-done`. Milestone commit `d329649`.
@@ -112,11 +113,18 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R6.1 | Simulation core | test_sim_core.py | committed |
 | R6.2 | Integrators | test_integrators.py | committed |
 | R6.3 | Manual mode + UI | test_sim_panel.py | committed |
-| R6.4 | Trajectory + playback | test_trajectory.py, test_ui_trajectory.py | committed |
-| R6.5 | State tracking | test_recorder.py | committed |
-| R6.6 | Graph suite | test_graph_series.py, test_ui_graphs.py | committed |
-| R6.7 | Data export | test_export.py | committed |
-| R6.8 | R6 milestone | test_milestone_r6.py | committed |
+| R6.4 | Trajectory + playback | test_trajectory.py, test_ui_trajectory.py | stage-approved |
+| R6.5 | State tracking | test_recorder.py | stage-approved |
+| R6.6 | Graph suite | test_graph_series.py, test_ui_graphs.py | stage-approved |
+| R6.7 | Data export | test_export.py | stage-approved |
+| R6.8 | R6 milestone | test_milestone_r6.py | stage-approved |
+| R7.1 | Trajectory generation + checks | test_profiles.py, test_cartesian_traj.py, test_traj_checks.py | planned |
+| R7.2 | Collision geometry | test_collision.py | planned |
+| R7.3 | Planner decision (OMPL vs own) | PoC | planned |
+| R7.4 | Path planning | test_planner.py | planned |
+| R7.5 | Workspace + manipulability analysis | test_workspace_analysis.py | planned |
+| R7.6 | Ghosts + comparison | test_configs.py, test_ui_ghosts.py | planned |
+| R7.7 | R7 milestone | test_milestone_r7.py | planned |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.
@@ -125,7 +133,8 @@ not re-run them in this file's first version.
 
 Specs do not live in this file. Find them here:
 
--   Stage R6 (current): `docs/specs/R6-spec.md`.
+-   Stage R7 (current): `docs/specs/R7-spec.md`.
+-   Stage R6 (closed): `docs/specs/R6-spec.md`.
 -   Stage R5 (closed): `docs/specs/R5-spec.md`.
 -   Stage R3 (closed): `docs/specs/R3-spec.md` (R3.2 to R3.7 + stage milestone).
 -   Stage R4 (closed): `docs/specs/R4-spec.md`.
