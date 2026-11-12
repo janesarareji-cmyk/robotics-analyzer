@@ -144,6 +144,14 @@ class SimPanel(QWidget):
         return list(self._dof_names)
 
     @property
+    def dof_types(self) -> list[str]:
+        """"revolute" / "prismatic" per DOF (units of the graphs and exports)."""
+        from app.kin_utils import dof_joint_types
+        if self._engine is None or self._model is None:
+            return []
+        return dof_joint_types(self._model)
+
+    @property
     def mode(self) -> str:
         return self._mode
 
@@ -164,6 +172,14 @@ class SimPanel(QWidget):
         """Show a trajectory loaded from the project (silent). False = dropped (DOF)."""
         self._discard_player()
         ok = self._timeline.set_trajectory(traj)
+        self._update_controls()
+        return ok
+
+    def load_trajectory(self, traj) -> bool:
+        """Show a trajectory made in the app (e.g. planned): like set_trajectory, but the
+        change is reported through ``trajectory_changed`` (project update)."""
+        self._discard_player()
+        ok = self._timeline.load_trajectory(traj)
         self._update_controls()
         return ok
 

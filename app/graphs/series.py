@@ -76,15 +76,23 @@ def _rpy_from_quat(q):
     return roll, pitch, yaw
 
 
-def _joint_unit(sig):
-    return _JOINT_UNITS[sig]
+def _joint_unit(sig, joint_type=None):
+    """Unit of a per-joint signal. ``joint_type`` (str starting with "p" = prismatic) picks the
+    revolute or prismatic half; None keeps the combined "rad|m" form (old call signature)."""
+    u = _JOINT_UNITS[sig]
+    if joint_type is None or "|" not in u:
+        return u
+    a, b = u.split("|", 1)
+    return b if str(joint_type).lower().startswith("p") else a
 
 
-def graph_data(arrays, kind, joints=None, names=None, max_points=MAX_POINTS):
+def graph_data(arrays, kind, joints=None, names=None, max_points=MAX_POINTS, joint_types=None):
     """Series for one graph ``kind``.
 
     ``joints``: DOF indices for per-joint kinds (None = all). ``names``: DOF names.
-    ``power`` adds a "sum" series. Empty recording -> empty series (length 0).
+    ``joint_types``: per DOF "revolute" / "prismatic" (None = unknown: combined "rad|m" units);
+    prismatic columns then show m, m/s, m/s^2, N. ``power`` adds a "sum" series. Empty recording
+    -> empty series (length 0).
     """
     if kind not in KINDS:
         raise ValueError(f"unknown graph kind {kind!r}")
@@ -104,7 +112,8 @@ def graph_data(arrays, kind, joints=None, names=None, max_points=MAX_POINTS):
             if not 0 <= j < n:
                 raise ValueError(f"joint {j} out of range")
             nm = names[j] if names is not None and j < len(names) else f"dof {j}"
-            out.append(ser(nm, _joint_unit(sig), t, d[:, j]))
+            jt = joint_types[j] if joint_types is not None and j < len(joint_types) else None
+            out.append(ser(nm, _joint_unit(sig, jt), t, d[:, j]))
         if kind == "power":
             ts, ps = arrays["power_sum"]
             out.append(ser("sum", "W", ts, ps[:, 0]))

@@ -37,6 +37,15 @@ def current_q(model):
     return q
 
 
+def dof_joint_types(model):
+    """Per DOF "revolute" / "prismatic" (type of the master joint of ``q_index_map()``)."""
+    out = ["revolute"] * model.dof()
+    for j_idx, q_idx in enumerate(model.q_index_map()):
+        if q_idx >= 0:
+            out[q_idx] = str(model.joints[j_idx].type).split(".")[-1].lower()
+    return out
+
+
 def write_q(model, q):
     """Write a q vector (one entry per DOF) into the master joints' ``q``."""
     if len(q) != model.dof():

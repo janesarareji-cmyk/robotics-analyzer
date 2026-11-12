@@ -41,6 +41,7 @@ _SIM_FILE = "simulation_settings.json"
 _VISUALS_FILE = "visuals.json"
 _TRAJ_FILE = "trajectory.json"
 _COLLISION_FILE = "collision.json"
+_CONFIGS_FILE = "configs.json"
 _ASSET_DIR = "assets"
 
 log = logging.getLogger("robotics_analyzer.project")
@@ -89,6 +90,9 @@ def save(project: ProjectData, path: str | Path) -> None:
             coll = getattr(project, "collision", None)
             if coll is not None and not coll.is_default():
                 _write_json(zf, _COLLISION_FILE, coll.to_dict())
+            configs = getattr(project, "configs", None)
+            if configs is not None and len(configs) > 0:
+                _write_json(zf, _CONFIGS_FILE, configs.to_dict())
     except (OSError, zipfile.BadZipFile) as exc:
         raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
 
@@ -144,6 +148,7 @@ def load(path: str | Path) -> ProjectData:
             visuals, collisions, asset_dir = _read_visuals(zf, names)
             trajectory = _read_trajectory(zf, names)
             collision = _read_collision(zf, names)
+            configs = _read_configs(zf, names)
 
     except zipfile.BadZipFile as exc:
         raise ProjectSerializationError(
@@ -167,6 +172,7 @@ def load(path: str | Path) -> ProjectData:
         asset_dir=asset_dir,
         trajectory=trajectory,
         collision=collision,
+        configs=configs,
     )
 
 
@@ -274,6 +280,18 @@ def _read_collision(zf: zipfile.ZipFile, names: list[str]) -> Any:
     except (KeyError, TypeError, ValueError) as exc:
         log.warning("Invalid collision data in project archive ignored: %s", exc)
         return None
+
+
+def _read_configs(zf: zipfile.ZipFile, names: list[str]) -> Any:
+    """configs.json -> ConfigStore. Absent (pre 1.3.0 files) or invalid: empty store."""
+    from app.configs.store import ConfigStore
+    if _CONFIGS_FILE not in names:
+        return ConfigStore()
+    try:
+        return ConfigStore.from_dict(_read_json(zf, _CONFIGS_FILE))
+    except (KeyError, TypeError, ValueError) as exc:
+        log.warning("Invalid configurations in project archive ignored: %s", exc)
+        return ConfigStore()
 
 
 def _read_json(zf: zipfile.ZipFile, name: str) -> Any:

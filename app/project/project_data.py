@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from app.configs.store import ConfigStore
+
 
 # Current file format version. Increment on breaking schema changes.
 PROJECT_FORMAT_VERSION = "1.3.0"
@@ -160,6 +162,7 @@ class ProjectData:
     asset_dir: str | None = None   # temp dir with extracted meshes (R3.5)
     trajectory: Any = None         # app.sim.trajectory.Trajectory or None (R6.4)
     collision: Any = None          # app.planning.collision.CollisionConfig or None (R7.2)
+    configs: Any = field(default_factory=ConfigStore)   # named joint configurations (R7.6)
 
     def __post_init__(self) -> None:
         """Ensure robot_model is always a valid RobotModel instance."""

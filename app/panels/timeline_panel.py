@@ -230,6 +230,14 @@ class TimelinePanel(QWidget):
         self._rebuild(emit=False)
         return True
 
+    def load_trajectory(self, traj: Trajectory | None) -> bool:
+        """Like ``set_trajectory`` but emits ``trajectory_changed`` for a valid trajectory."""
+        if not self.set_trajectory(traj):
+            return False
+        if traj is not None and self._traj is not None:
+            self.trajectory_changed.emit(self._traj)
+        return True
+
     # ---------------------------------------------------------------- table
     def _load_rows(self, rows) -> None:
         self._loading = True

@@ -78,6 +78,9 @@ class RobotView:
         self._path_actor: Any = None
         self._path_points: np.ndarray | None = None
 
+        # R7.6 ghosts: translucent static copies of the robot, key -> (actors, tcp 4x4)
+        self._ghosts: dict[Any, tuple[list[Any], np.ndarray]] = {}
+
     # ------------------------------------------------------------------
     # Properties & Getters
     # ------------------------------------------------------------------
@@ -296,6 +299,7 @@ class RobotView:
         self.set_target_pose(None)
         self.clear_workspace()
         self.set_tcp_path(None)
+        self.clear_ghosts()
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -395,6 +399,80 @@ class RobotView:
             self._ws_voxel_actor.user_matrix = np.asarray(transform, dtype=float)
         self._ws_voxel_count = len(c)
         self._render()
+
+    # ------------------------------------------------------------------
+    # Ghosts (R7.6): drawn once per change, never per frame
+    # ------------------------------------------------------------------
+
+    @property
+    def ghost_count(self) -> int:
+        return len(self._ghosts)
+
+    @property
+    def ghost_keys(self) -> list[Any]:
+        return list(self._ghosts)
+
+    def ghost_tcp(self, key: Any) -> np.ndarray:
+        """TCP pose (4x4, copy) the ghost ``key`` was drawn at."""
+        return self._ghosts[key][1].copy()
+
+    def ghost_actors(self, key: Any) -> list[Any]:
+        return list(self._ghosts[key][0])
+
+    def add_ghost(self, key: Any, model: Any, fk_result: dict[str, Any], color: str = "#4fc3f7",
+                  opacity: float = 0.35) -> None:
+        """Draw a translucent copy of the robot at ``fk_result`` (replaces ghost ``key``).
+
+        Same builders as the robot: chain polyline and, when visuals are loaded, the visual
+        meshes with ``frames[link] @ origin``. No FK here: the caller passes the FK result.
+        """
+        import pyvista as pv
+        from app.importers.visuals import load_visual_mesh, visual_origin_iso
+
+        self.remove_ghost(key, render=False)
+        frames = [np.asarray(f, float) for f in fk_result["frames"]]
+        tcp = np.asarray(fk_result["tcp"], float)
+        actors: list[Any] = []
+        pts = self._polyline_pts(model, frames, tcp, fk_result)
+        if len(pts) >= 2:
+            actors.append(self._plotter.add_mesh(
+                pv.lines_from_points(pts), color=color, line_width=4.0, opacity=min(1.0, opacity + 0.4),
+                reset_camera=False))
+        tcp_r = max(self.triad_length * 0.25, 1e-3)
+        actors.append(self._plotter.add_mesh(
+            pv.Sphere(radius=tcp_r, center=tuple(tcp[:3, 3])), color=color,
+            opacity=min(1.0, opacity + 0.4), reset_camera=False))
+        for v in self._visuals:
+            li = int(v.link_index)
+            if not 0 <= li < len(frames):
+                continue
+            mesh = load_visual_mesh(v, self.triad_length, self._mesh_cache)
+            if mesh is None:
+                continue
+            actor = self._plotter.add_mesh(mesh, color=color, opacity=opacity, reset_camera=False)
+            actor.user_matrix = frames[li] @ visual_origin_iso(v)
+            actors.append(actor)
+        self._ghosts[key] = (actors, tcp.copy())
+        self._render()
+
+    def remove_ghost(self, key: Any, render: bool = True) -> None:
+        entry = self._ghosts.pop(key, None)
+        if entry is None:
+            return
+        for actor in entry[0]:
+            try:
+                self._plotter.remove_actor(actor)
+            except Exception:
+                pass
+        if render:
+            self._render()
+
+    def clear_ghosts(self) -> None:
+        had = bool(self._ghosts)
+        for key in list(self._ghosts):
+            self.remove_ghost(key, render=False)
+        if had:
+            self._render()
 
     @property
     def tcp_path_actor(self) -> Any:

@@ -33,7 +33,7 @@ def git_commit():
         return None
 
 
-def build_meta(recorder=None, robot=None, joint_names=None, **extra):
+def build_meta(recorder=None, robot=None, joint_names=None, joint_types=None, **extra):
     """Metadata dict from a recorder/engine (all optional)."""
     meta = {"robot": robot or "", "date": _dt.datetime.now().isoformat(timespec="seconds"),
             "app version": APP_VERSION}
@@ -47,6 +47,8 @@ def build_meta(recorder=None, robot=None, joint_names=None, **extra):
         meta["git commit"] = gc
     if joint_names:
         meta["joint_names"] = list(joint_names)
+    if joint_types:
+        meta["joint_types"] = [str(t) for t in joint_types]
     meta.update(extra)
     return meta
 

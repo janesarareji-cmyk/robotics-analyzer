@@ -76,9 +76,15 @@ class GraphPanel(QWidget):
         self._on_kind()
 
     # ------------------------------------------------------------- source
-    def set_source(self, recorder_fn: Callable[[], Any], names_fn: Callable[[], list[str]]) -> None:
-        self._recorder_fn, self._names_fn = recorder_fn, names_fn
+    def set_source(self, recorder_fn: Callable[[], Any], names_fn: Callable[[], list[str]],
+                   types_fn: Callable[[], list[str]] | None = None) -> None:
+        """``types_fn`` (optional) gives "revolute"/"prismatic" per DOF for the axis units."""
+        self._recorder_fn, self._names_fn, self._types_fn = recorder_fn, names_fn, types_fn
         self.model_changed()
+
+    def _joint_types(self):
+        fn = getattr(self, "_types_fn", None)
+        return (fn() or None) if fn is not None else None
 
     def model_changed(self) -> None:
         """Recorder or DOF set replaced: rebuild the joint list, rehook the clock."""
@@ -188,7 +194,8 @@ class GraphPanel(QWidget):
         if rec is None:
             return []
         return graph_data(rec.export_arrays(), self.kind, joints=self.selected_joints(),
-                          names=self._names_fn() or None, max_points=10 ** 12)
+                          names=self._names_fn() or None, max_points=10 ** 12,
+                          joint_types=self._joint_types())
 
     # --------------------------------------------------------------- cursor
     def set_cursor(self, t: float) -> None:
@@ -218,7 +225,8 @@ class GraphPanel(QWidget):
         try:
             arrays = rec.export_arrays(copy=False)
             series = graph_data(arrays, kind, joints=self.selected_joints(),
-                                names=self._names_fn() or None, max_points=MAX_POINTS)
+                                names=self._names_fn() or None, max_points=MAX_POINTS,
+                                joint_types=self._joint_types())
             self.last_error = None
         except Exception as exc:  # noqa: BLE001  (a bad draw never breaks the UI)
             self.last_error = str(exc)

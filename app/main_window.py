@@ -28,6 +28,9 @@ from app.panels.performance_panel import PerformancePanel
 from app.panels.sim_panel import SimPanel
 from app.panels.graph_panel import GraphPanel
 from app.panels.workspace_panel import WorkspacePanel
+from app.panels.planning_panel import PlanningPanel
+from app.panels.ghost_panel import GhostPanel
+from app.panels.collision_panel import CollisionPanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
@@ -224,6 +227,21 @@ class MainWindow(QMainWindow):
         self._action_view_graphs.setCheckable(True)
         self._action_view_graphs.setChecked(False)
         view_menu.addAction(self._action_view_graphs)
+
+        self._action_view_planning = QAction("Pl&anning", self)
+        self._action_view_planning.setCheckable(True)
+        self._action_view_planning.setChecked(False)
+        view_menu.addAction(self._action_view_planning)
+
+        self._action_view_ghosts = QAction("G&hosts", self)
+        self._action_view_ghosts.setCheckable(True)
+        self._action_view_ghosts.setChecked(False)
+        view_menu.addAction(self._action_view_ghosts)
+
+        self._action_view_collision = QAction("&Collision", self)
+        self._action_view_collision.setCheckable(True)
+        self._action_view_collision.setChecked(False)
+        view_menu.addAction(self._action_view_collision)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -477,7 +495,8 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self._joint_dock, self._graph_dock)
         self._graph_dock.hide()
         self._graph_panel.set_source(lambda: self._sim_panel.recorder,
-                                     lambda: self._sim_panel.dof_names)
+                                     lambda: self._sim_panel.dof_names,
+                                     lambda: self._sim_panel.dof_types)
         self._action_view_graphs.toggled.connect(self._graph_dock.setVisible)
         self._graph_dock.visibilityChanged.connect(self._action_view_graphs.setChecked)
         self._graph_dock.visibilityChanged.connect(self._graph_panel.on_visibility_changed)
@@ -487,6 +506,29 @@ class MainWindow(QMainWindow):
         self._graph_panel.path_3d_changed.connect(self._viewport.robot_view.set_tcp_path)
         self._sim_panel.model_replaced.connect(self._graph_panel.model_changed)
         self._graph_panel.export_requested.connect(lambda: self.export_data("graph", None))
+
+        # Planning, Ghosts and Collision docks (R7.4 - R7.6) - tabbed with Joints, hidden.
+        self._planning_panel = PlanningPanel(self._task_runner)
+        self._planning_dock = self._add_tool_dock(
+            "Planning", "planning_dock", self._planning_panel, self._action_view_planning)
+        self._planning_panel.set_q_provider(self._current_q)
+        self._planning_panel.log_requested.connect(self.log)
+        self._planning_panel.trajectory_ready.connect(self._on_planned_trajectory)
+
+        self._ghost_panel = GhostPanel()
+        self._ghost_dock = self._add_tool_dock(
+            "Ghosts", "ghosts_dock", self._ghost_panel, self._action_view_ghosts, 360)
+        self._ghost_panel.set_q_provider(self._current_q)
+        self._ghost_panel.set_ik_source(lambda: [s["q"] for s in self._ik_panel.solutions])
+        self._ghost_panel.log_requested.connect(self.log)
+        self._ghost_panel.ghosts_changed.connect(self._on_ghosts_changed)
+        self._ghost_panel.configs_changed.connect(self._on_configs_changed)
+
+        self._collision_panel = CollisionPanel()
+        self._collision_dock = self._add_tool_dock(
+            "Collision", "collision_dock", self._collision_panel, self._action_view_collision, 360)
+        self._collision_panel.log_requested.connect(self.log)
+        self._collision_panel.changed.connect(self._on_collision_changed)
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
@@ -530,6 +572,7 @@ class MainWindow(QMainWindow):
             self._sim_panel.set_model(project.robot_model, project.simulation_settings)
             self._sim_panel.set_trajectory(traj)          # drops it if the DOF count differs
             project.trajectory = self._sim_panel.trajectory
+            self._set_planning_context(project, project.robot_model)
             self._refresh_tree(project.robot_model)
             robot_name = project.robot_model.metadata.name or "Unnamed Robot"
             self.log(
@@ -554,6 +597,7 @@ class MainWindow(QMainWindow):
         self._workspace_panel.set_model(None)
         self._performance_panel.set_model(None)
         self._sim_panel.set_model(None, None)
+        self._set_planning_context(None, None)
         self._refresh_tree(None)
         self._action_set_tcp.setEnabled(False)
         self._action_save.setEnabled(False)
@@ -593,6 +637,68 @@ class MainWindow(QMainWindow):
         self._ik_panel.notify_q_edited()
         self._analysis_panel.refresh()
         self._sim_panel.notify_q_edited()
+
+    def _add_tool_dock(self, title: str, name: str, widget: QWidget, action: QAction,
+                       min_width: int = 320) -> QDockWidget:
+        """Right-side dock, tabbed with Joints, hidden at start, toggled by a View action."""
+        dock = QDockWidget(title, self)
+        dock.setObjectName(name)
+        dock.setWidget(widget)
+        dock.setMinimumWidth(min_width)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self.tabifyDockWidget(self._joint_dock, dock)
+        dock.hide()
+        action.toggled.connect(dock.setVisible)
+        dock.visibilityChanged.connect(action.setChecked)
+        return dock
+
+    def _current_q(self) -> list[float]:
+        from app.kin_utils import current_q
+        model = self._project_controller.robot
+        return current_q(model) if model is not None else []
+
+    def _set_planning_context(self, project: Any, model: Any) -> None:
+        """Give project + robot to the Ghosts, Collision and Planning panels (None = closed).
+
+        Ghost set_model drops configurations whose length differs from the robot DOF count.
+        """
+        gp = self._ghost_panel
+        gp.set_store(project.configs if project is not None else None)
+        gp.set_model(model)
+        self._collision_panel.set_project(project)
+        self._collision_panel.set_model(model)
+        self._planning_panel.set_project(project)
+        self._planning_panel.set_model(model)
+        self._planning_panel.set_named_configs(gp.store.as_dict())
+
+    def _on_ghosts_changed(self, entries: list) -> None:
+        """Draw the shown ghosts once (no per-frame work): (name, q, colour) per ghost."""
+        rv = self._viewport.robot_view
+        rv.clear_ghosts()
+        model = self._project_controller.robot
+        if model is None or not entries:
+            return
+        try:
+            import core_bridge as cb
+            cm = cb.compile(model)
+            for name, q, color in entries:
+                rv.add_ghost(name, model, cb.fk_compiled(cm, q), color)
+        except Exception as exc:
+            self.log(f"[WARNING] Ghost drawing failed: {exc}")
+
+    def _on_configs_changed(self) -> None:
+        if self._project_controller.has_project:
+            self._project_controller.mark_modified()
+        self._planning_panel.set_named_configs(self._ghost_panel.store.as_dict())
+
+    def _on_collision_changed(self) -> None:
+        if self._project_controller.has_project:
+            self._project_controller.mark_modified()
+
+    def _on_planned_trajectory(self, traj: Any) -> None:
+        """Planning panel Send to trajectory: fill the trajectory editor (and the project)."""
+        if not self._sim_panel.load_trajectory(traj):
+            self.log("[WARNING] Planned trajectory does not fit the robot: not loaded.")
 
     def _on_trajectory_changed(self, traj: Any) -> None:
         """Waypoint table edited / trajectory dropped: keep it in the project."""
@@ -665,6 +771,8 @@ class MainWindow(QMainWindow):
         self._sim_panel.set_model(
             model, project.simulation_settings if project is not None else None,
             reload_settings=False)
+        if project is not None:
+            self._set_planning_context(project, model)
         self._refresh_tree(model)
         # Update 3D viewport without resetting camera
         self._update_robot_view(reset_camera=False)
@@ -724,7 +832,8 @@ class MainWindow(QMainWindow):
             path += ext
         robot = self._project_controller.robot
         meta = sx.build_meta(rec, robot=getattr(getattr(robot, "metadata", None), "name", ""),
-                             joint_names=self._sim_panel.dof_names)
+                             joint_names=self._sim_panel.dof_names,
+                             joint_types=self._sim_panel.dof_types)
         if scope == "graph":
             series = self._graph_panel.shown_series()
             arrays, units = sx.arrays_from_series(series)
@@ -870,6 +979,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         """Save settings and shut down task runner before closing."""
         self._workspace_panel.cancel()
+        self._planning_panel.shutdown()
         self._sim_panel.shutdown()
         self._task_runner.shutdown()
         self._settings.save_window(self)
@@ -1000,6 +1110,30 @@ class MainWindow(QMainWindow):
     @property
     def graph_dock(self) -> QDockWidget:
         return self._graph_dock
+
+    @property
+    def planning_panel(self) -> PlanningPanel:
+        return self._planning_panel
+
+    @property
+    def planning_dock(self) -> QDockWidget:
+        return self._planning_dock
+
+    @property
+    def ghost_panel(self) -> GhostPanel:
+        return self._ghost_panel
+
+    @property
+    def ghost_dock(self) -> QDockWidget:
+        return self._ghost_dock
+
+    @property
+    def collision_panel(self) -> CollisionPanel:
+        return self._collision_panel
+
+    @property
+    def collision_dock(self) -> QDockWidget:
+        return self._collision_dock
 
     @property
     def sim_panel(self) -> SimPanel:
