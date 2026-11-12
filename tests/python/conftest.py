@@ -12,3 +12,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 bindings_dir = Path(__file__).parent.parent.parent / "bindings"
 if str(bindings_dir) not in sys.path:
     sys.path.insert(0, str(bindings_dir))
+
+# Add the repo root so the top-level packages `app` and `robotics_api` import under any pytest invocation
+repo_root = Path(__file__).parent.parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))

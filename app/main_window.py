@@ -31,6 +31,8 @@ from app.panels.workspace_panel import WorkspacePanel
 from app.panels.planning_panel import PlanningPanel
 from app.panels.ghost_panel import GhostPanel
 from app.panels.collision_panel import CollisionPanel
+from app.panels.script_panel import ScriptPanel
+from app.script_runner import ScriptRunner
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
@@ -153,6 +155,12 @@ class MainWindow(QMainWindow):
             self._menu_export.addAction(a)
 
         file_menu.addSeparator()
+        self._action_run_script = QAction("Run &script...", self)
+        self._action_run_script.setStatusTip("Run a Python script file with the robotics_api")
+        self._action_run_script.triggered.connect(self._on_run_script)
+        file_menu.addAction(self._action_run_script)
+
+        file_menu.addSeparator()
 
         action_quit = QAction("&Quit", self)
         action_quit.setShortcut(QKeySequence.StandardKey.Quit)
@@ -242,6 +250,11 @@ class MainWindow(QMainWindow):
         self._action_view_collision.setCheckable(True)
         self._action_view_collision.setChecked(False)
         view_menu.addAction(self._action_view_collision)
+
+        self._action_view_script = QAction("Scr&ipt console", self)
+        self._action_view_script.setCheckable(True)
+        self._action_view_script.setChecked(False)
+        view_menu.addAction(self._action_view_script)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -529,6 +542,23 @@ class MainWindow(QMainWindow):
             "Collision", "collision_dock", self._collision_panel, self._action_view_collision, 360)
         self._collision_panel.log_requested.connect(self.log)
         self._collision_panel.changed.connect(self._on_collision_changed)
+
+        # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
+        self._script_runner = ScriptRunner(
+            self._task_runner, project_provider=lambda: self._project_controller.current_project,
+            app_version=self.APP_VERSION, parent=self)
+        self._script_runner.output.connect(self._on_script_output)
+        self._script_panel = ScriptPanel()
+        self._script_panel.set_runner(self._script_runner)
+        self._script_dock = QDockWidget("Script console", self)
+        self._script_dock.setObjectName("script_dock")
+        self._script_dock.setWidget(self._script_panel)
+        self._script_dock.setMinimumHeight(200)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._script_dock)
+        self.tabifyDockWidget(log_dock, self._script_dock)
+        self._script_dock.hide()
+        self._action_view_script.toggled.connect(self._script_dock.setVisible)
+        self._script_dock.visibilityChanged.connect(self._action_view_script.setChecked)
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
@@ -856,6 +886,22 @@ class MainWindow(QMainWindow):
                                               QMessageBox.warning(self, "Export", f"Export failed.\n\n{m}")))
         self._export_task = task
 
+    def _on_run_script(self) -> None:
+        """File -> Run script...: pick a .py file and run it in the script runner."""
+        path, _ = QFileDialog.getOpenFileName(self, "Run script", "", "Python scripts (*.py)")
+        if path:
+            self.run_script_file(path)
+
+    def run_script_file(self, path: str) -> bool:
+        """Run a script file in the worker (output in the log and the script console)."""
+        self._script_dock.show()
+        self._script_dock.raise_()
+        self.log(f"[script] running {path}")
+        return self._script_runner.run_file(path)
+
+    def _on_script_output(self, text: str, is_err: bool) -> None:
+        self.log(("[script stderr] " if is_err else "[script] ") + text)
+
     def import_urdf_file(self, path: str) -> None:
         """Run the URDF import in a worker task; result handled on the GUI thread."""
         self.set_status(f"Importing {path} ...")
@@ -978,6 +1024,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Save settings and shut down task runner before closing."""
+        self._script_runner.cancel()
         self._workspace_panel.cancel()
         self._planning_panel.shutdown()
         self._sim_panel.shutdown()
@@ -985,6 +1032,19 @@ class MainWindow(QMainWindow):
         self._settings.save_window(self)
         self._settings.sync()
         super().closeEvent(event)
+
+    @property
+    def script_panel(self) -> ScriptPanel:
+        """Script console panel (R8.1)."""
+        return self._script_panel
+
+    @property
+    def script_dock(self) -> QDockWidget:
+        return self._script_dock
+
+    @property
+    def script_runner(self) -> ScriptRunner:
+        return self._script_runner
 
     @property
     def settings(self) -> AppSettings:
