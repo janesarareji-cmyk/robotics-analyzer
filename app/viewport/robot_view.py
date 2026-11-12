@@ -74,6 +74,10 @@ class RobotView:
         self._ws_voxel_count = 0
         self._ws_voxel_note = ""
 
+        # R6.6 recorded TCP path polyline (independent of the robot actors)
+        self._path_actor: Any = None
+        self._path_points: np.ndarray | None = None
+
     # ------------------------------------------------------------------
     # Properties & Getters
     # ------------------------------------------------------------------
@@ -291,6 +295,7 @@ class RobotView:
         self._mesh_cache.clear()
         self.set_target_pose(None)
         self.clear_workspace()
+        self.set_tcp_path(None)
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -380,6 +385,31 @@ class RobotView:
             self._ws_voxel_actor.user_matrix = np.asarray(transform, dtype=float)
         self._ws_voxel_count = len(c)
         self._render()
+
+    @property
+    def tcp_path_actor(self) -> Any:
+        return self._path_actor
+
+    @property
+    def tcp_path_points(self) -> np.ndarray | None:
+        return None if self._path_points is None else self._path_points.copy()
+
+    def set_tcp_path(self, points: Any) -> None:
+        """Draw the recorded TCP path as a polyline (N,3, world frame); None / <2 points removes it."""
+        import pyvista as pv
+
+        had = self._path_actor is not None
+        self._remove_ws_actor(self._path_actor)
+        self._path_actor = None
+        self._path_points = None
+        pts = None if points is None else np.asarray(points, dtype=float).reshape(-1, 3)
+        if pts is not None and len(pts) >= 2:
+            self._path_points = pts
+            self._path_actor = self._plotter.add_mesh(
+                pv.lines_from_points(pts), color="#ffeb3b", line_width=2.0, reset_camera=False)
+            had = True
+        if had:
+            self._render()
 
     def clear_workspace(self) -> None:
         """Remove the workspace point cloud and voxel actors."""

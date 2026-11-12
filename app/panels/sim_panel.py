@@ -34,6 +34,8 @@ class SimPanel(QWidget):
     state_updated = Signal(object)   # SimState; q already final for this tick
     log_requested = Signal(str)
     trajectory_changed = Signal(object)   # Trajectory or None (relay of the timeline)
+    model_replaced = Signal()             # engine / recorder rebuilt (R6.6 graphs)
+    position_changed = Signal(float)      # playback / seek time (R6.6 graph cursor)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -138,6 +140,10 @@ class SimPanel(QWidget):
         return self._recorder
 
     @property
+    def dof_names(self) -> list[str]:
+        return list(self._dof_names)
+
+    @property
     def mode(self) -> str:
         return self._mode
 
@@ -234,6 +240,7 @@ class SimPanel(QWidget):
         if self._engine is None:
             self._status.setText(f"No engine: {err}" if err else "No robot")
         self._update_controls()
+        self.model_replaced.emit()
 
     @staticmethod
     def _set_quiet(widget, method, value) -> None:
@@ -510,6 +517,7 @@ class SimPanel(QWidget):
             self.state_updated.emit(self._engine.state)
             if self._player is not None:
                 self._timeline.set_position(self._player.t)
+                self.position_changed.emit(float(self._player.t))
         self._refresh_status()
 
     def _refresh_status(self) -> None:

@@ -147,7 +147,7 @@ def test_decimation_keeps_every_nth():
     assert t == pytest.approx([0.001, 0.004, 0.007, 0.010])
 
 
-def test_records_only_while_running_and_clears_on_stop_reset():
+def test_records_only_while_running_data_survives_stop_new_run_clears():
     model, e = _engine(2, 1)
     rec = Recorder(e, model)
     e.step(0.001)
@@ -161,10 +161,13 @@ def test_records_only_while_running_and_clears_on_stop_reset():
     e.step(0.001)
     assert len(rec) == 2
     e.stop()
-    assert len(rec) == 0
+    assert len(rec) == 2                               # data survives Stop
     e.start()
+    assert len(rec) == 0                               # new run clears
     e.step(0.001)
     assert len(rec) == 1
+    e.pause()
+    assert len(rec) == 1                               # Pause keeps
     e.reset(np.zeros(2))
     assert len(rec) == 0 and not rec.stopped_full
 
@@ -285,3 +288,18 @@ def test_export_arrays_shapes_and_time_order_after_wrap():
         assert t.shape == (7,) and d.shape == (7, w)
         assert np.all(np.diff(t) > 0)
     assert ex["q"][0][-1] == pytest.approx(0.020)
+
+
+def test_recorder_cost_per_sample():
+    import time
+    model, e = _engine(6, 2)
+    rec = Recorder(e, model)
+    s = e.state
+    rec.sample(s)
+    n = 200
+    t0 = time.perf_counter()
+    for _ in range(n):
+        rec._row(s)
+    ms = (time.perf_counter() - t0) * 1000 / n
+    print(f"recorder ms/sample: {ms:.3f}")
+    assert ms < 5.0

@@ -121,7 +121,8 @@ class Recorder:
 
     Settings (``SimulationSettings`` ``record_memory_mb``, ``record_every``,
     ``record_overwrite``) are read from ``engine.settings`` unless overridden.
-    Cleared on engine reset / stop. ``overwrite=False``: recording stops when full
+    Cleared when a new run starts (STOPPED -> RUNNING) and on engine reset;
+    data survives Stop and Pause. ``overwrite=False``: recording stops when full
     (``stopped_full``).
     """
 
@@ -167,8 +168,9 @@ class Recorder:
             if fn in lst:
                 lst.remove(fn)
 
-    def _on_clock(self, new, _old):
-        if new == STOPPED:
+    def _on_clock(self, new, old):
+        # New run (STOPPED -> RUNNING) clears; Stop and Pause keep the data.
+        if new == RUNNING and old == STOPPED:
             self.clear()
 
     def _on_step(self, state):
@@ -228,10 +230,16 @@ class Recorder:
                                [float(sing["sigma_min"]), float(sing["manipulability"])]))
 
     # ------------------------------------------------------------ output
-    def export_arrays(self):
-        """``{name: (t, data)}``: ``t`` shape (N,), ``data`` shape (N, width), time order."""
+    def export_arrays(self, copy=True):
+        """``{name: (t, data)}``: ``t`` shape (N,), ``data`` shape (N, width), time order.
+
+        ``copy=False`` returns views of the live buffer (valid until the next step;
+        UI thread only, for read-only plotting).
+        """
         t, d = self.buffer.view()
-        return {name: (t.copy(), d[:, c:c + w].copy()) for name, w, _u, _s, c in self.layout}
+        if copy:
+            return {name: (t.copy(), d[:, c:c + w].copy()) for name, w, _u, _s, c in self.layout}
+        return {name: (t, d[:, c:c + w]) for name, w, _u, _s, c in self.layout}
 
     def status(self):
         txt = f"rec {len(self)}/{self.capacity}"

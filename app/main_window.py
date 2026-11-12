@@ -26,6 +26,7 @@ from app.panels.ik_panel import IKPanel
 from app.panels.analysis_panel import AnalysisPanel
 from app.panels.performance_panel import PerformancePanel
 from app.panels.sim_panel import SimPanel
+from app.panels.graph_panel import GraphPanel
 from app.panels.workspace_panel import WorkspacePanel
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
@@ -208,6 +209,11 @@ class MainWindow(QMainWindow):
         self._action_view_simulation.setCheckable(True)
         self._action_view_simulation.setChecked(False)
         view_menu.addAction(self._action_view_simulation)
+
+        self._action_view_graphs = QAction("&Graphs", self)
+        self._action_view_graphs.setCheckable(True)
+        self._action_view_graphs.setChecked(False)
+        view_menu.addAction(self._action_view_graphs)
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -450,6 +456,26 @@ class MainWindow(QMainWindow):
         self._sim_panel.state_updated.connect(self._on_sim_state)
         self._sim_panel.log_requested.connect(self.log)
         self._sim_panel.trajectory_changed.connect(self._on_trajectory_changed)
+
+        # Graphs dock (R6.6) - right side, tabbed with Joints. Hidden by default.
+        self._graph_panel = GraphPanel()
+        self._graph_dock = QDockWidget("Graphs", self)
+        self._graph_dock.setObjectName("graphs_dock")
+        self._graph_dock.setWidget(self._graph_panel)
+        self._graph_dock.setMinimumWidth(360)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._graph_dock)
+        self.tabifyDockWidget(self._joint_dock, self._graph_dock)
+        self._graph_dock.hide()
+        self._graph_panel.set_source(lambda: self._sim_panel.recorder,
+                                     lambda: self._sim_panel.dof_names)
+        self._action_view_graphs.toggled.connect(self._graph_dock.setVisible)
+        self._graph_dock.visibilityChanged.connect(self._action_view_graphs.setChecked)
+        self._graph_dock.visibilityChanged.connect(self._graph_panel.on_visibility_changed)
+        self._action_view_graphs.toggled.connect(self._graph_panel.on_visibility_changed)
+        self._graph_panel.seek_requested.connect(self._sim_panel.seek_trajectory)
+        self._sim_panel.position_changed.connect(self._graph_panel.set_cursor)
+        self._graph_panel.path_3d_changed.connect(self._viewport.robot_view.set_tcp_path)
+        self._sim_panel.model_replaced.connect(self._graph_panel.model_changed)
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
@@ -908,6 +934,14 @@ class MainWindow(QMainWindow):
     @property
     def performance_dock(self) -> QDockWidget:
         return self._performance_dock
+
+    @property
+    def graph_panel(self) -> GraphPanel:
+        return self._graph_panel
+
+    @property
+    def graph_dock(self) -> QDockWidget:
+        return self._graph_dock
 
     @property
     def sim_panel(self) -> SimPanel:
