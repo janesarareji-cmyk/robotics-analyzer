@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from app.kin_utils import current_q, dof_limits
 from app.panels.timeline_panel import TimelinePanel
-from app.sim import SimEngine, make_integrator
+from app.sim import Recorder, SimEngine, make_integrator
 from app.sim import mode as sim_mode
 from app.sim.engine import PAUSED, RUNNING, STOPPED
 from app.sim.playback import TrajectoryPlayer, resolve_gains
@@ -46,6 +46,7 @@ class SimPanel(QWidget):
         self._samples: list[tuple[float, np.ndarray]] = []
         self._est_tau = None
         self._player: TrajectoryPlayer | None = None
+        self._recorder: Recorder | None = None
         self._dof_names: list[str] = []
         self._last_tick = 0.0
         self._timer = QTimer(self)
@@ -133,6 +134,10 @@ class SimPanel(QWidget):
         return self._engine
 
     @property
+    def recorder(self) -> Recorder | None:
+        return self._recorder
+
+    @property
     def mode(self) -> str:
         return self._mode
 
@@ -196,6 +201,7 @@ class SimPanel(QWidget):
             except ValueError:
                 pass
         self._engine = None
+        self._recorder = None
         self._model, self._settings = model, settings
         self._samples.clear()
         self._est_tau = None
@@ -204,6 +210,7 @@ class SimPanel(QWidget):
         if model is not None and settings is not None and model.dof() > 0:
             try:
                 self._engine = SimEngine(model, settings)
+                self._recorder = Recorder(self._engine, model)
             except Exception as exc:  # noqa: BLE001  (compile / dyn build failure)
                 err = str(exc)
         elif model is not None:
@@ -516,6 +523,8 @@ class SimPanel(QWidget):
             if self._player.mode == sim_mode.DYNAMIC:
                 err = self._player.tracking_error()
                 txt += f"  track err rms={err['rms']:.2e} max={err['max']:.2e} rad"
+        if self._recorder is not None and len(self._recorder):
+            txt += "  " + self._recorder.status()
         if e.error:
             txt += f"  ERROR: {e.error}"
         self._status.setText(txt)

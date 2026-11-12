@@ -87,8 +87,16 @@ class SimulationSettings:
     # Computed-torque tracking gains per DOF (R6.4); None = defaults (Kp 100, Kd 20)
     track_kp: list[float] | None = None
     track_kd: list[float] | None = None
+    # Recorder (R6.5)
+    record_memory_mb: float = 64.0
+    record_every: int = 1
+    record_overwrite: bool = True
 
     def __post_init__(self) -> None:
+        if not (1 <= float(self.record_memory_mb) <= 2048):
+            raise ValueError("record_memory_mb must be in [1, 2048]")
+        if int(self.record_every) < 1:
+            raise ValueError("record_every must be >= 1")
         if self.integrator not in INTEGRATORS:
             raise ValueError(f"unknown integrator {self.integrator!r}")
 
@@ -104,6 +112,9 @@ class SimulationSettings:
             "rk45_dt_max": self.rk45_dt_max,
             "track_kp": self.track_kp,
             "track_kd": self.track_kd,
+            "record_memory_mb": self.record_memory_mb,
+            "record_every": self.record_every,
+            "record_overwrite": self.record_overwrite,
         }
 
     @classmethod
@@ -119,6 +130,9 @@ class SimulationSettings:
             rk45_dt_max=float(data.get("rk45_dt_max", 0.01)),
             track_kp=data.get("track_kp"),
             track_kd=data.get("track_kd"),
+            record_memory_mb=float(data.get("record_memory_mb", 64.0)),
+            record_every=int(data.get("record_every", 1)),
+            record_overwrite=bool(data.get("record_overwrite", True)),
         )
 
 

@@ -70,6 +70,8 @@ class SimEngine:
             integrator = make_integrator(integrator, **self._rk45_kwargs(settings))
         self.integrator = integrator
         self.error = None
+        self.step_callbacks = []   # callables(state) after every step / set_state (R6.5)
+        self.reset_callbacks = []  # callables() after reset
         self.torque_fn = None  # optional callable(t, q, qd) -> tau (feedback control, R6.4)
         self.max_steps_per_advance = int(max_steps_per_advance)
         self.clock = SimClock()
@@ -179,6 +181,8 @@ class SimEngine:
             self.integrator.next_dt = None
         if self.clock.state != STOPPED:
             self.clock.stop()
+        for fn in list(self.reset_callbacks):
+            fn()
 
     def _fail(self, exc):
         self.error = str(exc)
@@ -214,6 +218,8 @@ class SimEngine:
             raise
         self._state = new
         self.steps += 1
+        for fn in list(self.step_callbacks):
+            fn(new)
         return new
 
     def set_state(self, t, q, qd, qdd=None):
@@ -237,6 +243,8 @@ class SimEngine:
             s.tau = s.tau_inv.copy()
             self._fill(s)
         self._state = s
+        for fn in list(self.step_callbacks):
+            fn(s)
         return s
 
     def refresh(self):
