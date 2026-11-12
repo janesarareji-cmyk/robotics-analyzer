@@ -54,6 +54,7 @@ class Trajectory:
 
     @property
     def n_dof(self) -> int:
+        """Number of joints (columns of each waypoint)."""
         return int(self._impl.n_dof)
 
     @property
@@ -63,23 +64,29 @@ class Trajectory:
 
     @property
     def interpolation(self) -> str:
+        """Interpolation name: 'linear' or 'cubic' (as given to the constructor)."""
         return self._impl.interpolation
 
     @property
     def times(self) -> np.ndarray:
+        """Waypoint times in seconds, shape (n,)."""
         return np.array([w.t for w in self._impl.waypoints])
 
     @property
     def waypoints(self) -> np.ndarray:
+        """Waypoint joint vectors, shape (n, n_dof)."""
         return np.array([w.q for w in self._impl.waypoints])
 
     def q(self, t: float) -> np.ndarray:
+        """Joint vector at time ``t`` (s); clamped to the trajectory ends."""
         return self._impl.q(float(t))
 
     def qd(self, t: float) -> np.ndarray:
+        """Joint velocity at time ``t`` (rad/s or m/s)."""
         return self._impl.qd(float(t))
 
     def qdd(self, t: float) -> np.ndarray:
+        """Joint acceleration at time ``t`` (rad/s^2 or m/s^2)."""
         return self._impl.qdd(float(t))
 
     def sample(self, dt: float) -> dict:

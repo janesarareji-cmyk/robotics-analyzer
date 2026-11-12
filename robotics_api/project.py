@@ -18,6 +18,7 @@ class Project:
 
     @property
     def name(self) -> str:
+        """Project name (settable)."""
         return str(self._data.metadata.name)
 
     @name.setter
@@ -26,6 +27,7 @@ class Project:
 
     @property
     def description(self) -> str:
+        """Free text description (settable)."""
         return str(self._data.metadata.description)
 
     @description.setter

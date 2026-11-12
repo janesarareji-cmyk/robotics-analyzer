@@ -25,9 +25,11 @@ class CancelToken:
         self.timed_out = False
 
     def cancel(self) -> None:
+        """Set the cancel flag (the next API check raises ``ScriptCancelled``)."""
         self._event.set()
 
     def is_cancelled(self) -> bool:
+        """True when cancelled or past the time limit (no exception)."""
         if self._event.is_set():
             return True
         if self._deadline is not None and time.monotonic() >= self._deadline:
