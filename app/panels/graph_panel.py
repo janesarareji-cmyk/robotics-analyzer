@@ -29,6 +29,7 @@ REFRESH_MS = 100
 class GraphPanel(QWidget):
     seek_requested = Signal(float)        # user moved the cursor
     path_3d_changed = Signal(object)      # (N,3) ndarray or None (viewport polyline)
+    export_requested = Signal()           # "Export graph..." (R6.7)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -50,7 +51,9 @@ class GraphPanel(QWidget):
         self._auto.setChecked(True)
         self._pause = QCheckBox("Pause")
         self._clear_btn = QPushButton("Clear")
-        for w in (self._kind, self._auto, self._pause, self._clear_btn):
+        self._export_btn = QPushButton("Export...")
+        self._export_btn.setToolTip("Export the shown series to CSV / NPZ")
+        for w in (self._kind, self._auto, self._pause, self._clear_btn, self._export_btn):
             row.addWidget(w)
         lay.addLayout(row)
         self._joints = QListWidget()
@@ -68,6 +71,7 @@ class GraphPanel(QWidget):
         self._auto.toggled.connect(lambda _b: self.refresh(force=True))
         self._pause.toggled.connect(self._on_pause)
         self._clear_btn.clicked.connect(self.clear)
+        self._export_btn.clicked.connect(lambda _c=False: self.export_requested.emit())
         self.plot.cursor_moved.connect(self.seek_requested)
         self._on_kind()
 
@@ -177,6 +181,14 @@ class GraphPanel(QWidget):
             self._timer.stop()
             return
         self.refresh()
+
+    def shown_series(self):
+        """Full-resolution (not decimated) series of the plotted kind, or [] (R6.7)."""
+        rec = self._recorder_fn()
+        if rec is None:
+            return []
+        return graph_data(rec.export_arrays(), self.kind, joints=self.selected_joints(),
+                          names=self._names_fn() or None, max_points=10 ** 12)
 
     # --------------------------------------------------------------- cursor
     def set_cursor(self, t: float) -> None:

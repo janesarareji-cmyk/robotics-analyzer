@@ -139,6 +139,16 @@ class MainWindow(QMainWindow):
         self._action_mesh_paths.triggered.connect(self._on_mesh_search_paths)
         self._menu_import.addAction(self._action_mesh_paths)
 
+        self._menu_export = file_menu.addMenu("&Export")
+        self._action_export_run_csv = QAction("Whole run (&CSV)...", self)
+        self._action_export_run_csv.triggered.connect(lambda: self.export_data("run", "csv"))
+        self._action_export_run_npz = QAction("Whole run (&NPZ)...", self)
+        self._action_export_run_npz.triggered.connect(lambda: self.export_data("run", "npz"))
+        self._action_export_graph = QAction("Shown &graph...", self)
+        self._action_export_graph.triggered.connect(lambda: self.export_data("graph", None))
+        for a in (self._action_export_run_csv, self._action_export_run_npz, self._action_export_graph):
+            self._menu_export.addAction(a)
+
         file_menu.addSeparator()
 
         action_quit = QAction("&Quit", self)
@@ -476,6 +486,7 @@ class MainWindow(QMainWindow):
         self._sim_panel.position_changed.connect(self._graph_panel.set_cursor)
         self._graph_panel.path_3d_changed.connect(self._viewport.robot_view.set_tcp_path)
         self._sim_panel.model_replaced.connect(self._graph_panel.model_changed)
+        self._graph_panel.export_requested.connect(lambda: self.export_data("graph", None))
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
@@ -688,6 +699,53 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.import_urdf_file(path)
+
+    def export_data(self, scope: str, fmt: str | None) -> None:
+        """File > Export (R6.7): scope "run" (all signals) or "graph" (shown series).
+
+        The file dialog runs here; the file is written in a worker task.
+        """
+        from app.sim import export as sx
+
+        rec = self._sim_panel.recorder
+        if rec is None or len(rec) == 0:
+            msg = "Nothing to export: no recorded data (run a simulation first)."
+            self.log(f"[WARNING] {msg}")
+            QMessageBox.information(self, "Export", msg)
+            return
+        path, flt = QFileDialog.getSaveFileName(
+            self, "Export data", "", "CSV (*.csv);;NumPy archive (*.npz)")
+        if not path:
+            return
+        if fmt is None:
+            fmt = "npz" if path.lower().endswith(".npz") or "npz" in (flt or "").lower() else "csv"
+        ext = "." + fmt
+        if not path.lower().endswith(ext):
+            path += ext
+        robot = self._project_controller.robot
+        meta = sx.build_meta(rec, robot=getattr(getattr(robot, "metadata", None), "name", ""),
+                             joint_names=self._sim_panel.dof_names)
+        if scope == "graph":
+            series = self._graph_panel.shown_series()
+            arrays, units = sx.arrays_from_series(series)
+            if not arrays:
+                msg = "Nothing to export: the graph shows no series."
+                self.log(f"[WARNING] {msg}")
+                QMessageBox.information(self, "Export", msg)
+                return
+            meta["units"] = units
+            meta["graph"] = self._graph_panel.kind
+        else:
+            arrays = rec.export_arrays()   # copies: the worker does not touch the live buffer
+        writer = sx.export_csv if fmt == "csv" else (
+            lambda a, p, m: sx.export_npz(a, p, m))
+        self.set_status(f"Exporting {path} ...")
+        task = self._task_runner.submit_fn(lambda: writer(arrays, path, None, meta)
+                                           if fmt == "csv" else writer(arrays, path, meta))
+        task.signals.result.connect(lambda n: self.log(f"[INFO] Exported {n} rows to {path}"))
+        task.signals.error.connect(lambda m: (self.log(f"[ERROR] Export failed: {m}"),
+                                              QMessageBox.warning(self, "Export", f"Export failed.\n\n{m}")))
+        self._export_task = task
 
     def import_urdf_file(self, path: str) -> None:
         """Run the URDF import in a worker task; result handled on the GUI thread."""
