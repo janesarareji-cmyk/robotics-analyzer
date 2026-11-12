@@ -1,0 +1,9 @@
+{
+  "name": "urm_json_importer",
+  "version": "1.0",
+  "api_version": "1.0",
+  "entry_point": "urm_importer:register",
+  "kind": "importer",
+  "permissions": ["file_read"],
+  "description": "Imports a robot saved as Unified Robot Model JSON (.urm.json)."
+}

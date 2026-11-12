@@ -1,0 +1,9 @@
+{
+  "name": "linear_planner",
+  "version": "1.0",
+  "api_version": "1.0",
+  "entry_point": "linear:register",
+  "kind": "planner",
+  "permissions": [],
+  "description": "Straight line in joint space. Ignores obstacles (demo)."
+}

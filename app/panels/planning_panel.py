@@ -94,6 +94,7 @@ class PlanningPanel(QWidget):
         layout.addLayout(nrow)
 
         form = QFormLayout()
+        self._plugin_planners: dict = {}
         self._planner = QComboBox()
         for p in PLANNERS:
             self._planner.addItem(_PLANNER_LABEL[p], p)
@@ -282,6 +283,22 @@ class PlanningPanel(QWidget):
         ok = self._result is not None and self._result.success and self._timed is not None
         self._btn_send.setEnabled(bool(ok) and not self._running)
 
+    def set_plugin_planners(self, planners) -> None:
+        """R8.2: replace the plugin entries of the planner combo.
+
+        ``planners``: objects with ``key``, ``display`` and ``__call__`` (plan signature).
+        """
+        cur = self._planner.currentData()
+        for i in range(self._planner.count() - 1, -1, -1):
+            if str(self._planner.itemData(i)).startswith("plugin:"):
+                self._planner.removeItem(i)
+        self._plugin_planners = {}
+        for p in planners:
+            self._planner.addItem(p.display, p.key)
+            self._plugin_planners[p.key] = p
+        idx = self._planner.findData(cur)
+        self._planner.setCurrentIndex(idx if idx >= 0 else 0)
+
     def options(self) -> dict:
         return dict(planner=self._planner.currentData(), time_limit=float(self._time_limit.value()),
                     seed=int(self._seed.value()), resolution=float(self._resolution.value()),
@@ -309,7 +326,7 @@ class PlanningPanel(QWidget):
         self._running = True
         self._result, self._timed = None, None
         self._summary.setText("")
-        self._status.setText(f"Planning with {_PLANNER_LABEL[opts['planner']]}...")
+        self._status.setText(f"Planning with {self._planner.currentText()}...")
         self.log_requested.emit(
             f"[INFO] Planning: {opts['planner']}, limit {opts['time_limit']:.2f} s, seed {opts['seed']}.")
 
@@ -317,13 +334,20 @@ class PlanningPanel(QWidget):
             if gen == self._generation:
                 self._progress.emit(int(it))
 
+        plugin_planners = dict(self._plugin_planners)
+
         def work():
             world = None
             if src is not None:
                 from app.planning.collision import CollisionWorld
                 shapes, cfg = src
                 world = CollisionWorld(model, shapes, cfg)
-            res = plan(model, start, goal, world, (lo, hi), cancel=evt, progress=progress, **opts)
+            plugin_fn = plugin_planners.get(opts["planner"])
+            if plugin_fn is not None:      # R8.2: guarded + validated plugin planner
+                res = plugin_fn(model, start, goal, collision=world, limits=(lo, hi), cancel=evt,
+                                progress=progress, **opts)
+            else:
+                res = plan(model, start, goal, world, (lo, hi), cancel=evt, progress=progress, **opts)
             timed = None
             if res.success:
                 timed = time_parametrize(res.path, model, collision=world)

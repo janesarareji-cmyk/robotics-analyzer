@@ -1,0 +1,9 @@
+{
+  "name": "joint_info_panel",
+  "version": "1.0",
+  "api_version": "1.0",
+  "entry_point": "info_panel:register",
+  "kind": "analysis",
+  "permissions": [],
+  "description": "Dock that lists joint names and limits of the open robot."
+}

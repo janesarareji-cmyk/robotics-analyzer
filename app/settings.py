@@ -180,6 +180,16 @@ class AppSettings:
     def set_mesh_search_roots(self, roots: list[str]) -> None:
         self._settings.setValue("import/mesh_search_roots", list(roots))
 
+    def plugins_folder(self) -> str:
+        """Folder scanned for plugins (R8.2); default %APPDATA%/RoboticsAnalyzer/plugins."""
+        import os
+        default = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"),
+                               self._APPLICATION, "plugins")
+        return str(self._settings.value("plugins/folder", default))
+
+    def set_plugins_folder(self, path: str) -> None:
+        self._settings.setValue("plugins/folder", path)
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get a setting value by key with an optional default."""
         return self._settings.value(key, default)

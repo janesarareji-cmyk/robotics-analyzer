@@ -33,6 +33,8 @@ from app.panels.ghost_panel import GhostPanel
 from app.panels.collision_panel import CollisionPanel
 from app.panels.script_panel import ScriptPanel
 from app.script_runner import ScriptRunner
+from app.panels.plugin_manager_panel import PluginManagerPanel
+from app.plugins.loader import PluginManager
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
@@ -255,6 +257,12 @@ class MainWindow(QMainWindow):
         self._action_view_script.setCheckable(True)
         self._action_view_script.setChecked(False)
         view_menu.addAction(self._action_view_script)
+
+        self._action_view_plugins = QAction("Plu&gins", self)
+        self._action_view_plugins.setCheckable(True)
+        self._action_view_plugins.setChecked(False)
+        view_menu.addAction(self._action_view_plugins)
+        self._menu_plugin_views = view_menu.addMenu("Plugin pa&nels")
 
         # Robot submenu in View menu
         view_menu.addSeparator()
@@ -559,6 +567,22 @@ class MainWindow(QMainWindow):
         self._script_dock.hide()
         self._action_view_script.toggled.connect(self._script_dock.setVisible)
         self._script_dock.visibilityChanged.connect(self._action_view_script.setChecked)
+
+        # Plugins (R8.2): manager dock, importer menu entries, planner combo entries, analysis docks.
+        self._plugin_import_actions: list = []
+        self._plugin_docks: dict = {}
+        self._plugins_sync = False
+        self._plugins_resync = False
+        self._plugin_manager = PluginManager(
+            self._settings, project_provider=lambda: self._project_controller.current_project,
+            app_version=self.APP_VERSION, parent=self)
+        self._plugin_manager.log_message.connect(self.log)
+        self._plugin_panel = PluginManagerPanel(self._plugin_manager)
+        self._plugin_panel.log_requested.connect(self.log)
+        self._plugin_dock = self._add_tool_dock(
+            "Plugins", "plugins_dock", self._plugin_panel, self._action_view_plugins, 420)
+        self._plugin_manager.changed.connect(self._on_plugins_changed)
+        self._plugin_manager.scan()
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
@@ -901,6 +925,88 @@ class MainWindow(QMainWindow):
 
     def _on_script_output(self, text: str, is_err: bool) -> None:
         self.log(("[script stderr] " if is_err else "[script] ") + text)
+
+    # ------------------------------------------------------------------
+    # Plugins (R8.2)
+    # ------------------------------------------------------------------
+
+    @property
+    def plugin_manager(self) -> PluginManager:
+        return self._plugin_manager
+
+    def _on_plugins_changed(self) -> None:
+        """Sync menus, planner combo and analysis docks with the plugin manager (re-entrant safe)."""
+        if self._plugins_sync:
+            self._plugins_resync = True
+            return
+        self._plugins_sync = True
+        try:
+            for _ in range(5):
+                self._plugins_resync = False
+                self._sync_plugin_ui()
+                if not self._plugins_resync:
+                    break
+        finally:
+            self._plugins_sync = False
+
+    def _sync_plugin_ui(self) -> None:
+        pm = self._plugin_manager
+        self._planning_panel.set_plugin_planners(pm.planners())
+        for act in self._plugin_import_actions:
+            self._menu_import.removeAction(act)
+            act.deleteLater()
+        self._plugin_import_actions = []
+        for imp in pm.importers():
+            act = QAction(f"{imp.label} (plugin)...", self)
+            act.triggered.connect(lambda _=False, i=imp: self._on_import_plugin(i))
+            self._menu_import.addAction(act)
+            self._plugin_import_actions.append(act)
+        wanted = {}
+        for pa in pm.analysis_panels():
+            wanted[(pa.plugin.name, pa.title)] = pa
+        for key in [k for k in self._plugin_docks if k not in wanted]:
+            dock, act = self._plugin_docks.pop(key)
+            self.removeDockWidget(dock)
+            dock.deleteLater()
+            self._menu_plugin_views.removeAction(act)
+            act.deleteLater()
+        for key, pa in wanted.items():
+            if key in self._plugin_docks:
+                continue
+            try:
+                widget = pa.build(pm.project_view())
+            except Exception as exc:  # noqa: BLE001 - already reported and disabled by the plugin
+                self.log(f"[ERROR] plugin {key[0]}: analysis panel failed: {exc}")
+                continue
+            act = QAction(f"{pa.title} ({key[0]})", self)
+            act.setCheckable(True)
+            self._menu_plugin_views.addAction(act)
+            dock = self._add_tool_dock(f"{pa.title} (plugin)", f"plugin_dock_{key[0]}_{len(self._plugin_docks)}",
+                                       widget, act, 360)
+            self._plugin_docks[key] = (dock, act)
+
+    def _on_import_plugin(self, importer) -> None:
+        """File > Import > <plugin importer>: pick a file, import in a worker."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Import ({importer.label})", self._settings.last_project_dir(),
+            importer.file_filter)
+        if path:
+            self.import_plugin_file(importer, path)
+
+    def import_plugin_file(self, importer, path: str) -> None:
+        from app.task_runner import FunctionTask
+        self.set_status(f"Importing {path} ...")
+        self._import_path = path
+        task = FunctionTask(lambda: importer.import_file(path))
+        task.signals.result.connect(self._on_urdf_import_result)
+        task.signals.error.connect(self._on_plugin_import_failed)
+        self._plugin_import_task = task
+        self._task_runner.submit(task)
+
+    def _on_plugin_import_failed(self, message: str) -> None:
+        last = message.strip().splitlines()[-1] if message.strip() else "error"
+        self.log(f"[ERROR] Plugin import failed: {last}")
+        QMessageBox.warning(self, "Plugin import", f"Import failed.\n\n{last}")
 
     def import_urdf_file(self, path: str) -> None:
         """Run the URDF import in a worker task; result handled on the GUI thread."""
