@@ -332,10 +332,11 @@ class RobotView:
             except Exception:
                 pass
 
-    def set_workspace_points(self, points: Any, transform: Any = None) -> None:
+    def set_workspace_points(self, points: Any, transform: Any = None, scalars: Any = None) -> None:
         """Draw a point cloud (P,3) (cap 2e6, evenly thinned); None removes it.
 
         `transform` is an optional 4x4 (the robot base) applied as the actor matrix.
+        `scalars` (P,) colours the points by value (viridis), R7.5.
         """
         import pyvista as pv
 
@@ -349,9 +350,18 @@ class RobotView:
         if len(pts) > self.MAX_WORKSPACE_POINTS:
             step = int(np.ceil(len(pts) / self.MAX_WORKSPACE_POINTS))
             pts = pts[::step][: self.MAX_WORKSPACE_POINTS]
-        self._ws_points_actor = self._plotter.add_mesh(
-            pv.PolyData(pts), color="#4fc3f7", point_size=2.0, opacity=0.5,
-            render_points_as_spheres=False, reset_camera=False)
+            if scalars is not None:
+                scalars = np.asarray(scalars, dtype=float).reshape(-1)[::step][: self.MAX_WORKSPACE_POINTS]
+        mesh = pv.PolyData(pts)
+        if scalars is not None and len(scalars) == len(pts):
+            mesh["metric"] = np.asarray(scalars, dtype=float)
+            self._ws_points_actor = self._plotter.add_mesh(
+                mesh, scalars="metric", cmap="viridis", point_size=4.0, opacity=0.8,
+                render_points_as_spheres=False, reset_camera=False, show_scalar_bar=False)
+        else:
+            self._ws_points_actor = self._plotter.add_mesh(
+                mesh, color="#4fc3f7", point_size=2.0, opacity=0.5,
+                render_points_as_spheres=False, reset_camera=False)
         if transform is not None:
             self._ws_points_actor.user_matrix = np.asarray(transform, dtype=float)
         self._ws_points_count = len(pts)

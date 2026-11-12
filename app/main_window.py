@@ -568,7 +568,7 @@ class MainWindow(QMainWindow):
         if data is None:
             rv.clear_workspace()
             return
-        rv.set_workspace_points(data["points"], data["base"])
+        rv.set_workspace_points(data["points"], data["base"], data.get("scalars"))
         rv.set_workspace_voxels(data["centers"], data["voxel_size"], data["base"])
 
     def _on_dh_editor_changed(self) -> None:

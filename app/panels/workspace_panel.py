@@ -18,9 +18,11 @@ from PySide6.QtWidgets import (
 )
 
 import core_bridge as cb
+from app.analysis import workspace_analysis as wa
 from app.compute import last_run
 from app.compute.backend import PREFERENCES, estimate_reach, get_backend
 from app.compute.budget import MAX_VRAM_BUDGET_MB, MIN_VRAM_BUDGET_MB, vram_budget_bytes
+from app.graphs.plot_backend import SliceView
 from app.logger import log
 from app.panels.num_field import NumField
 from app.settings import AppSettings
@@ -109,6 +111,52 @@ class WorkspacePanel(QWidget):
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
 
+        # ---- R7.5 analysis: volume, manipulability map, singularity regions, slice
+        abox = QGroupBox("Analysis (volume / manipulability)")
+        al = QFormLayout(abox)
+        self._a_samples = QSpinBox()
+        self._a_samples.setRange(1000, 20_000_000)
+        self._a_samples.setSingleStep(50_000)
+        self._a_samples.setValue(200_000)
+        al.addRow("Samples", self._a_samples)
+        self._a_mode = QComboBox()
+        self._a_mode.addItems(list(wa.METRIC_MODES))
+        al.addRow("Jacobian rows", self._a_mode)
+        self._a_field = QComboBox()
+        self._a_field.addItems(["mean_smin", "min_smin", "mean_w", "min_w", "count", "singular"])
+        self._a_field.currentTextChanged.connect(self._refresh_analysis_views)
+        al.addRow("Metric", self._a_field)
+        self._a_thr = NumField(0.01)
+        al.addRow("Singular if sigma_min <", self._a_thr)
+        self._a_stat = QComboBox()
+        self._a_stat.addItems(["min", "mean"])
+        al.addRow("Singular statistic", self._a_stat)
+        self._a_axis = QComboBox()
+        self._a_axis.addItems(["x", "y", "z"])
+        self._a_axis.setCurrentText("z")
+        self._a_axis.currentTextChanged.connect(self._refresh_analysis_views)
+        al.addRow("Slice plane", self._a_axis)
+        self._a_offset = NumField(0.0)
+        self._a_offset.value_changed.connect(lambda _v: self._refresh_analysis_views())
+        al.addRow("Slice offset [m]", self._a_offset)
+        self._chk_cloud = QCheckBox("Colour 3D cloud by metric")
+        self._chk_cloud.setChecked(True)
+        self._chk_cloud.toggled.connect(self._refresh_analysis_views)
+        al.addRow(self._chk_cloud)
+        self._btn_analyze = QPushButton("Analyze")
+        self._btn_analyze.clicked.connect(self.analyze)
+        al.addRow(self._btn_analyze)
+        self._a_status = QLabel("")
+        self._a_status.setWordWrap(True)
+        al.addRow(self._a_status)
+        self._slice = SliceView()
+        self._slice.widget.setMinimumHeight(220)
+        al.addRow(self._slice.widget)
+        layout.addWidget(abox)
+        self._analysis = None
+        self._a_running = False
+        self.slice_info = None
+
         box = QGroupBox("Compute")
         bl = QFormLayout(box)
         self._vram = QSpinBox()
@@ -152,6 +200,11 @@ class WorkspacePanel(QWidget):
         self._task = None
         self._token = None
         self._result = None
+        self._analysis = None
+        self._a_running = False
+        self._slice.clear()
+        self._a_status.setText("")
+        self.slice_info = None
         self._bar.setValue(0)
         self._status.setText("")
         usable = model is not None and len(model.joints) > 0 and model.dof() > 0
@@ -168,8 +221,10 @@ class WorkspacePanel(QWidget):
         self._update_buttons()
 
     def _update_buttons(self) -> None:
-        self._btn_run.setEnabled(self._model is not None and not self._running)
-        self._btn_cancel.setEnabled(self._running)
+        busy = self._running or self._a_running
+        self._btn_run.setEnabled(self._model is not None and not busy)
+        self._btn_analyze.setEnabled(self._model is not None and not busy)
+        self._btn_cancel.setEnabled(busy)
 
     def _on_backend_changed(self, text: str) -> None:
         self._settings.set_compute_backend(text)
@@ -233,12 +288,12 @@ class WorkspacePanel(QWidget):
         self._update_buttons()
 
     def cancel(self) -> None:
-        if self._token is not None and self._running:
+        if self._token is not None and (self._running or self._a_running):
             self._token.cancel()
             self._status.setText("Cancelling...")
 
     def _on_progress(self, done, total) -> None:
-        if not self._running:
+        if not (self._running or self._a_running):
             return
         pct = int(100.0 * float(done) / float(total)) if total else 0
         self._bar.setValue(max(0, min(100, pct)))
@@ -302,3 +357,106 @@ class WorkspacePanel(QWidget):
             centers = np.asarray(res["origin"], dtype=np.float64) + (idx + 0.5) * vs
         self.display_changed.emit(dict(points=points, centers=centers, voxel_size=vs,
                                        base=self._base))
+
+    # ------------------------------------------------------------------
+    # R7.5 analysis (worker, cancel, progress share the Run controls)
+    # ------------------------------------------------------------------
+
+    @property
+    def analysis(self) -> dict | None:
+        return self._analysis
+
+    @property
+    def analysis_status_text(self) -> str:
+        return self._a_status.text()
+
+    def analysis_options(self) -> dict:
+        return dict(n_samples=int(self._a_samples.value()), seed=int(self._seed.value()),
+                    voxel_size=float(self._voxel.value()), metric_mode=self._a_mode.currentText(),
+                    threshold=float(self._a_thr.value()), singular_stat=self._a_stat.currentText())
+
+    def analyze(self) -> None:
+        """Start the analysis in a worker. Returns at once."""
+        if self._model is None or self._running or self._a_running:
+            return
+        opts = self.analysis_options()
+        model = self._model
+        try:
+            self._base = np.asarray(cb.compile_arrays(model)["base"], dtype=float).reshape(4, 4)
+        except Exception as e:
+            self._a_status.setText(f"Cannot start: {e}")
+            return
+        token = cb.CancelToken()
+        gen = self._generation
+        self._token = token
+        self._a_running = True
+        self._analysis = None
+        self._bar.setValue(0)
+        self._a_status.setText("Analyzing...")
+
+        def progress(done, total):
+            if gen == self._generation:
+                self._progress.emit(done, total)
+
+        def work():
+            return wa.analyze_workspace(model, opts, token, progress)
+
+        task = self._runner.submit_fn(work)
+        self._task = task
+        task.signals.result.connect(lambda r, g=gen: self._on_analysis(g, r))
+        task.signals.error.connect(lambda m, g=gen: self._on_analysis_error(g, m))
+        self._update_buttons()
+
+    def _on_analysis_error(self, gen: int, message: str) -> None:
+        if gen != self._generation:
+            return
+        self._a_running = False
+        self._token = None
+        last = message.strip().splitlines()[-1] if message.strip() else "error"
+        self._a_status.setText(f"Failed: {last}")
+        self.log_requested.emit(f"[ERROR] Workspace analysis failed: {last}")
+        self._update_buttons()
+
+    def _on_analysis(self, gen: int, res: dict) -> None:
+        if gen != self._generation:
+            return
+        self._a_running = False
+        self._token = None
+        self._analysis = res
+        if res.get("cancelled"):
+            self._a_status.setText(
+                f"Cancelled after {res['n_samples_done']} of {res['n_samples']} samples.")
+        elif res.get("message"):
+            self._a_status.setText(res["message"])
+        else:
+            self._bar.setValue(100)
+            self._a_status.setText(
+                f"{res['filled']} voxels, volume {res['volume']:.4g} m3 "
+                f"(+-{res['volume_err_bound']:.3g} bound), {res['n_singular']} singular voxels")
+            self.log_requested.emit(f"[INFO] Workspace analysis: {self._a_status.text()}.")
+        self._refresh_analysis_views()
+        self._update_buttons()
+
+    def _refresh_analysis_views(self, *_args) -> None:
+        res = self._analysis
+        self.slice_info = None
+        if res is None:
+            self._slice.clear()
+            return
+        if res["filled"] == 0:
+            self._slice.clear()
+            self.display_changed.emit(None)
+            return
+        name = self._a_field.currentText()
+        axis = self._a_axis.currentText()
+        sl = wa.slice_image(res, name, "xyz".index(axis), float(self._a_offset.value()))
+        self.slice_info = sl
+        a, b = sl["axes"]
+        self._slice.set_image(
+            sl["image"], sl["extent"], "xyz"[a] + " [m]", "xyz"[b] + " [m]",
+            f"{name} at {axis} = {self._a_offset.value():.3g}"
+            + ("" if sl["valid"] else " (outside grid)"))
+        scal = wa.field(res, name) if self._chk_cloud.isChecked() else None
+        self.display_changed.emit(dict(points=wa.voxel_centers(res), centers=None,
+                                       voxel_size=float(res["voxel_size"]),
+                                       base=self._base, scalars=scal))

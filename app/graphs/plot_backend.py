@@ -80,3 +80,43 @@ class PlotView(QObject):
 
     def cursor_time(self):
         return float(self.cursor.value())
+
+
+class SliceView(QObject):
+    """2D image (NaN = empty) with a colour bar, for workspace slices (R7.5)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.widget = pg.PlotWidget()
+        self._plot = self.widget.getPlotItem()
+        self._plot.setAspectLocked(True)
+        self._img = pg.ImageItem()
+        self._plot.addItem(self._img)
+        self._bar = pg.ColorBarItem(values=(0.0, 1.0), colorMap=pg.colormap.get("viridis"),
+                                    interactive=False)
+        self._bar.setImageItem(self._img, insert_in=self._plot)
+        self.image: np.ndarray | None = None
+
+    def set_image(self, image, extent, xlabel="", ylabel="", title=""):
+        """``image[ia, ib]`` is drawn with a along x and b along y; extent (a0, a1, b0, b1)."""
+        img = np.asarray(image, dtype=float)
+        self.image = img
+        finite = img[np.isfinite(img)]
+        lo, hi = (float(finite.min()), float(finite.max())) if len(finite) else (0.0, 1.0)
+        if hi <= lo:
+            hi = lo + 1e-12
+        self._img.setImage(img, autoLevels=False, levels=(lo, hi))
+        self._bar.setLevels((lo, hi))
+        a0, a1, b0, b1 = extent
+        self._img.setRect(a0, b0, a1 - a0, b1 - b0)
+        self._plot.setLabel("bottom", xlabel)
+        self._plot.setLabel("left", ylabel)
+        self._plot.setTitle(title)
+
+    def clear(self):
+        self.image = None
+        self._img.clear()
+        self._plot.setTitle("")
+
+    def levels(self):
+        return tuple(self._bar.levels())
