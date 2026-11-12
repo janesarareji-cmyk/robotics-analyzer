@@ -7,7 +7,8 @@ every handoff. Keep it short.
 ## Current
 
 -   **Stage:** R6 --- stage-approved (Sonnet review 2026-11-12)
--   **Next substage:** R7.3 --- Planner decision (OMPL vs own; STOP after, spec `docs/specs/R7-spec.md`)
+-   **Next substage:** R7.4 --- Path planning (own planners; spec `docs/specs/R7-spec.md`)
+-   **R7.3 committed:** docs/planner-decision.md, tests/python/test_planner_poc.py. Decision: OWN planners (OMPL has no wheel for Python 3.13.15). Tests after R7.3: pytest 869 passed, 1 skipped (OMPL PoC). Note for R7.4: build RRT-Connect, RRT*, PRM in Python behind one interface; the PoC RRT-Connect in test_planner_poc.py (2-DOF, 16.9 ms, 23 waypoints) is a sketch to start from; collision via CollisionWorld.check_batch / edge sampling. No new dependency.
 -   **R7.2 committed:** app/planning/collision.py (python-fcl 0.7.0.11 wheel; Shape, EnvShape, CollisionConfig, CollisionWorld, fit_mesh, shapes_from_geometry/shapes_from_project, shape_distance); project format 1.3.0 (`collision.json`, `ProjectData.collision`, None when absent); python-fcl added to requirements.txt; docs/collision-decision.md. Tests after R7.2: pytest 868 passed (19 new), C++ untouched (CTest 9/9 not rerun). check_batch 6-DOF about 34 700 checks/s (target 20 000). Notes for R7.3/R7.4: `w = CollisionWorld(model, shapes_from_project(project), project.collision)` (collision may be None: pass `project.collision or CollisionConfig()`); `w.check_batch(q_array (N,dof)) -> bool array`; `w.set_q(q); w.in_collision(); w.pairs(); w.min_distance()` (signed, negative = penetration). Env shape k has pair id -1-k. ACM: adjacent links skipped by default; `CollisionConfig.set_check(a,b,bool)`; `w.disable_always_colliding()` edits config. Robots without stored collision geometry fall back to visuals; a link with no shape is never checked. Mesh geometry is fitted (obb default). The ProjectController/UI does not yet set `project.collision` (no UI in R7.2).
 -   **R7.1 committed:** app/planning (profiles.py trapezoid/quintic/scurve synchronised by one scaled scalar profile s(t); cartesian.py line/arc by IK with failed_at + joint-step branch check; checks.py check_trajectory -> ViolationReport, one entry per contiguous run, worst sample). Tests after R7.1: pytest 849 passed (25 new), C++ untouched. Notes for R7.2/R7.4: `CartesianPath.to_trajectory()`, `JointProfile.to_trajectory(dt)` give R6 `Trajectory`; `check_trajectory(traj, model, limits, gravity=...)` accepts Trajectory/profile/(t,q,qd,qdd); URM has no accel limit (pass limits={'accel':...}); torque check needs gravity direction as the robot defines it. R6 gap (a) not fixed.
 -   **Stage R6 gate (Builder run, 2026-11-12):** milestone `tests/python/test_milestone_r6.py` PASS (8 tests: items 1-2 import l6 + 4-waypoint cubic trajectory saved/reopened equal; 3 kinematic playback; 4a dynamic computed-torque tracking, 4b energy balance; 5 all 10 graph kinds; 6 CSV+NPZ export; 7 memory + timers; 1 print test). CTest 9/9 (`ctest --test-dir build -C Release`); pytest 824 passed (816 before + 8 new). `run_tests.ps1` not used (execution policy), same commands by hand; C++ not rebuilt (no C++ changed in R6). Gate items: 1 rows R6.1-R6.8 committed; 2 CTest + pytest green; 3 milestone green; 4 numerical references green (below); 5 GPU/CPU equivalence n/a (R5 covers it); 6 `graphify update .` run, `graph.json` committed; 7 new dependency pyqtgraph 0.14.0 proof-built in R6.6 (`requirements.txt`); 8 docs `docs/simulation.md`, `docs/trajectory.md`, `docs/graphs.md` (signals table, units, library, export formats); 9 this file; 10 R2-R5 milestones still green in the full pytest run. `build/` and binaries not tracked. No product code changed in R6.8. Unrelated working-tree change left uncommitted: `tests/python/fixtures/robot_model_v1.json`.
@@ -122,7 +123,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | R6.8 | R6 milestone | test_milestone_r6.py | stage-approved |
 | R7.1 | Trajectory generation + checks | test_profiles.py, test_cartesian_traj.py, test_traj_checks.py | committed |
 | R7.2 | Collision geometry | test_collision.py | committed |
-| R7.3 | Planner decision (OMPL vs own) | PoC | planned |
+| R7.3 | Planner decision (OMPL vs own) | test_planner_poc.py | committed |
 | R7.4 | Path planning | test_planner.py | planned |
 | R7.5 | Workspace + manipulability analysis | test_workspace_analysis.py | planned |
 | R7.6 | Ghosts + comparison | test_configs.py, test_ui_ghosts.py | planned |
@@ -183,6 +184,8 @@ Specs do not live in this file. Find them here:
 -   2026-11-12: R6.6 (Sonnet builder): plot library = pyqtgraph 0.14.0 (pip install proof build OK offscreen: PlotWidget 1e5 points, grab() works); added `pyqtgraph>=0.13` to requirements.txt. Recorder clears on new run, not on Stop.
 
 -   2026-11-12: R7.2 (Sonnet): collision library = python-fcl 0.7.0.11 (pip wheel, Windows proof passed: sphere-box distance exact, capsule/cylinder supported); depth from `collide` contacts, not `distance`; meshes fitted (PCA box default); no own-code fallback needed. See `docs/collision-decision.md`.
+
+-   2026-11-12: R7.3 (Sonnet): planner = OWN planners (RRT-Connect, RRT*, PRM in Python, R7.4). OMPL: `pip index versions ompl` empty, `pip download ompl` no matching distribution on Python 3.13.15 / Windows; no conda, no source build. No dependency added. See `docs/planner-decision.md`.
 
 ## Risks
 
