@@ -268,6 +268,8 @@ class SimEngine:
         self._state = self._initial.copy()
         self.lag = 0.0
         self.steps = 0
+        if hasattr(self.integrator, "next_dt"):
+            self.integrator.next_dt = None
 
     def advance(self, wall_dt):
         """Advance by ``wall_dt * time_scale`` sim seconds (only when RUNNING).

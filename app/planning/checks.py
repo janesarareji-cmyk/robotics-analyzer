@@ -22,7 +22,7 @@ import core_bridge as cb
 from app.kin_utils import dof_limits
 
 GRAVITY = (0.0, 0.0, -9.81)
-KINDS = ("position", "velocity", "acceleration", "torque", "tcp_speed")
+KINDS = ("position", "velocity", "acceleration", "torque", "tcp_speed", "non_finite")
 
 
 @dataclass
@@ -32,6 +32,8 @@ class Violation:
     t: float
     value: float
     limit: float
+    i0: int = -1        # non_finite: first and last bad sample index
+    i1: int = -1
 
 
 @dataclass
@@ -55,6 +57,9 @@ class ViolationReport:
         lines = [head]
         for v in self.violations:
             where = "tcp" if v.dof < 0 else f"dof {v.dof}"
+            if v.kind == "non_finite":
+                lines.append(f"  non_finite t={v.t:.4g}: samples {v.i0}..{v.i1} are not finite")
+                continue
             lines.append(f"  {v.kind} {where} t={v.t:.4g}: {v.value:.4g} > limit {v.limit:.4g}")
         lines += [f"  info: {m}" for m in self.info]
         return "\n".join(lines)
@@ -64,7 +69,8 @@ def _model_limits(model) -> dict:
     n = model.dof()
     lo, hi = dof_limits(model)
     lo, hi = np.array(lo, float), np.array(hi, float)
-    nolim = ~(lo < hi)
+    # lo == hi is a locked joint (checked); only a missing / invalid range is unlimited
+    nolim = ~(np.isfinite(lo) & np.isfinite(hi) & (lo <= hi))
     lo[nolim], hi[nolim] = -math.inf, math.inf
     vel = np.full(n, math.inf)
     eff = np.full(n, math.inf)
@@ -138,6 +144,7 @@ def check_trajectory(traj, model, limits: dict | None = None, dt: float = 0.01,
         else:
             lim[k] = _arr(v, n)
     rep = ViolationReport(n_samples=len(t))
+    bad = ~(np.isfinite(q).all(axis=1) & np.isfinite(qd).all(axis=1) & np.isfinite(qdd).all(axis=1))
     for k, name in (("vel", "velocity"), ("accel", "acceleration"), ("effort", "torque")):
         miss = [i for i in range(n) if not math.isfinite(lim[k][i])]
         if miss:
@@ -160,15 +167,31 @@ def check_trajectory(traj, model, limits: dict | None = None, dt: float = 0.01,
     if check_torque and np.any(np.isfinite(lim["effort"])):
         cm = cm if cm is not None else cb.compile(model)
         dm = dm if dm is not None else cb.build_dyn_model(model, cm)
-        tau = np.array([cb.inverse_dynamics(dm, list(q[k]), list(qd[k]), list(qdd[k]),
-                                            tuple(gravity)) for k in range(len(t))])
+        tau = np.full(q.shape, np.nan)
+        for k in range(len(t)):
+            if not bad[k]:
+                tau[k] = cb.inverse_dynamics(dm, list(q[k]), list(qd[k]), list(qdd[k]),
+                                             tuple(gravity))
+        bad = bad | ~np.isfinite(tau).all(axis=1)
         for i in range(n):
             _runs(rep, "torque", i, t, np.abs(tau[:, i]), lim["effort"][i], tol)
     if math.isfinite(lim["tcp_speed"]):
         cm = cm if cm is not None else cb.compile(model)
         sp = np.array([np.linalg.norm((np.asarray(cb.jacobian_tcp(cm, list(q[k]))) @ qd[k])[:3])
-                       for k in range(len(t))])
+                       if not bad[k] else np.nan for k in range(len(t))])
         _runs(rep, "tcp_speed", -1, t, sp, lim["tcp_speed"], tol)
     else:
         rep.info.append("no TCP speed limit: not checked")
+    # NaN / inf pass every comparison above: report them explicitly (audit LOW)
+    i = 0
+    while i < len(bad):
+        if bad[i]:
+            j = i
+            while j + 1 < len(bad) and bad[j + 1]:
+                j += 1
+            rep.violations.append(Violation("non_finite", -1, float(t[i]), math.nan, math.nan,
+                                            i, j))
+            i = j + 1
+        else:
+            i += 1
     return rep

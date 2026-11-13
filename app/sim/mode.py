@@ -67,8 +67,9 @@ def button_states(mode, clock_state, has_engine=True):
 def finite_difference_torque(engine, samples):
     """Estimate tau_inv from the last three (t, q) samples (kinematic mode).
 
-    qd and qdd come from backward finite differences; returns the RNEA
-    torque, or None if fewer than 3 samples or a time gap is too small.
+    Central non-uniform 3-point formulas give qd and qdd at the MIDDLE sample (error
+    O(h^2)); the RNEA torque is that of the middle sample (one sample behind the newest).
+    Returns None if fewer than 3 samples or a time gap is too small.
     """
     if len(samples) < 3:
         return None
@@ -77,7 +78,8 @@ def finite_difference_torque(engine, samples):
     if h1 < 1e-6 or h2 < 1e-6:
         return None
     q0, q1, q2 = (np.asarray(x, float) for x in (q0, q1, q2))
-    v1, v2 = (q1 - q0) / h1, (q2 - q1) / h2
-    qdd = 2.0 * (v2 - v1) / (h1 + h2)
+    # Lagrange 3-point derivatives at t1 (exact for quadratics, any spacing)
+    v1 = (-h2 / (h1 * (h1 + h2))) * q0 + ((h2 - h1) / (h1 * h2)) * q1 + (h1 / (h2 * (h1 + h2))) * q2
+    qdd = 2.0 * (h1 * q2 - (h1 + h2) * q1 + h2 * q0) / (h1 * h2 * (h1 + h2))
     return np.asarray(cb.inverse_dynamics(
-        engine.dm, list(q2), list(v2), list(qdd), engine.gravity, engine.friction), float)
+        engine.dm, list(q1), list(v1), list(qdd), engine.gravity, engine.friction), float)

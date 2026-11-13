@@ -31,6 +31,7 @@ from .import_report import (
     URDF_FILE_NOT_FOUND,
     URDF_IGNORED_ELEMENT,
     URDF_INVALID_MODEL,
+    URDF_LIMIT_MISSING,
     URDF_MESH_FORMAT,
     URDF_MESH_MISSING,
     URDF_MESH_TOO_LARGE,
@@ -40,6 +41,7 @@ from .import_report import (
     URDF_MULTIPLE_PARENTS,
     URDF_MULTIPLE_ROOTS,
     URDF_NO_INERTIAL,
+    URDF_NON_FINITE,
     URDF_ROOT_NO_INERTIAL,
     URDF_TCP_CHOSEN,
     URDF_UNKNOWN_JOINT_TYPE,
@@ -146,18 +148,24 @@ def _vec(s: Optional[str], n: int, default, element: Optional[str] = None) -> Li
     if len(parts) != n:
         raise _Fatal(URDF_BAD_XML, f"expected {n} numbers, got '{s}'", element)
     try:
-        return [float(p) for p in parts]
+        vals = [float(p) for p in parts]
     except ValueError:
         raise _Fatal(URDF_BAD_XML, f"bad number in '{s}'", element)
+    if not all(math.isfinite(v) for v in vals):
+        raise _Fatal(URDF_NON_FINITE, f"non-finite number in '{s}'", element)
+    return vals
 
 
 def _num(s: Optional[str], default: float, element: Optional[str] = None) -> float:
     if s is None:
         return float(default)
     try:
-        return float(s)
+        v = float(s)
     except ValueError:
         raise _Fatal(URDF_BAD_XML, f"bad number '{s}'", element)
+    if not math.isfinite(v):
+        raise _Fatal(URDF_NON_FINITE, f"non-finite number '{s}'", element)
+    return v
 
 
 def _pose(el: Optional[ET.Element], element: Optional[str]):
@@ -240,7 +248,8 @@ def _build(root: ET.Element, report: ImportReport, urdf_dir: Path,
                 (1.0, 0.0, 0.0),
                 name,
             )
-            if math.sqrt(sum(a * a for a in axis)) < _ZERO_AXIS_EPS:
+            n_axis = math.sqrt(sum(a * a for a in axis))
+            if not math.isfinite(n_axis) or n_axis < _ZERO_AXIS_EPS:
                 raise _Fatal(URDF_ZERO_AXIS, f"joint '{name}' has a zero-length axis", name)
 
         raw.append(_RawJoint(name, type_s, parent, child, el, el.find("limit")))
@@ -447,6 +456,15 @@ def _joint_limits(rj: _RawJoint, report: ImportReport) -> cb.JointLimits:
     else:
         lim.lower = _num(lim_el.get("lower"), 0.0, name)
         lim.upper = _num(lim_el.get("upper"), 0.0, name)
+        miss_b = [k for k in ("lower", "upper") if lim_el.get(k) is None]
+        if miss_b:
+            report.add(
+                SEV_WARNING,
+                URDF_LIMIT_MISSING,
+                f"joint '{name}' <limit> has no {' or '.join(miss_b)}; 0 is used "
+                "(the joint is locked unless both bounds differ)",
+                name,
+            )
 
     if lim_el is None:
         report.add(

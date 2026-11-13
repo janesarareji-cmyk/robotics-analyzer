@@ -54,15 +54,36 @@ def _gpu_bridge_or_reason() -> tuple[Any, str]:
     return gb, ""
 
 
-def estimate_reach(model_or_arrays: Any) -> float:
-    """Upper bound of the TCP distance: sum of all translation norms (pre, post, tool)."""
-    a = model_or_arrays if isinstance(model_or_arrays, dict) else cb.compile_arrays(model_or_arrays)
+def estimate_reach(model_or_arrays: Any, limits: tuple | None = None) -> float:
+    """Upper bound of the TCP distance: sum of all translation norms (pre, post, tool)
+    plus ``max(|lo|, |hi|)`` stroke of every prismatic joint (same rule as C++ ``reach_bound``).
+
+    ``limits`` = ``(lo, hi)`` per DOF; taken from the model when a ``RobotModel`` is given.
+    An arrays dict without ``limits`` has no stroke information: prismatic strokes are not added.
+    """
+    is_arrays = isinstance(model_or_arrays, dict)
+    a = model_or_arrays if is_arrays else cb.compile_arrays(model_or_arrays)
+    if limits is None and not is_arrays:
+        limits = dof_limits(model_or_arrays)
     tot = 0.0
     for key in ("pre", "post"):
         m = np.asarray(a[key], dtype=float).reshape(-1, 16)
         tot += float(np.linalg.norm(m[:, [3, 7, 11]], axis=1).sum())
     tool = np.asarray(a["tool"], dtype=float).reshape(16)
     tot += float(np.linalg.norm(tool[[3, 7, 11]]))
+    if limits is not None:
+        lo, hi = np.asarray(limits[0], float), np.asarray(limits[1], float)
+        types = np.asarray(a["type"]).reshape(-1)
+        src = np.asarray(a["src_q_index"]).reshape(-1)
+        mult = np.asarray(a["mult"], float).reshape(-1)
+        off = np.asarray(a["offset"], float).reshape(-1)
+        axis = np.asarray(a["axis"], float).reshape(-1, 3)
+        for k in range(len(types)):
+            if int(types[k]) != int(cb.JointType.Prismatic) or not (0 <= int(src[k]) < len(lo)):
+                continue
+            s = int(src[k])
+            ends = (mult[k] * lo[s] + off[k], mult[k] * hi[s] + off[k])
+            tot += max(abs(ends[0]), abs(ends[1])) * float(np.linalg.norm(axis[k]))
     return tot
 
 

@@ -149,7 +149,9 @@ class TrajectoryPlayer:
             self._apply(min(t, T))
         else:
             left = T - self.t
-            e.advance(min(dt, left / e.time_scale))   # engine multiplies by time_scale
+            # sim time advanced = min(dt, left): speed only, the engine's time_scale multiplier
+            # is divided out so kinematic and dynamic play at the same rate (audit LOW)
+            e.advance(min(dt, left) / e.time_scale)
             reached = self.t >= T - 1e-9
             if reached and self.loop:
                 self._apply(0.0)

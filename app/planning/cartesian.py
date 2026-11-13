@@ -91,7 +91,7 @@ def _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step):
             failed, msg = k, f"IK did not converge ({r['message']})"
             break
         step = float(np.max(np.abs(q - prev))) if q.size else 0.0
-        if step > max_joint_step:
+        if k > 0 and step > max_joint_step:     # sample 0 may start far from the seed
             failed, msg = k, f"joint step {step:.3g} > {max_joint_step:.3g} (branch jump)"
             break
         out.append(q)

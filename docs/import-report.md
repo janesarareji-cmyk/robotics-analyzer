@@ -68,10 +68,12 @@ constants. Add a row here for every new code.
 | `URDF_MULTIPLE_ROOTS` | error | More than one root link. |
 | `URDF_CYCLE` | error | No root link (the joints form a cycle), or a loop beside a valid root. |
 | `URDF_ZERO_AXIS` | error | `<axis>` has zero length. |
+| `URDF_NON_FINITE` | error | A number is `nan` or `inf` (axis, origin, limit, mass, ...). The model is not built. |
 | `URDF_MIMIC_UNKNOWN` | error | `<mimic>` names a joint that does not exist. |
 | `URDF_INVALID_MODEL` | error | The built model fails `validate()`. |
 | `URDF_CONTINUOUS_LIMITS` | warning | Continuous joint mapped to limits ±π. |
 | `URDF_MISSING_LIMIT` | warning | `<limit>` or its velocity/effort is missing. Defaults are used. |
+| `URDF_LIMIT_MISSING` | warning | A revolute/prismatic `<limit>` has no `lower` or `upper`. 0 is used, so the joint is locked unless both bounds differ. |
 | `URDF_MESH_MISSING` | warning | Mesh file not found in the URDF folder or mesh search paths. A box fallback is drawn. |
 | `URDF_MESH_FORMAT` | warning | Mesh format not supported. A box fallback is drawn. |
 | `URDF_MESH_TOO_LARGE` | warning | Mesh has too many triangles. It is not drawn. |

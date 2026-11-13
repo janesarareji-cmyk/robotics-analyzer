@@ -56,7 +56,9 @@ def _cancel_fn(cancel) -> Callable[[], bool]:
     if hasattr(cancel, "is_set"):
         return lambda: bool(cancel.is_set())
     if hasattr(cancel, "is_cancelled"):
-        return lambda: bool(cancel.is_cancelled)
+        # property (bool) or method (robotics_api.CancelToken, cb.CancelToken)
+        return lambda: bool(cancel.is_cancelled() if callable(cancel.is_cancelled)
+                            else cancel.is_cancelled)
     raise TypeError("cancel must be a callable, an Event or have is_cancelled")
 
 
@@ -98,6 +100,8 @@ class _Space:
         self.model, self.collision = model, collision
         self.lo, self.hi = np.asarray(lo, float), np.asarray(hi, float)
         self.dof = len(self.lo)
+        # lo == hi: locked joint, start / goal must equal it (1e-9); else 1e-12
+        self._tol = np.where(self.hi == self.lo, 1e-9, 1e-12)
         self.res = float(resolution)
         self._cancel = cancel
         self.deadline = t0 + float(time_limit)
@@ -110,7 +114,7 @@ class _Space:
             raise _Timeout
 
     def in_limits(self, q) -> bool:
-        return bool(np.all(q >= self.lo - 1e-12) and np.all(q <= self.hi + 1e-12))
+        return bool(np.all(q >= self.lo - self._tol) and np.all(q <= self.hi + self._tol))
 
     def state_free(self, q) -> bool:
         if not self.in_limits(q):
@@ -354,6 +358,7 @@ def _prm(sp: _Space, start, goals, rng, step, progress, batch=40, k_nn=6, max_no
         added = 0
         while added < batch:
             it += 1
+            sp.check()      # cancel / time limit also in a blocked space (audit M7)
             if progress and it % PROGRESS_EVERY == 0:
                 progress(it, "prm")
             q = sp.sample(rng)
@@ -392,7 +397,9 @@ def _limits_arrays(model, limits):
     else:
         lo, hi = limits
     lo, hi = np.array(lo, float), np.array(hi, float)
-    bad = ~(lo < hi)            # no limit (or lo == hi == 0 default): sample in +-pi
+    # lo == hi is a locked joint (kept). Only a missing / invalid range (non finite or lo > hi)
+    # falls back to the +-pi sampling range.
+    bad = ~(np.isfinite(lo) & np.isfinite(hi) & (lo <= hi))
     lo[bad], hi[bad] = -math.pi, math.pi
     return lo, hi
 
@@ -414,7 +421,7 @@ def plan(model, start_q, goal_q, collision=None, limits=None, planner: str = "rr
 
     ``goal_q``: joint vector, or a 4x4 TCP pose (IK solutions become the goals; the first
     collision free one reached wins). ``limits``: ``(lo, hi)``, a dict with ``pos_lo``/``pos_hi``
-    or None (URM joint limits; missing limit -> +-pi sampling range). ``cancel``: callable,
+    or None (URM joint limits; invalid range -> +-pi sampling range; lo == hi = locked joint). ``cancel``: callable,
     ``threading.Event`` or object with ``is_cancelled``. ``progress(iteration, planner_name)`` is
     called every 16 iterations. Never raises for planning failures: ``success=False`` + ``reason``.
     """
