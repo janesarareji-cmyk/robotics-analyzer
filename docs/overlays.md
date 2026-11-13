@@ -55,3 +55,17 @@ bars in the Joints and Matrices panels, the orange target ghost (Target mode) an
 -   "Export CSV..." writes x, y, z (world, m), sigma_min and kind of the red and orange voxels shown.
 -   Checked: ur5 poses with q5 = 0 are wrist zones, q3 = 0 poses are elbow zones, a planar 2R arm
     (position metric) shows the singular circles at l1 + l2 and |l1 - l2| within one voxel.
+
+## Joint load
+
+A torque bar (T) and a speed bar (S) next to every joint of the arm, drawn over the 3D view
+(`app/viewport/load_bars.py`, mouse clicks pass through). Green up to 70 % of the limit, orange up to 100 %,
+red above; a bar is full at 100 %.
+
+-   Torque: `cb.inverse_dynamics` (RNEA) at the current q, qd, qdd with the project gravity; ratio = |tau| / effort
+    limit of the joint. Speed: |qd| / velocity limit. A limit of 0 means "no limit" (bar empty).
+-   Slider, Cartesian jog and TCP drag have qd = qdd = 0, so the bars show the static gravity torque
+    (equal to `cb.gravity_torque`). Kinematic playback and simulation give qd, qdd from the trajectory or the
+    state. The bars follow the camera when you rotate or zoom.
+-   Refresh at most 30 Hz, the newest state is always drawn after the pause. Cost of one update (RNEA + ratios):
+    0.2 ms on ur5. Gripper joints are not drawn.

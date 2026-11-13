@@ -79,8 +79,20 @@ class Overlay:
         """Optional extra widget for the Overlays panel (sliders, check boxes). None = none."""
         return None
 
-    def update_live(self, model: Any, view: Any, q: Any, qd: Any, qdd: Any, base: np.ndarray) -> None:
-        """Live overlays only: new robot state."""
+    def update_live(self, model: Any, view: Any, q: Any, qd: Any, qdd: Any, base: np.ndarray,
+                    force: bool = False) -> None:
+        """Live overlays only: new robot state (``force``: draw now, ignore the refresh limit)."""
+
+    def reset(self) -> None:
+        """The robot changed: drop what was built for the old one."""
+
+    @property
+    def has_pending(self) -> bool:
+        """Live overlays: a newer state is waiting for ``flush``."""
+        return False
+
+    def flush(self) -> None:
+        """Live overlays: draw the state the refresh limit held back."""
 
 
 class OverlayManager(QObject):
@@ -110,6 +122,12 @@ class OverlayManager(QObject):
         self._base = np.eye(4)
         self._generation = 0
         self._status: dict[str, str] = {}
+        self._live_source: Callable[[], tuple] | None = None
+        from PySide6.QtCore import QTimer
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setSingleShot(True)
+        self._flush_timer.setInterval(40)
+        self._flush_timer.timeout.connect(self._flush_live)
         self.compute_count: dict[str, int] = {}
         self._progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         self._done.connect(self._on_done, Qt.ConnectionType.QueuedConnection)
@@ -169,6 +187,8 @@ class OverlayManager(QObject):
             self.cancel(k)
         self._model = model
         view = self._get_view()
+        for ov in self._overlays.values():
+            ov.reset()
         if view is not None:
             for ov in self._overlays.values():
                 ov.hide(view)
@@ -238,6 +258,7 @@ class OverlayManager(QObject):
         if self._model is None or view is None:
             return
         if ov.live:
+            self.update_live(force=True)
             self.changed.emit(key)
             return
         data = self.data(key)
@@ -318,11 +339,34 @@ class OverlayManager(QObject):
         self.changed.emit(key)
 
     # ------------------------------------------------------------------ live overlays
-    def update_live(self, q: Any, qd: Any = None, qdd: Any = None) -> None:
-        """Feed the live overlays (joint load) with the current state."""
+    def set_live_source(self, fn: Callable[[], tuple] | None) -> None:
+        """``fn() -> (q, qd, qdd)``: the state a live overlay draws when it is switched on."""
+        self._live_source = fn
+
+    def update_live(self, q: Any = None, qd: Any = None, qdd: Any = None, force: bool = False) -> None:
+        """Feed the live overlays (joint load) with the current state (at most 30 Hz, latest wins)."""
+        if self._model is None:
+            return
+        if q is None:
+            if self._live_source is None:
+                return
+            q, qd, qdd = self._live_source()
+        pending = False
         for key, ov in self._overlays.items():
-            if ov.live and self._enabled[key] and self._model is not None:
-                ov.update_live(self._model, self._get_view(), q, qd, qdd, self._base)
+            if ov.live and self._enabled[key]:
+                ov.update_live(self._model, self._get_view(), q, qd, qdd, self._base, force)
+                pending = pending or ov.has_pending
+        if pending:
+            self._flush_timer.start()
+
+    def _flush_live(self) -> None:
+        pending = False
+        for key, ov in self._overlays.items():
+            if ov.live and self._enabled[key]:
+                ov.flush()
+                pending = pending or ov.has_pending
+        if pending:
+            self._flush_timer.start()
 
     # ------------------------------------------------------------------ probe
     def probe(self, point_world: Any) -> dict:

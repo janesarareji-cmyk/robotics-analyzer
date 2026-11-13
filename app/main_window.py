@@ -766,6 +766,10 @@ class MainWindow(QMainWindow):
         for ov in default_overlays():
             self._overlays.register(ov)
         self._overlays.set_extra_hash(self._collision_hash)
+        self._overlays.set_live_source(self._live_state)
+        self._live_dyn: Any = None            # (qd, qdd) of the simulation state being shown, else None
+        if "load" in self._overlays.keys:
+            self._overlays.overlay("load").gravity_fn = self._project_gravity
         self._overlay_panel = OverlayPanel(self._overlays)
         self._overlays.changed.connect(lambda _k: self._probe_target(None))
         self._overlay_dock = self._add_tool_dock(
@@ -1549,7 +1553,11 @@ class MainWindow(QMainWindow):
         self._joint_panel.set_model(model, save_baseline=False)
         if self._dh_editor.get_model() is not None:
             self._dh_editor.refresh_q()
-        self._update_robot_view(reset_camera=False)
+        self._live_dyn = (state.qd, state.qdd)
+        try:
+            self._update_robot_view(reset_camera=False)
+        finally:
+            self._live_dyn = None
 
     def _project_gravity(self) -> Any:
         """Gravity vector of the open project (SimulationSettings.gravity)."""
@@ -2163,6 +2171,7 @@ class MainWindow(QMainWindow):
             self._viewport.robot_view.update(model, fk_res)
             self._matrix_panel.notify(model, fk_res)
             self._tcp_drag.refresh()
+            self._overlays.update_live()
             self._joint_panel.update_tcp_readout(fk_res["tcp"])
             self._physical_panel.update_readout()
             if reset_camera:
@@ -2428,6 +2437,14 @@ class MainWindow(QMainWindow):
     @property
     def overlay_dock(self) -> QDockWidget:
         return self._overlay_dock
+
+    def _live_state(self) -> tuple:
+        """(q, qd, qdd) for the live overlays: the simulation state while it is shown, else rest."""
+        q = self._current_q()
+        dyn = self._live_dyn
+        if dyn is not None and len(dyn[0]) == len(q):
+            return q, list(dyn[0]), list(dyn[1])
+        return q, None, None
 
     def _probe_target(self, pose: Any = None) -> None:
         """U6.2: the reach map outlines the voxel under the target (live while it is dragged)."""

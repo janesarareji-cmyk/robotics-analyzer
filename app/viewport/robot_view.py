@@ -612,6 +612,38 @@ class RobotView:
         self._render()
 
     # ------------------------------------------------------------------
+    # U6.4 screen projection for 2D overlays (joint load bars)
+    # ------------------------------------------------------------------
+
+    @property
+    def widget(self) -> Any:
+        """The Qt widget that shows the 3D scene (parent of 2D overlays)."""
+        return self._plotter
+
+    def project_points(self, points: Any) -> np.ndarray:
+        """World points (N,3) -> widget pixel positions (N,2), origin top-left; NaN behind the camera.
+
+        Uses the camera matrix and the widget size (also works before the first render).
+        """
+        pts = np.asarray(points, dtype=float).reshape(-1, 3)
+        out = np.full((len(pts), 2), np.nan)
+        try:
+            w, h = float(self._plotter.width()), float(self._plotter.height())
+            if w <= 0 or h <= 0 or len(pts) == 0:
+                return out
+            cam = self._plotter.renderer.GetActiveCamera()
+            m = cam.GetCompositeProjectionTransformMatrix(w / h, -1.0, 1.0)
+            M = np.array([[m.GetElement(r, c) for c in range(4)] for r in range(4)])
+            clip = np.hstack([pts, np.ones((len(pts), 1))]) @ M.T
+            ok = clip[:, 3] > 1e-9
+            ndc = clip[ok, :2] / clip[ok, 3:4]
+            out[ok, 0] = (ndc[:, 0] + 1.0) * 0.5 * w
+            out[ok, 1] = (1.0 - ndc[:, 1]) * 0.5 * h
+        except Exception:
+            pass
+        return out
+
+    # ------------------------------------------------------------------
     # Ghosts (R7.6): drawn once per change, never per frame
     # ------------------------------------------------------------------
 
