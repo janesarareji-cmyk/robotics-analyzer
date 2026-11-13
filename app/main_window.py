@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QLabel,
     QVBoxLayout, QMenuBar, QStatusBar, QToolBar,
     QMessageBox, QFileDialog, QInputDialog, QToolButton, QTabWidget, QMenu,
-    QScrollArea, QFrame, QTabBar
+    QScrollArea, QFrame, QTabBar, QStyle
 )
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QIcon
@@ -46,6 +46,7 @@ from app.panels.import_report_panel import ImportReportPanel, find_element
 from app import __version__
 from app.viewport.view_tools import LinkPicker, ViewButtons, apply_view
 from app.help import TourCard
+from app.theme import apply_theme, glyph_icon
 from app.kin_utils import current_q, write_q
 from app.kin_utils import current_q, write_q
 from app.undo import UndoManager
@@ -119,6 +120,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{self.APP_NAME} v{self.APP_VERSION}")
         self.setMinimumSize(1024, 768)
         self.resize(1400, 900)
+        apply_theme()
         self.setStyleSheet("""
             QMainWindow { background: #1a1a1a; }
             QMenuBar { background: #2a2a2a; color: #cccccc; }
@@ -418,12 +420,28 @@ class MainWindow(QMainWindow):
         help_menu.addAction(action_about)
 
     def _setup_toolbar(self) -> None:
-        """Build the main toolbar."""
+        """Main toolbar (U5.10): icon + text, four groups: File | Move | Collision | View."""
         toolbar = QToolBar("Main Toolbar")
         toolbar.setObjectName("main_toolbar")
         toolbar.setMovable(False)
         toolbar.setIconSize(QSize(20, 20))
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(toolbar)
+        self._toolbar = toolbar
+        st = self.style()
+        self._action_new.setIcon(st.standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        self._action_open.setIcon(st.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        self._action_save.setIcon(st.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
+        self._action_drag_tcp.setIcon(glyph_icon("\u2725", active="#8ab4ff"))
+        self._action_collision.setIcon(glyph_icon("\u26a0", color="#a8a8a8", active="#ffd54f"))
+        self._action_focus.setIcon(glyph_icon("\u26f6"))
+
+        def group(name: str) -> None:
+            toolbar.addSeparator()
+            lab = QLabel(name)
+            lab.setStyleSheet("color: #a8a8a8; font-size: 8pt; padding: 0 4px;")
+            lab.setAccessibleName(f"{name} group")
+            toolbar.addWidget(lab)
 
         toolbar.addAction(self._action_new)
         toolbar.addAction(self._action_open)
@@ -431,23 +449,26 @@ class MainWindow(QMainWindow):
 
         self._sample_button = QToolButton()
         self._sample_button.setText("Sample robot")
+        self._sample_button.setIcon(glyph_icon("\u2699"))
+        self._sample_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._sample_button.setToolTip("Open a bundled sample robot")
+        self._sample_button.setAccessibleName("Open a sample robot")
         self._sample_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._sample_button.setMenu(self._menu_samples)
         toolbar.addWidget(self._sample_button)
 
-        toolbar.addSeparator()
-
-        self._action_reset_camera = QAction("Reset Camera", self)
-        self._action_reset_camera.setToolTip("Reset camera to fit all objects")
-        self._action_reset_camera.triggered.connect(self._on_reset_camera)
-        toolbar.addAction(self._action_reset_camera)
+        group("Move")
         toolbar.addAction(self._action_drag_tcp)
+
+        group("Scene")
         toolbar.addAction(self._action_collision)
         self._objects_button = QToolButton()
         self._objects_button.setText("Add object")
+        self._objects_button.setIcon(glyph_icon("\u25a3"))
+        self._objects_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._objects_button.setToolTip("Add a box, cylinder or sphere to the scene "
                                         "(0.4 m in front of the robot, on the floor)")
+        self._objects_button.setAccessibleName("Add an object to the scene")
         self._objects_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._menu_objects = QMenu("Add object", self)
         for kind in ("box", "cylinder", "sphere"):
@@ -455,7 +476,19 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _=False, k=kind: self.add_scene_object(k))
         self._objects_button.setMenu(self._menu_objects)
         toolbar.addWidget(self._objects_button)
+
+        group("View")
+        self._action_reset_camera = QAction("Fit view", self)
+        self._action_reset_camera.setIcon(glyph_icon("\u2922"))
+        self._action_reset_camera.setToolTip("Fit the whole scene in the view")
+        self._action_reset_camera.triggered.connect(self._on_reset_camera)
+        toolbar.addAction(self._action_reset_camera)
         toolbar.addAction(self._action_focus)
+        # tooltips with the shortcut
+        for act in toolbar.actions():
+            sc = act.shortcut().toString()
+            if sc and sc not in act.toolTip():
+                act.setToolTip(f"{act.toolTip() or act.text().replace('&', '')} ({sc})")
 
     def _setup_status_bar(self) -> None:
         """Configure the status bar."""
@@ -465,7 +498,14 @@ class MainWindow(QMainWindow):
         self._status_bar.addWidget(self._status_label)
 
         # Permanent right-side info
-        self._gpu_label = QLabel("GPU: RTX 5060 Laptop")
+        self._gpu_label = QLabel("Compute: ...")
+        try:
+            from app.compute.backend import get_backend
+            be = get_backend(settings=self._settings)
+            self._gpu_label.setText("Compute: GPU (CUDA)" if be.name == "cuda" else "Compute: CPU")
+            self._gpu_label.setToolTip(str(getattr(be, "reason", "")))
+        except Exception:
+            self._gpu_label.setText("Compute: CPU")
         self._status_bar.addPermanentWidget(self._gpu_label)
 
     def _setup_central_widget(self) -> None:
@@ -919,6 +959,10 @@ class MainWindow(QMainWindow):
         view_action = next(a for a in bar.actions() if a.text() == "&View")
         bar.insertMenu(view_action, edit_menu)
         self._edit_menu = edit_menu
+        self._action_undo.setIcon(glyph_icon("\u21b6"))
+        self._action_redo.setIcon(glyph_icon("\u21b7"))
+        self._toolbar.insertAction(self._action_drag_tcp, self._action_undo)
+        self._toolbar.insertAction(self._action_drag_tcp, self._action_redo)
         self._action_help = QAction("&Shortcuts and panels", self)
         self._action_help.setShortcut(QKeySequence("F1"))
         self._action_help.setStatusTip("Shortcuts and what each panel does")
@@ -2002,7 +2046,7 @@ class MainWindow(QMainWindow):
                 self._project_controller.mark_modified()
             self.log(f"[INFO] Auto collision matrix: {len(result['pairs'])} pairs disabled "
                      f"({result.get('n_samples', 0)} samples, {result.get('seconds', 0)} s)")
-            self.set_status("Collision check ready")
+            self.set_status("Self-collision check ready")
 
     @property
     def motion_guard(self) -> MotionGuard:

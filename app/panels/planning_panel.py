@@ -229,8 +229,15 @@ class PlanningPanel(QWidget):
         self._loading = True
         try:
             self._table.setRowCount(self._n_dof)
+            names = {}
+            if usable:
+                for j, qi in enumerate(model.q_index_map()):
+                    if qi >= 0 and qi not in names:
+                        names[qi] = model.joints[j].name
             for i in range(self._n_dof):
-                self._table.setVerticalHeaderItem(i, QTableWidgetItem(f"q{i + 1}"))
+                head = QTableWidgetItem(names.get(i) or f"q{i + 1}")        # U5.10: joint names, as in Joints
+                head.setToolTip(f"q{i + 1}: {names.get(i, '')} (radians, metres for sliding joints)")
+                self._table.setVerticalHeaderItem(i, head)
                 for c in (0, 1):
                     self._table.setItem(i, c, QTableWidgetItem("0"))
         finally:

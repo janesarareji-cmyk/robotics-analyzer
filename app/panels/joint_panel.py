@@ -88,8 +88,13 @@ class LimitBar(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#3a3a3a"))
         p.drawRoundedRect(0, 1, w, h - 2, 2, 2)
-        p.setBrush(QColor("#ff5a5f") if self.near_limit else QColor("#4f8cff"))
-        p.drawRoundedRect(0, 1, max(3, int(round(self.fraction * w))), h - 2, 2, 2)
+        zone = max(2, int(round(NEAR_LIMIT * w)))
+        p.setBrush(QColor(255, 90, 95, 110))                      # the two limit zones
+        p.drawRoundedRect(0, 1, zone, h - 2, 2, 2)
+        p.drawRoundedRect(w - zone, 1, zone, h - 2, 2, 2)
+        x = int(round(self.fraction * (w - 4)))
+        p.setBrush(QColor("#ff5a5f") if self.near_limit else QColor("#e8e8f0"))      # the joint position
+        p.drawRoundedRect(x, 0, 4, h, 1, 1)
         p.end()
 
 
