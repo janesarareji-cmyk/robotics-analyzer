@@ -1878,6 +1878,8 @@ class MainWindow(QMainWindow):
     def set_status(self, message: str) -> None:
         """Display a message in the status bar."""
         self._status_label.setText(message)
+        bad = message.startswith(("Blocked", "Collision", "Playback stopped"))   # U3-fix: stands out
+        self._status_label.setStyleSheet("color: #ff6b6b; font-weight: bold;" if bad else "")
 
     def log(self, message: str) -> None:
         """Append a message to the log panel."""

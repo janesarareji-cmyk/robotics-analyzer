@@ -105,8 +105,8 @@ class JointRow:
         self.spinbox.setRange(self.lower_disp, self.upper_disp)
         self.spinbox.setDecimals(self.decimals)
         self.spinbox.setSingleStep(self.step)
-        self.spinbox.setMinimumWidth(70)
-        self.spinbox.setMaximumWidth(90)
+        self.spinbox.setMinimumWidth(88)
+        self.spinbox.setMaximumWidth(108)
 
         self.unit_label = QLabel(self.unit)
         self.unit_label.setMinimumWidth(28)
