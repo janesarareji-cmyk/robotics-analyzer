@@ -15,13 +15,14 @@ import numpy as np
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QSlider, QDoubleSpinBox, QPushButton, QGroupBox, QScrollArea,
-    QApplication
+    QApplication, QComboBox, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter
 
 import core_bridge as cb
 from app.gripper import gripper_dofs
-from app.kin_utils import current_q, write_q
+from app.kin_utils import current_q, dof_limits, write_q
 from app.panels.model_panel import joint_links, resolved_tcp_link
 
 # Multiplier for mapping continuous angles/displacements to integer QSlider
@@ -49,6 +50,47 @@ def rotation_to_rpy(R: np.ndarray) -> tuple[float, float, float]:
         yaw = math.atan2(-R[0, 1], R[1, 1])
 
     return roll, pitch, yaw
+
+
+NEAR_LIMIT = 0.05      # fraction of the range that counts as "near a limit"
+
+
+class LimitBar(QWidget):
+    """U5.6: thin bar under a slider: where the joint is inside its range, red near a limit."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setFixedHeight(6)
+        self._lo = 0.0
+        self._hi = 1.0
+        self._q = 0.0
+        self.setAccessibleName("Joint limit bar")
+
+    def set_state(self, lo: float, hi: float, q: float) -> None:
+        self._lo, self._hi, self._q = float(lo), float(hi), float(q)
+        self.update()
+
+    @property
+    def fraction(self) -> float:
+        span = self._hi - self._lo
+        if span <= 1e-12:
+            return 0.0
+        return min(max((self._q - self._lo) / span, 0.0), 1.0)
+
+    @property
+    def near_limit(self) -> bool:
+        f = self.fraction
+        return (self._hi - self._lo) > 1e-12 and (f <= NEAR_LIMIT or f >= 1.0 - NEAR_LIMIT)
+
+    def paintEvent(self, _ev) -> None:
+        p = QPainter(self)
+        w, h = self.width(), self.height()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#3a3a3a"))
+        p.drawRoundedRect(0, 1, w, h - 2, 2, 2)
+        p.setBrush(QColor("#ff5a5f") if self.near_limit else QColor("#4f8cff"))
+        p.drawRoundedRect(0, 1, max(3, int(round(self.fraction * w))), h - 2, 2, 2)
+        p.end()
 
 
 class JointRow:
@@ -100,6 +142,15 @@ class JointRow:
         self.slider.setRange(min_slider, max_slider)
         self.slider.setTracking(True)
         self.slider.setMinimumWidth(60)
+        self.limit_bar = LimitBar()
+        self.slider_box = QWidget()
+        box = QVBoxLayout(self.slider_box)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(1)
+        box.addWidget(self.slider)
+        box.addWidget(self.limit_bar)
+        self.limit_bar.setToolTip(
+            f"Range {self.lower_disp:.1f} to {self.upper_disp:.1f} {self.unit}")
 
         self.spinbox = QDoubleSpinBox()
         self.spinbox.setRange(self.lower_disp, self.upper_disp)
@@ -126,6 +177,7 @@ class JointRow:
         disp_val = model_q * self.to_display
         out_of_limits = (model_q < self.lower_model - 1e-9) or (model_q > self.upper_model + 1e-9)
         self.warning_label.setVisible(out_of_limits)
+        self.limit_bar.set_state(self.lower_model, self.upper_model, model_q)
 
         # Clamped value for slider and spinbox
         clamped_disp = min(max(disp_val, self.lower_disp), self.upper_disp)
@@ -149,6 +201,7 @@ class JointRow:
             self.spinbox.blockSignals(False)
 
         model_q = disp_val * self.to_model
+        self.limit_bar.set_state(self.lower_model, self.upper_model, model_q)
         self.on_change(self.joint_index, model_q)
 
     def _on_spinbox_changed(self, disp_val: float) -> None:
@@ -160,6 +213,7 @@ class JointRow:
             self.slider.blockSignals(False)
 
         model_q = disp_val * self.to_model
+        self.limit_bar.set_state(self.lower_model, self.upper_model, model_q)
         self.on_change(self.joint_index, model_q)
 
 
@@ -200,6 +254,25 @@ class JointPanel(QWidget):
         self._joints_group = QGroupBox("Joint Controls")
         joints_vbox = QVBoxLayout(self._joints_group)
         joints_vbox.setContentsMargins(4, 4, 4, 4)
+
+        # U5.6: poses (Home, Ready, saved ones)
+        pose_row = QHBoxLayout()
+        self._pose_combo = QComboBox()
+        self._pose_combo.setToolTip("Go to a pose: Home (start pose), Ready (middle of every range) or a saved pose")
+        self._pose_combo.setAccessibleName("Go to pose")
+        self._pose_combo.activated.connect(self._on_pose_activated)
+        self._btn_pose_save = QPushButton("Save pose")
+        self._btn_pose_save.setToolTip("Save the current joint values as a named pose (kept in the project)")
+        self._btn_pose_save.clicked.connect(lambda _c=False: self._on_save_pose_clicked())
+        self._btn_pose_del = QPushButton("Delete")
+        self._btn_pose_del.setToolTip("Delete a saved pose (Home and Ready cannot be deleted)")
+        self._btn_pose_del.clicked.connect(lambda _c=False: self._on_delete_pose_clicked())
+        pose_row.addWidget(QLabel("Pose"))
+        pose_row.addWidget(self._pose_combo, 1)
+        pose_row.addWidget(self._btn_pose_save)
+        pose_row.addWidget(self._btn_pose_del)
+        joints_vbox.addLayout(pose_row)
+        self._pose_source: Any = None
 
         # No inner scroll area: the dock's outer scroll area handles overflow.
         self._rows_container = QWidget()
@@ -312,6 +385,7 @@ class JointPanel(QWidget):
             self._clear_rows()
             self._baseline_q.clear()
             self._update_gripper()
+            self.refresh_poses()
             return
 
         if save_baseline or not self._baseline_q:
@@ -334,10 +408,126 @@ class JointPanel(QWidget):
         else:
             self._sync_values_to_ui()
         self._update_gripper()
+        self.refresh_poses()
 
     @property
     def gripper_group(self) -> QGroupBox:
         return self._gripper_group
+
+    # ------------------------------------------------------------------
+    # Poses (U5.6)
+    # ------------------------------------------------------------------
+
+    BUILTIN_POSES = ("Home", "Ready")
+
+    def set_pose_source(self, names_fn: Any, save_fn: Any, delete_fn: Any, get_fn: Any) -> None:
+        """Saved poses live elsewhere (project configurations): callables names, save, delete, get."""
+        self._pose_source = (names_fn, save_fn, delete_fn, get_fn)
+        self.refresh_poses()
+
+    @property
+    def pose_combo(self) -> QComboBox:
+        return self._pose_combo
+
+    def saved_pose_names(self) -> list[str]:
+        if self._pose_source is None:
+            return []
+        return [n for n in self._pose_source[0]() if n not in self.BUILTIN_POSES]
+
+    def pose_names(self) -> list[str]:
+        return list(self.BUILTIN_POSES) + self.saved_pose_names()
+
+    def refresh_poses(self) -> None:
+        self._pose_combo.blockSignals(True)
+        try:
+            self._pose_combo.clear()
+            self._pose_combo.addItem("Go to pose...")
+            self._pose_combo.addItems(self.pose_names())
+        finally:
+            self._pose_combo.blockSignals(False)
+        self._btn_pose_save.setEnabled(self._model is not None)
+        self._btn_pose_del.setEnabled(bool(self.saved_pose_names()))
+
+    def pose_q(self, name: str) -> list[float] | None:
+        """Joint vector of a pose: Home = start pose, Ready = middle of every range."""
+        if self._model is None:
+            return None
+        if name == "Home":
+            q = [0.0] * self._model.dof()
+            for j_idx, q_idx in enumerate(self._model.q_index_map()):
+                if q_idx >= 0 and j_idx < len(self._baseline_q):
+                    q[q_idx] = float(self._baseline_q[j_idx])
+            return q
+        if name == "Ready":
+            lo, hi = dof_limits(self._model)
+            return [0.5 * (a + b) for a, b in zip(lo, hi)]
+        if self._pose_source is not None:
+            try:
+                return [float(x) for x in self._pose_source[3](name)]
+            except Exception:
+                return None
+        return None
+
+    def go_to_pose(self, name: str) -> bool:
+        """Move to a pose (through the collision guard). False when blocked or unknown."""
+        q = self.pose_q(name)
+        if q is None or self._model is None or len(q) != self._model.dof():
+            return False
+        final, blocked = self._guarded(list(q))
+        write_q(self._model, final)
+        self._updating = True
+        try:
+            self._sync_values_to_ui_force()
+        finally:
+            self._updating = False
+        if blocked:
+            self.blocked.emit(self._guard_text())
+        self.q_changed.emit()
+        self.log_requested.emit(f"[INFO] Joint controls: pose '{name}'.")
+        return not blocked
+
+    def save_pose(self, name: str | None = None) -> str | None:
+        if self._model is None or self._pose_source is None:
+            return None
+        n = name or self._next_pose_name()
+        if n in self.BUILTIN_POSES:
+            return None
+        res = self._pose_source[1](n, current_q(self._model))
+        self.refresh_poses()
+        return res
+
+    def delete_pose(self, name: str) -> None:
+        if self._pose_source is None or name in self.BUILTIN_POSES:
+            return
+        self._pose_source[2](name)
+        self.refresh_poses()
+
+    def _next_pose_name(self) -> str:
+        have = set(self.pose_names())
+        i = 1
+        while f"pose {i}" in have:
+            i += 1
+        return f"pose {i}"
+
+    def _on_pose_activated(self, index: int) -> None:
+        if index <= 0:
+            return
+        name = self._pose_combo.itemText(index)
+        self._pose_combo.setCurrentIndex(0)
+        self.go_to_pose(name)
+
+    def _on_save_pose_clicked(self) -> None:
+        name, ok = QInputDialog.getText(self, "Save pose", "Name of the pose:", text=self._next_pose_name())
+        if ok and name.strip():
+            self.save_pose(name.strip())
+
+    def _on_delete_pose_clicked(self) -> None:
+        names = self.saved_pose_names()
+        if not names:
+            return
+        name, ok = QInputDialog.getItem(self, "Delete pose", "Pose to delete:", names, 0, False)
+        if ok and name:
+            self.delete_pose(name)
 
     def set_guard(self, fn: Any) -> None:
         """Collision guard ``fn(q_new, q_old=None) -> (q_final, blocked)`` (None = off)."""
@@ -470,7 +660,7 @@ class JointPanel(QWidget):
         )
         row.set_value(j.q)
         layout.addWidget(row.name_label, row_idx, 0)
-        layout.addWidget(row.slider, row_idx, 1)
+        layout.addWidget(row.slider_box, row_idx, 1)
         layout.addWidget(row.spinbox, row_idx, 2)
         layout.addWidget(row.unit_label, row_idx, 3)
         layout.addWidget(row.warning_label, row_idx, 4)
