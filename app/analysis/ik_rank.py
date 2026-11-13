@@ -159,3 +159,11 @@ def rank_solutions(model: Any, target: Any, q_current: Sequence[float] | None = 
                  "clearance": clear}))
     out.sort(key=lambda s: (not s.valid, -s.total))
     return RankResult(out[:MAX_SOLUTIONS], pos_only, note, (time.perf_counter() - t0) * 1e3, len(qs))
+
+
+def rerank(solutions: Sequence[RankedSolution], weights: Sequence[float] | None) -> list:
+    """Same solutions with new totals for ``weights`` (no new IK), best valid first."""
+    out = [RankedSolution(s.q, score(s.parts, weights), dict(s.parts), s.valid, s.reason, dict(s.raw))
+           for s in solutions]
+    out.sort(key=lambda s: (not s.valid, -s.total))
+    return out

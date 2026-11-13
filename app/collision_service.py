@@ -71,6 +71,32 @@ class CheckResult:
         return False
 
 
+class CollisionSession:
+    """Own collision world for one worker thread (U4a): ``check`` / ``clearance`` / ``is_free``.
+
+    Made by ``CollisionService.session()``. Same answers as the service, no signals, never
+    shares state with the GUI thread's world.
+    """
+
+    def __init__(self, world: CollisionWorld, link_name):
+        self.world = world
+        self._name = link_name
+
+    def check(self, q: Sequence[float], emit: bool = False) -> CheckResult:
+        self.world.set_q(q)
+        if self.world.in_collision():
+            pairs = self.world.pairs()
+            return CheckResult(False, pairs, [(self._name(a), self._name(b)) for a, b, _ in pairs])
+        return CheckResult()
+
+    def clearance(self, q: Sequence[float]) -> float:
+        self.world.set_q(q)
+        return float(self.world.min_distance())
+
+    def is_free(self, q: Sequence[float]) -> bool:
+        return self.check(q).ok
+
+
 class CollisionService(QObject):
     """Collision checks of the current project, shared by every motion input."""
 
@@ -121,25 +147,40 @@ class CollisionService(QObject):
         self._dirty = False
         self._world = None
         self.error = ""
-        p = self._project
-        model = getattr(p, "robot_model", None)
-        if p is None or model is None or len(model.joints) == 0:
-            return
         try:
-            shapes = [s for s in shapes_from_project(p) if s.link >= 0]
-            cfg = getattr(p, "collision", None) or CollisionConfig()
-            ignore: dict = {}
-            att = list(getattr(cfg, "attached", []) or [])
-            if att:                                   # U3.7: grasped objects ride on their link
-                from app.grasp import attached_shapes, gripper_ignore_links
-                skip = gripper_ignore_links(model)
-                for s in attached_shapes(model, att):
-                    ignore[len(shapes)] = set(skip)
-                    shapes.append(s)
-            self._world = CollisionWorld(model, shapes, cfg, ignore)
+            self._world = self.make_world()
         except Exception as exc:                       # missing fcl, bad shapes: pass-through
             self.error = str(exc)
             log.warning("collision world not built: %s", exc)
+
+    def make_world(self) -> CollisionWorld | None:
+        """A NEW world for the current project (own state: safe to use in a worker thread).
+
+        None without project / robot. Same shapes, ACM, environment and grasped objects as the
+        shared ``world``. Raises when the shapes cannot be built.
+        """
+        p = self._project
+        model = getattr(p, "robot_model", None)
+        if p is None or model is None or len(model.joints) == 0:
+            return None
+        shapes = [s for s in shapes_from_project(p) if s.link >= 0]
+        cfg = getattr(p, "collision", None) or CollisionConfig()
+        ignore: dict = {}
+        att = list(getattr(cfg, "attached", []) or [])
+        if att:                                   # U3.7: grasped objects ride on their link
+            from app.grasp import attached_shapes, gripper_ignore_links
+            skip = gripper_ignore_links(model)
+            for s in attached_shapes(model, att):
+                ignore[len(shapes)] = set(skip)
+                shapes.append(s)
+        return CollisionWorld(model, shapes, cfg, ignore)
+
+    def session(self) -> CollisionSession | None:
+        """A private world for a worker thread; None when blocking is off or nothing to check."""
+        if not self._enabled:
+            return None
+        w = self.make_world()
+        return None if w is None else CollisionSession(w, self.link_name)
 
     # -- names ------------------------------------------------------------
     def link_name(self, i: int) -> str:

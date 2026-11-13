@@ -363,3 +363,26 @@ Grasp: close the gripper (Joints panel) with an object between the fingers. The 
 ("Grasped <name>", drawn green) and moves with the hand; opening the gripper releases it where it is
 (it does not fall). A grasped object still blocks against the floor, other objects and the arm, but
 not against the gripper itself. Planning ignores grasped objects.
+
+## 15. Target, ranked IK and Play to target (U4a)
+
+Open the Target dock (side bar "Target", View -> Target).
+
+1. Make a target: "New at TCP" (starts at the current tool pose), or "Pick on surface" and click the
+   floor, an object or a robot surface in the 3D view (the tool z axis points into the surface). Drag
+   the small sphere to move the target; use the X Y Z (mm) and Roll Pitch Yaw (deg) fields, or the
+   Rotate buttons (5 degrees about the target's own axis).
+2. The target is drawn as an RGB triad with a cone (the tool). Cone colour: blue = not solved, green =
+   a valid IK solution exists, orange = valid but near a singularity, red = no valid solution.
+3. "Solve" (also automatic after each move) lists all IK solutions ranked best first: score bar,
+   motion, limit margin, manipulability, clearance (0 to 100). Colliding solutions and solutions
+   outside the limits come last in red. "Weights..." changes the weight of each part (saved).
+   Robots with fewer than 6 arm joints are solved for position only.
+4. Click a row: a ghost arm shows that solution (green valid, red invalid). "Show all solutions as
+   ghosts" shows up to 8.
+5. "Play to target": plans a collision-free motion from the current pose to the selected solution and
+   plays it in the timeline. "Approach from" first goes to a pose 100 mm back along the tool z axis,
+   then moves in a straight line to the target; "Retreat after" comes back. Playback stops at a
+   collision like any other motion. Targets are saved in the project (targets.json).
+
+Details: [targets](targets.md).

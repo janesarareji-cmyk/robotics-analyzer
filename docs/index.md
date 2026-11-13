@@ -25,6 +25,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [Compiled kinematic model](compiled-model.md): data structures and compile rules.
 -   [Trajectory and playback](trajectory.md): trajectory model, interpolation, project format 1.2.0, 1.3.0 and 1.4.0.
 -   [Collision](collision.md): shapes, allowed collision matrix, project format 1.3.0.
+-   [Targets and ranked IK](targets.md): 3D target, ranked solutions, ghost preview, play to target (U4a).
 
 ## Import
 

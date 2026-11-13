@@ -199,7 +199,7 @@ def test_side_bar_actions():
         assert win.toolBarArea(bar).name == "LeftToolBarArea"
         assert not bar.isMovable()
         labels = [a.iconText() for a in bar.actions() if not a.isSeparator()]
-        assert labels == ["Model", "Joints", "DH", "IK", "Analysis", "Workspace", "Sim",
+        assert labels == ["Model", "Joints", "DH", "IK", "Target", "Analysis", "Workspace", "Sim",
                           "Graphs", "Planning", "Ghosts", "Collision", "Physical", "Compare",
                           "Script", "Log", "Focus 3D", "Reset"]
         assert win._action_view_ik in bar.actions()

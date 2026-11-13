@@ -40,6 +40,7 @@ class SimPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        self._bg_play = False
         self._model: Any = None
         self._settings: Any = None
         self._engine: SimEngine | None = None
@@ -403,6 +404,7 @@ class SimPanel(QWidget):
 
     # ------------------------------------------------------ trajectory (R6.4)
     def _discard_player(self) -> None:
+        self._bg_play = False
         if self._player is not None:
             self._player.detach()
             self._player = None
@@ -510,13 +512,19 @@ class SimPanel(QWidget):
         return max(1, int(round(1000.0 / max(1.0, fps))))
 
     def _shown(self) -> bool:
-        return self.isVisible()
+        return self.isVisible() or self._bg_play
+
+    def set_background_play(self, on: bool) -> None:
+        """U4a: keep the playback clock running while the dock is hidden (Play to target from the
+        Target dock). Cleared when the player is discarded (new trajectory, stop)."""
+        self._bg_play = bool(on)
+        self._update_controls()
 
     def on_visibility_changed(self, visible: bool) -> None:
         """Dock visibility (a hidden tabbed dock does not always deliver hideEvent)."""
         if visible:
             self._update_controls()
-        else:
+        elif not self._bg_play:
             self._timer.stop()
 
     def showEvent(self, e) -> None:
@@ -524,7 +532,8 @@ class SimPanel(QWidget):
         self._update_controls()
 
     def hideEvent(self, e) -> None:
-        self._timer.stop()
+        if not self._bg_play:
+            self._timer.stop()
         super().hideEvent(e)
 
     def _on_tick(self) -> None:
