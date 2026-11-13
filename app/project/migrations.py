@@ -97,15 +97,33 @@ def backup_path(path: str | Path, old_version: str) -> Path:
     return p.with_name(f"{p.stem}.v{old_version}.bak{p.suffix}")
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Same size and same sha256."""
+    if a.stat().st_size != b.stat().st_size:
+        return False
+    import hashlib
+    return (hashlib.sha256(a.read_bytes()).digest()
+            == hashlib.sha256(b.read_bytes()).digest())
+
+
 def make_backup(path: str | Path, old_version: str) -> Path | None:
     """
     Copy an old-format file to its backup name BEFORE it is migrated.
-    Created once: an existing backup is never overwritten. Returns the backup
-    path when one was created now, else None.
+    An existing backup is never overwritten. Same content as an existing backup:
+    skipped (None). A different file with the same stem and version gets the next
+    free ``<stem>.v<ver>.bak.<n>.robotproj``. Returns the new backup path, else None.
     """
     src, dst = Path(path), backup_path(path, old_version)
-    if dst.exists():
-        return None
+    n = 0
+    while dst.exists():
+        try:
+            if _same_file(src, dst):
+                return None
+        except OSError as exc:
+            log.warning("Cannot compare backup %s: %s", dst, exc)
+            return None
+        n += 1
+        dst = src.with_name(f"{src.stem}.v{old_version}.bak.{n}{src.suffix}")
     try:
         shutil.copy2(src, dst)
     except OSError as exc:

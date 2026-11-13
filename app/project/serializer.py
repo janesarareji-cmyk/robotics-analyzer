@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -115,9 +117,10 @@ def _write_archive(project: ProjectData, target: Path) -> None:
 def write_atomic(project: ProjectData, path: str | Path, keep_prev: bool = True) -> None:
     """
     Atomic write of the project archive to ``path`` (does not touch project state).
-    write <name>.tmp + fsync -> old file to <name>.prev -> tmp replaces target
-    -> .prev removed. A kill at any point leaves either the old file, the new
-    file, or (short window) only <name>.prev: it is never a truncated target.
+    write <name>.tmp + fsync -> old file COPIED to <name>.prev -> tmp replaces
+    target (one atomic os.replace) -> .prev removed. The target is never moved
+    away, so a kill at any point leaves the old file or the new file (plus maybe
+    a .prev copy), never a missing or truncated target.
     Raises ProjectSerializationError; the tmp file is always removed on failure.
     """
     path = Path(path)
@@ -131,22 +134,19 @@ def write_atomic(project: ProjectData, path: str | Path, keep_prev: bool = True)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
-    moved = False
+    copied = False
     try:
         # never overwrite a good .prev with a damaged target
         if keep_prev and path.exists() and zipfile.is_zipfile(path):
-            os.replace(path, prev)
-            moved = True
+            shutil.copy2(path, prev)
+            copied = True
         os.replace(tmp, path)
     except OSError as exc:
-        if moved and not path.exists():
-            try:
-                os.replace(prev, path)
-            except OSError:
-                pass
         tmp.unlink(missing_ok=True)
+        if copied:                      # target is untouched: the .prev copy is redundant
+            prev.unlink(missing_ok=True)
         raise ProjectSerializationError(f"Failed to save project: {exc}") from exc
-    if moved:
+    if copied:
         prev.unlink(missing_ok=True)
 
 
@@ -217,6 +217,15 @@ def load(path: str | Path) -> ProjectData:
         ) from exc
     except OSError as exc:
         raise ProjectSerializationError(f"I/O error loading project: {exc}") from exc
+    except ProjectSerializationError:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError, EOFError,
+            zlib.error, zipfile.LargeZipFile) as exc:
+        # A1.2 (audit H2): any other damage is a format error, so .prev fallback and
+        # the "Cannot Open Project" dialog work.
+        raise ProjectFormatError(
+            f"Invalid project content ({type(exc).__name__}: {exc})"
+        ) from exc
 
     return ProjectData(
         metadata=metadata,
@@ -355,7 +364,11 @@ def _read_configs(zf: zipfile.ZipFile, names: list[str]) -> Any:
 def _read_json(zf: zipfile.ZipFile, name: str) -> Any:
     """Read and parse a JSON archive member."""
     raw = zf.read(name)
-    return json.loads(raw.decode(ENCODING))
+    try:
+        text = raw.decode(ENCODING)
+    except UnicodeDecodeError as exc:
+        raise ProjectFormatError(f"'{name}' is not valid UTF-8: {exc}") from exc
+    return json.loads(text)
 
 
 def _check_format_version(version: str) -> None:

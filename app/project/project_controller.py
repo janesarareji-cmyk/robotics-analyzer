@@ -170,6 +170,7 @@ class ProjectController(QObject):
 
         recovered = False
         used_prev = False
+        remove_autosave_after = False
         autosave = newer_autosave(path)
         if autosave is not None:
             answer = QMessageBox.question(
@@ -183,7 +184,8 @@ class ProjectController(QObject):
             if answer == QMessageBox.StandardButton.Yes:
                 recovered = True
             else:
-                remove_autosave(path)
+                # A1.2: delete it only after the main file loaded (see below)
+                remove_autosave_after = True
 
         try:
             if recovered:
@@ -211,6 +213,8 @@ class ProjectController(QObject):
             log.error("I/O error opening %s: %s", path, exc)
             return False
 
+        if remove_autosave_after and not used_prev:
+            remove_autosave(path)
         if used_prev:
             QMessageBox.warning(
                 parent_widget,

@@ -98,8 +98,11 @@ class ConfigStore:
     @classmethod
     def from_dict(cls, d: dict) -> "ConfigStore":
         s = cls()
-        for item in d.get("configs", []):
-            s.set(item["name"], item["q"])
+        for i, item in enumerate(d.get("configs", [])):
+            try:
+                s.set(item["name"], item["q"])
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                log.warning("Configuration entry %d skipped: %s", i, exc)
         return s
 
 
