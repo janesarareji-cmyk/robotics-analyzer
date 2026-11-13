@@ -5,7 +5,7 @@ Review: BLOCKING. A1 touches data safety and the plugin sandbox. Sonnet reviews 
 Builder = Claude subagents launched by Sonnet. Workflow = stage-batch (`.agents/rules/dev-workflow.md`), commit `A1.<y>: <summary>`.
 
 Order: A1.1 → A1.2 → A1.3 → A1.4 → A1.5 → A1.6 → A1.7 → A1.8 (STOP if root cause not found) → A1.9 (milestone).
-Tier: A1.1-A1.6 and A1.8 Sonnet; A1.7 Haiku (mechanical) with Sonnet check; A1.9 Sonnet.
+Tier: A1.1, A1.2, A1.4-A1.6 and A1.8 Sonnet; A1.3 Haiku; A1.7 Haiku (mechanical) with Sonnet check; A1.9 Sonnet.
 
 ## Common rules (every substage)
 
@@ -79,39 +79,21 @@ Files: `app/project/serializer.py`, `app/project/recovery.py`, `app/project/proj
     target still exists and is the old content. Recover-No with a corrupt main file → autosave still on disk.
     Two different old files with the same stem → two backups. configs.json with one bad entry → others load.
 
-## A1.3 --- Plugin sandbox and untrusted paths (M1, M2, M9, LOW plugin items, LOW mesh paths)
+## A1.3 --- Plugin timeout and settings (M9, plugins_folder)
 
-Files: `app/plugins/{host,permissions,loader,manifest}.py`, `app/settings.py`, `app/project/serializer.py`,
-`app/reports/urdf_export.py`, `app/importers/visuals.py`, `app/planning/collision.py`.
+Scope trimmed 2026-11-13 (user: academic project, no productification). Sandbox hardening (M1 scheme
+check, M2 mesh path confinement, case-insensitive keys, `_uniq`, manifest regex, `_allow_read` scope) is
+OUT: see "Not in A1". Only the items that break normal use stay.
 
-1.  `_http_get`: allow only `http` and `https` (`urllib.parse.urlsplit`). Anything else → `PermissionError`.
-    Also refuse redirects to another scheme (custom `HTTPRedirectHandler` or check `r.geturl()`).
-2.  Project mesh paths: after load, a `mesh_path` that is not under the project's own temp asset dir is
-    made relative-and-checked: absolute paths, UNC (`\\` or `//` start), drive-relative paths and any `..`
-    part → the visual is kept but `mesh_path` set to `""` and a warning added to the load result
-    (`ProjectData.load_warnings: list[str]`, shown in the log). `os.path.isfile` is never called on a UNC
-    path. `_write_visuals` and `export_urdf` copy only files inside the asset dir.
-3.  Importer and collision mesh reads: `collision._mesh_points` and `visuals` resolve the path, refuse UNC,
-    require `isfile`, and require extension in `{.stl,.obj,.ply,.dae,.vtk,.vtp}` before `pv.read`.
-    URDF `package://` and relative paths must resolve inside the URDF's folder tree or a user-given package
-    root (`mesh_paths_dialog`); else report code `MESH_OUTSIDE_ROOT` (warning) and skip the mesh.
-4.  `guarded_call` timeout: time spent inside a permission dialog does not count. `_GuiAsker` records dialog
+Files: `app/plugins/{host,permissions}.py`, `app/settings.py`.
+
+1.  `guarded_call` timeout: time spent inside a permission dialog does not count. `_GuiAsker` records dialog
     time per call; the timeout check subtracts it. An `ask()` that times out (no answer) returns False for
     this call only and is NOT stored as `"denied"`.
-5.  `_allow_read`: add the picked file path itself, not its parent dir. Read check = exact file match or
-    inside a dir the user picked with a folder dialog.
-6.  Settings keys: lowercase the plugin name in `plugins/perm/...` and `plugins/enabled/...`. Manifest
-    validation refuses a second plugin whose name differs only by case (second one → error state).
-    `_uniq` → `"_plugin_" + name.lower()` plus a short sha1 of the original name, so `a-b`/`a.b`/`a_b` differ.
-7.  `manifest._NAME_RE` / `_VER_RE`: use `re.fullmatch` (or `\Z`). Name with `\n` → invalid.
-8.  `AppSettings.plugins_folder()`: empty or whitespace stored value → default folder. `recent_max()`: bad
+2.  `AppSettings.plugins_folder()`: empty or whitespace stored value → default folder. `recent_max()`: bad
     stored value → default.
-9.  Tests: extend `test_plugins.py`. `file:///` and `ftp://` refused; http → redirect to file refused.
-    Plugin "Foo" granted, plugin "foo" → refused at load. `a-b` and `a_b` both load, distinct modules.
-    Name `"x\n"` invalid. Slow (simulated 15 s) dialog in `register()` → plugin not timed out. Unanswered
-    ask → nothing saved. Picked file → sibling file not readable. Project with `C:\Windows\win.ini`,
-    `..\x.stl` and `\\server\s\x.stl` mesh paths → loads, paths cleared, warnings, save does not embed them,
-    and `os.path.isfile` is not called for the UNC one (monkeypatch spy).
+3.  Tests (extend `test_plugins.py`): slow (simulated 15 s) dialog in `register()` → plugin not timed out;
+    unanswered ask → nothing saved; empty plugins_folder setting → default folder scanned, not the cwd.
 
 ## A1.4 --- C++ input validation (M4, M5, LOW C++ items)
 
@@ -148,12 +130,9 @@ Files: `cuda/workspace_gpu.cpp`, `cuda/workspace_kernel.cu`, `cuda/gpu_bridge.cp
     mapped type). Cap `n * n_dof * 4` by the budget; above → `ValueError`.
 3.  `ensure_pool`: on any init failure destroy what was created (streams, events, device buffers) before
     rethrowing. A retry starts clean.
-4.  `gpu_manager`: `cudaErrorNoKernelImageForDevice`, `cudaErrorUnsupportedPtxVersion`,
-    `cudaErrorInsufficientDriver` → device marked unusable with that reason. `device_info` probes once with
-    a tiny kernel launch (vector_add of 1 element) at init so a non-sm_120 GPU reports unusable up front.
-5.  Tests: fault injection hook (env `ANALYZER_GPU_FAULT=ws_count_oom|pool_init|no_kernel`, test builds only, or
+4.  Tests: fault injection hook (env `ANALYZER_GPU_FAULT=ws_count_oom|pool_init`, test builds only, or
     a bridge debug function) → workspace still returns the correct result via host path; pool init failure
-    twice → no handle growth (count via a debug counter); no_kernel → backend reports CPU with the reason.
+    twice → no handle growth (count via a debug counter).
     Real-device GPU tests stay green.
 
 ## A1.6 --- Numerics, planning, import (M6, M7, LOW numerics items)
@@ -190,7 +169,7 @@ Files: `app/compute/backend.py`, `app/planning/{planner,checks,cartesian}.py`, `
 ## A1.7 --- Small app fixes (LOW app/API/packaging items) --- Haiku tier
 
 Files: `app/main_window.py`, `app/panels/{ik_panel,workspace_panel}.py`, `app/logger.py`,
-`app/reports/mesh_export.py`, `app/sim/export.py`, `robotics_api/{_util,analysis}.py`, `packaging/*`.
+`app/reports/mesh_export.py`, `app/sim/export.py`, `robotics_api/{_util,analysis}.py`.
 
 1.  Connect `signals.result`/`signals.error` BEFORE `submit_fn` in main_window import (`~:915`, `~:1134`),
     `ik_panel` (`~:266`), `workspace_panel` (`~:284`). Same pattern as `planning_panel.py:356`.
@@ -205,11 +184,7 @@ Files: `app/main_window.py`, `app/panels/{ik_panel,workspace_panel}.py`, `app/lo
     invoker, `QMetaObject.invokeMethod` blocking-queued) when a QApplication exists; with no QApplication
     (pure script, no GUI), create it on the calling thread only if that is the main thread, else raise
     `ExportError("PDF needs the GUI thread")`.
-7.  `packaging/analyzer.spec`: missing `core_bridge*.pyd` → build fails with a clear message
-    (`gpu_bridge` missing stays a warning). `install.ps1`: remove the old target folder first (after a
-    check it is not the source and not a parent of it).
-8.  Tests: each item one small test (`test_audit_small.py`); packaging items checked by a static test that
-    parses the spec/ps1 text.
+7.  Tests: each item one small test (`test_audit_small.py`).
 
 ## A1.8 --- Exit crash 0xC0000409 (H3) --- STOP if root cause not found
 
@@ -231,10 +206,9 @@ Files: `app/main_window.py`, `app/panels/{ik_panel,workspace_panel}.py`, `app/lo
     (a) open fixture project, edit, close with Cancel / Discard / Save via `closeEvent`;
     (b) corrupt the saved file (6 kinds from A1.2) → open falls back to `.prev` or shows an error dialog,
         never an unhandled exception (install a `sys.excepthook` spy);
-    (c) hostile plugin: tries `file:///`, sibling file read, case-twin name → all refused, app alive;
-    (d) hostile project: UNC + absolute mesh paths → loaded with warnings, nothing embedded on save;
-    (e) bad arrays dict to GPU FK → ValueError, GPU not marked dead (skip if no GPU);
-    (f) prismatic gantry workspace complete; PRM cancel < 0.5 s.
+    (c) plugin whose register() waits 15 s on a permission dialog → loads, not timed out;
+    (d) bad arrays dict to GPU FK → ValueError, GPU not marked dead (skip if no GPU);
+    (e) prismatic gantry workspace complete; PRM cancel < 0.5 s.
 2.  Gate (MASTER_PLAN 1.3): CTest + full pytest green, process exit code 0 (from A1.8), GPU tests on the real
     device, `graphify update .`, `graph.json` committed, `docs/audit-2026-11-13.md` gets a "Status" column
     (fixed in A1.x / won't fix + reason), `PROGRESS.md` updated, tag `stage-A1-done`, status
@@ -243,5 +217,9 @@ Files: `app/main_window.py`, `app/panels/{ik_panel,workspace_panel}.py`, `app/lo
 ## Not in A1 (won't fix now, reason)
 
 -   Hung plugin/script thread is abandoned, not killed: needs process isolation (larger design, own stage).
--   Planner does not constrain torque, ghost shown-set not saved: carried product gaps, not defects.
+-   Planner torque limits and ghost shown-set: built as features in stage F1 (`docs/specs/F1-spec.md`).
 -   `RingBuffer.view()` copy at cap: accepted in R7.
+
+-   Productification, OUT by user decision 2026-11-13 (academic project): plugin sandbox hardening (M1, M2,
+    `_allow_read`, case-insensitive keys, `_uniq`, manifest regex), untrusted mesh path confinement, non-sm_120
+    GPU detection, packaging/installer fixes, installer, code signing, clean-machine test.
