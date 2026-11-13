@@ -687,6 +687,9 @@ class MainWindow(QMainWindow):
         self._curve_panel.set_collision_service(self._collision_service)
         self._curve_panel.log_requested.connect(self.log)
         self._curve_panel.trajectory_ready.connect(self._on_curve_trajectory)
+        self._curve_loaded: Any = None          # the timeline trajectory that came from the Curve dock
+        self._sim_panel.position_changed.connect(self._on_curve_position)
+        self._sim_panel.playback_finished.connect(self._on_playback_finished)
 
         # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
         self._script_runner = ScriptRunner(
@@ -1064,6 +1067,7 @@ class MainWindow(QMainWindow):
         rv = self._viewport.robot_view
         rv.clear_ghosts()
         QTimer.singleShot(0, self._target_panel.redraw_preview)      # U4a.3: IK preview ghosts
+        QTimer.singleShot(0, self._curve_panel.redraw_ghost)         # U4b.4: curve end ghost
         model = self._project_controller.robot
         if model is None or not entries:
             return
@@ -1210,6 +1214,7 @@ class MainWindow(QMainWindow):
         if not sp.load_trajectory(traj):
             self.log("[WARNING] Curve trajectory does not fit the robot: not loaded.")
             return
+        self._curve_loaded = sp.trajectory
         if info.get("play"):
             sp.set_mode("kinematic")
             sp.set_background_play(True)
@@ -1218,6 +1223,16 @@ class MainWindow(QMainWindow):
         else:
             self.set_status(f"Curve ready in the timeline ({info.get('duration', 0.0):.1f} s). "
                             "Open Simulation to play it.")
+
+    def _on_curve_position(self, t: float) -> None:
+        """Playback / scrub time: the moving marker on the curve tube (only for a curve trajectory)."""
+        if self._curve_loaded is not None and self._sim_panel.trajectory is self._curve_loaded:
+            self._curve_panel.set_playback_time(t)
+
+    def _on_playback_finished(self) -> None:
+        """A trajectory reached its end: drop the stale "Playing ..." status message."""
+        if self._status_label.text().startswith("Playing the"):
+            self.set_status("Motion finished")
 
     def _on_planned_trajectory(self, traj: Any) -> None:
         """Planning panel Send to trajectory: fill the trajectory editor (and the project)."""

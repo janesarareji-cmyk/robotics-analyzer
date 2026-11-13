@@ -43,3 +43,13 @@ each curve starts where the previous one ended and the cycle time is the sum. Ti
 speed (mm/s) or time-optimal (TOPP with the joint speed, acceleration and torque limits of F1.3).
 "Generate" puts the timed trajectory into the timeline, "Play" also plays it (kinematic mode, collision
 blocking of U3.4 stays on). Via points are kept per target for the session, they are not saved yet.
+
+## Follow and timeline (U4b.4)
+
+"Play" uses the normal `TrajectoryPlayer` (kinematic) with the collision blocking of U3.4. A time-optimal
+curve is sampled every 0.04 s into a linear trajectory, so the timeline plays exactly what Generate
+made. While it plays: a pink marker runs along the tube (also when you scrub the timeline slider), a
+purple ghost shows the end pose, the tube and ghost stay when you switch to the Simulation tab. The
+status bar shows "Motion finished" at the end. Speed 0.1x to 4x, scrub, Pause and Stop are the
+timeline's own. Editing the curve drops the generated trajectory, marker and ghost.
+Fix: Play from the Target and Curve docks now keeps the clock running while the Simulation dock is hidden.

@@ -257,10 +257,11 @@ class CurvePanel(QWidget):
             self._redraw_tube()
         else:
             self._timer.stop()
-            rv = self._rv()
-            if rv is not None:
-                rv.set_path_tube(None)
-                rv.remove_ghost(GHOST_KEY)
+            if self._traj is None:               # a generated curve stays drawn (marker, end ghost)
+                rv = self._rv()                  # while its trajectory is in the timeline
+                if rv is not None:
+                    rv.set_path_tube(None)
+                    rv.remove_ghost(GHOST_KEY)
             if self.handles is not None:
                 self.handles.show(False)
 
@@ -583,6 +584,8 @@ class CurvePanel(QWidget):
             rv.remove_ghost(GHOST_KEY)
         if not keep_tube:
             self._result = None
+        if not self._active and rv is not None:
+            rv.set_path_tube(None)
         self._update_controls()
 
     def _schedule(self) -> None:
@@ -682,7 +685,8 @@ class CurvePanel(QWidget):
         if rv is None or self._disposed:
             return
         res = self._result
-        if not self._active or res is None or len(res.points) < 2 or res.check is None:
+        shown = self._active or self._traj is not None
+        if not shown or res is None or len(res.points) < 2 or res.check is None:
             rv.set_path_tube(None)
             return
         mode = self.color_mode
@@ -702,7 +706,7 @@ class CurvePanel(QWidget):
         if rv is None or self._disposed:
             return
         rv.remove_ghost(GHOST_KEY)
-        if not self._active or self._traj is None or self._model is None:
+        if self._traj is None or self._model is None:
             return
         try:
             q_end = self._traj.q(self._traj.duration)
@@ -714,7 +718,7 @@ class CurvePanel(QWidget):
     def set_playback_time(self, t: float) -> None:
         """Playback / scrub time of the generated trajectory: moving marker on the tube."""
         rv = self._rv()
-        if rv is None or self._traj is None or self._model is None or not self._active:
+        if rv is None or self._traj is None or self._model is None:
             return
         try:
             rv.set_path_marker(tcp_at_time(self._model, self._traj, t, self._cache.get_cm(self._model)))

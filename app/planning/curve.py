@@ -30,6 +30,7 @@ SAMPLE_STEP = 0.01             # m between samples
 DEFAULT_SPEED = 0.10           # m/s
 MIN_LEG_TIME = 0.2             # s
 IK_OPTIONS = {"max_iter": 60}
+DENSE_DT = 0.04               # s: sample spacing of a time-optimal trajectory
 
 
 @dataclass
@@ -235,7 +236,14 @@ def timed_trajectory(model: Any, res: CurveResult, timing: str = "speed", collis
     if timing == "topp":
         from app.planning.shortcut import time_parametrize
         timed = time_parametrize(q, model, collision=collision, method="topp")
-        return timed.trajectory
+        tr = timed.trajectory
+        # dense linear samples: the timeline keeps no Hermite velocities, so what it plays is
+        # exactly what is returned here (chord error far below 0.1 mm at 0.04 s)
+        ts = np.append(np.arange(0.0, tr.duration, DENSE_DT), tr.duration)
+        wps = [Waypoint(float(t), tuple(float(v) for v in tr.q(float(t)))) for t in ts]
+        wps[0] = Waypoint(0.0, tuple(float(v) for v in q[0]))
+        wps[-1] = Waypoint(float(tr.duration), tuple(float(v) for v in q[-1]))
+        return Trajectory(wps, "linear")
     t = np.asarray(res.t, float)
     if speed is not None and abs(speed - res.speed) > 1e-12:
         t = t * (res.speed / speed)

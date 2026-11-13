@@ -37,6 +37,7 @@ class SimPanel(QWidget):
     trajectory_changed = Signal(object)   # Trajectory or None (relay of the timeline)
     model_replaced = Signal()             # engine / recorder rebuilt (R6.6 graphs)
     position_changed = Signal(float)      # playback / seek time (R6.6 graph cursor)
+    playback_finished = Signal()          # U4b.4: a trajectory played to its end
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -442,7 +443,9 @@ class SimPanel(QWidget):
             return
         if self._player is None and e.clock.state != STOPPED:
             e.stop()   # free-running dynamics: back to the initial state first
+        bg = self._bg_play                   # creating the player discards the old one and its flag
         pl = self._ensure_player()
+        self._bg_play = bg and pl is not None
         if pl is None:
             return
         pl.play()
@@ -463,6 +466,7 @@ class SimPanel(QWidget):
             self._timeline.set_position(0.0)
             self._update_controls()
             self._emit_state()
+            self.position_changed.emit(0.0)
 
     def seek_trajectory(self, t: float) -> None:
         pl = self._ensure_player()
@@ -544,11 +548,14 @@ class SimPanel(QWidget):
         now = time.perf_counter()
         wall_dt = min(now - self._last_tick, MAX_WALL_DT)
         self._last_tick = now
+        reached = False
         if self._player is not None:
-            self._player.advance(wall_dt)
+            reached = bool(self._player.advance(wall_dt))
         else:
             eng.advance(wall_dt)
         self._emit_state()
+        if reached:
+            self.playback_finished.emit()
         self._report_collision_stop()
         if eng.error:
             self.log_requested.emit(f"[WARNING] Simulation paused: {eng.error}")
