@@ -35,7 +35,13 @@ every handoff. Keep it short.
 -   **R6 notes for the reviewer:** sim panel controls (dt, integrator, scale, gravity, friction) change the engine only, not project SimulationSettings. Kinematic mode run buttons are disabled; trajectory playback drives the clock. Recorder clears on STOPPED->RUNNING and reset, not on Stop/Pause. Project format 1.2.0 (`trajectory.json`, old files load). Milestone drives dynamic playback through `player.advance(0.02)` (deterministic) and kinematic playback through the dock QTimer.
 -   Stage R6 review (Sonnet, 2026-11-12): APPROVED. Independent run: CTest 9/9, pytest 824. Read: app/sim/recorder.py, playback.py, export.py, graphs/series.py, trajectory.py, engine.py diff; no blocking defects. Tag stage-R6-done = bcd8f75. Fixed during stage: recorder cleared on Stop (now clears on new run). Accepted: kinematic playback runs the engine clock via set_state; pyqtgraph 0.14; CSV joined table with `# columns` line. Info items (not blocking): (a) prismatic unit shown as revolute for per-joint series; (b) RingBuffer.view() copies full buffer when wrapped (64 MB per live update at cap); (c) dynamic tracking test has tiny error (3.7e-11) because feedforward is exact and start state equals trajectory start: no disturbance case. R7 spec pack written.
 -   **Owner now:** Builder (A1)
--   **Blockers:** none
+-   **Blockers:** A1.8 exit crash, root cause NOT found (2 bisect/fix rounds, 2026-11-13). Findings:
+    -   Reproduced 3 of 3: `python -X faulthandler -m pytest tests/python -q -p no:cacheprovider` -> `1250 passed, 4 skipped in 184 s`, then `Fatal Python error: Aborted` (SIGABRT, no Python frame), process exit code 3 (also 0xC0000409 / 139 / 3 in other runs). With faulthandler the abort is a native `abort()` in Qt/C++ destruction, no Qt message printed.
+    -   Bisect by quarters of the sorted file list: files 1-3 exit 0, last quarter (`test_trajectory.py` ... `test_workspace_analysis.py`) exit 3. Per file: only `tests/python/test_ui_ghosts.py` crashes alone. Each of its 11 tests alone exits 0 (except `ghost_count`, `planning_wiring`, `docks_exist` sometimes 3/139 when run with `-k` alone), smallest set that crashes: `test_ik_solutions_added_and_shown + test_model_change_drops_configs` (two parentless `GhostPanel` widgets, no MainWindow, no VTK, no plugin, no thread, no GPU).
+    -   Suspects ruled out: VTK plotter (closing `viewport.plotter` before delete did not help; UI/viewport files alone exit 0 x3), plugin/script daemon threads (not involved in the 2-test set), CUDA (not involved), QThreadPool (not involved).
+    -   Facts: leftover parentless top-level widgets survive tests (panels from fixtures, MainWindows, pyqtgraph `QMenu`/`ViewBoxMenu` context menus, ~100 top-levels at session end). A session autouse fixture that calls `deleteLater()` + `sendPostedEvents(DeferredDelete)` on the top-levels fixed the 2-panel set (exit 0 x3) but the whole `test_ui_ghosts.py` file still aborts inside the deletion of the first leftover `MainWindow` (closed by its test) even after `viewport.plotter.close()`. A standalone script (create MainWindow, close, `shiboken6.delete`) exits 0, so the abort needs state from the test (robot loaded, ghosts/planning/graph panels). Not yet identified which child object aborts in its destructor.
+    -   Next ideas: delete the MainWindow's dock panels one by one in a standalone script after loading a robot; check `QCoreApplication::exec`-less pyqtgraph `PlotWidget` / `GraphPanel` teardown; run with `QT_FATAL_WARNINGS`/`QT_LOGGING_RULES="*=true"` and a native debugger (WinDbg/cdb) to get the C++ stack of the abort.
+    -   No code changed; `tests/python/conftest.py` experiment reverted. Exit code NOT masked.
 -   **Review mode:** stage-batch, BLOCKING (A1)
 -   **Spec pack:** `docs/specs/A1-spec.md`, then `docs/specs/F1-spec.md`
 -   **Stage R2 gate: PASSED** (Reviewer verified: CTest 5/5, pytest 146/146). Tag `stage-R2-done` = `91a53a0`.
@@ -161,7 +167,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | A1.5 | CUDA error paths | test_gpu_errors.py | committed |
 | A1.6 | Numerics, planning, import (M6, M7) | test_audit_numerics.py | committed |
 | A1.7 | Small app fixes (Haiku) | test_audit_small.py | committed |
-| A1.8 | Exit crash 0xC0000409 (H3, STOP if no root cause) | test_exit_clean.py | planned |
+| A1.8 | Exit crash 0xC0000409 (H3, STOP if no root cause) | test_exit_clean.py | blocked |
 | A1.9 | A1 milestone | test_milestone_a1.py | planned |
 | F1.1 | Pinocchio proof build (STOP after) | requirements-dev.txt | planned |
 | F1.2 | Pinocchio validator tool + report | test_pinocchio_validation.py | planned |
