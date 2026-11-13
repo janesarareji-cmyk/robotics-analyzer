@@ -13,7 +13,7 @@ from typing import Callable
 
 import numpy as np
 
-from app.planning.checks import ViolationReport, _model_limits, check_trajectory
+from app.planning.checks import GRAVITY, ViolationReport, _model_limits, check_trajectory
 from app.sim.trajectory import Trajectory, Waypoint
 
 DEFAULT_VMAX = 1.0      # rad/s (or m/s) when the joint has no velocity limit
@@ -80,7 +80,8 @@ def _segment_times(path: np.ndarray, vmax: np.ndarray, amax: np.ndarray) -> np.n
 
 def time_parametrize(path, model, limits: dict | None = None, vmax=None, amax=None,
                      interpolation: str = "cubic", collision=None, dt: float = 0.01,
-                     check_torque: bool = False, max_scale_steps: int = 14) -> TimedPath:
+                     check_torque: bool = False, max_scale_steps: int = 14,
+                     method: str = "scale", n_grid: int = 100, gravity=GRAVITY) -> TimedPath:
     """Timed ``Trajectory`` through the waypoints of ``path`` (one segment per edge).
 
     Segment times come from ``vmax`` / ``amax`` (default: joint velocity limits, else
@@ -88,7 +89,14 @@ def time_parametrize(path, model, limits: dict | None = None, vmax=None, amax=No
     when a dense sample stays inside the position limits and (when ``collision`` is given)
     collision free; otherwise linear interpolation (no overshoot) is used. Times are scaled up by
     1.25 until ``check_trajectory`` shows no velocity/acceleration violation.
+
+    ``method="topp"`` (F1.3): time-optimal parametrisation with velocity, acceleration AND torque
+    limits (``app/planning/topp.py``, ``n_grid`` path samples, friction left out of the solve,
+    ``gravity`` world vector). Torque limits come from ``limits["effort"]`` or the URM joint
+    efforts. Raises ``PlanningError`` when the torque limits cannot be met rest-to-rest.
     """
+    if method not in ("scale", "topp"):
+        raise ValueError("method must be 'scale' or 'topp'")
     p = np.asarray(path, float)
     if p.ndim != 2 or len(p) < 2:
         raise ValueError("path needs at least 2 waypoints")
@@ -104,6 +112,9 @@ def time_parametrize(path, model, limits: dict | None = None, vmax=None, amax=No
     check_lim.setdefault("vel", v)
     check_lim.setdefault("accel", a)
     notes: list[str] = []
+    if method == "topp":
+        return _time_parametrize_topp(p, model, lim, v, a, check_lim, interpolation, collision,
+                                      dt, n_grid, gravity)
 
     def build(kind: str, scale: float) -> Trajectory:
         t = np.concatenate([[0.0], np.cumsum(seg * scale)])
@@ -140,3 +151,42 @@ def time_parametrize(path, model, limits: dict | None = None, vmax=None, amax=No
         traj = build(kind, scale)
     rep = check_trajectory(traj, model, check_lim, dt=dt, check_torque=check_torque)
     return TimedPath(traj, rep, kind, scale, notes)
+
+
+TOPP_MAX_RESCALE = 20
+
+
+def _time_parametrize_topp(p, model, lim, v, a, check_lim, interpolation, collision, dt,
+                           n_grid, gravity) -> TimedPath:
+    """F1.3 helper: TOPP-RA solve, then rescale the time until ``check_trajectory`` is clean.
+
+    The grid solve enforces the limits only at grid points and the cubic spline through
+    ``(q(s_i), t_i)`` rings at acceleration jumps, so the checked trajectory can exceed a limit
+    by a few percent. Time is then scaled up by ``max(1.02, 1.001 * sqrt(worst ratio))``
+    (acceleration and dynamic torque scale with 1/scale^2, velocity with 1/scale), at most
+    ``TOPP_MAX_RESCALE`` times.
+    """
+    from app.planning.topp import solution_trajectory, solve_topp
+    eff = np.asarray(check_lim.get("effort", lim["effort"]), float)
+    eff = np.broadcast_to(eff, (p.shape[1],)).copy()
+    check_lim = dict(check_lim)
+    check_lim["effort"] = eff
+    sol, kind, notes = solve_topp(model, p, v, a, eff, gravity=gravity, n_grid=n_grid,
+                                  interpolation=interpolation, collision=collision,
+                                  pos_lo=lim["pos_lo"], pos_hi=lim["pos_hi"])
+    scale = 1.0
+    traj = solution_trajectory(sol, scale)
+    rep = check_trajectory(traj, model, check_lim, dt=dt, check_torque=True, gravity=gravity)
+    for _ in range(TOPP_MAX_RESCALE):
+        bad = [x for x in rep.violations
+               if x.kind in ("velocity", "acceleration", "torque") and x.limit > 0]
+        if not bad:
+            break
+        worst_v = max([x.value / x.limit for x in bad if x.kind == "velocity"] or [1.0])
+        worst_d = max([x.value / x.limit for x in bad if x.kind != "velocity"] or [1.0])
+        scale *= max(1.02, 1.001 * math.sqrt(worst_d), 1.001 * worst_v)
+        traj = solution_trajectory(sol, scale)
+        rep = check_trajectory(traj, model, check_lim, dt=dt, check_torque=True, gravity=gravity)
+    notes.append(f"topp: {kind} path geometry, {len(sol.q) - 1} stages, solver duration {sol.duration:.4g} s, "
+                 f"final time scale {scale:.4g}")
+    return TimedPath(traj, rep, "cubic", scale, notes)

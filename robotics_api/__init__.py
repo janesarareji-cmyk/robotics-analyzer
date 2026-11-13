@@ -23,7 +23,7 @@ from .motion import Trajectory, plan, simulate, time_parametrize
 from .project import Project, import_urdf, new_project, open_project, save_project
 from .robot import Robot
 
-__api_version__ = "1.1"
+__api_version__ = "1.2"
 
 __all__ = [
     "__api_version__", "Robot", "Project", "Trajectory",

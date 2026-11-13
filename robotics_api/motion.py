@@ -219,15 +219,22 @@ def simulate(robot: Robot, control: Any = None, duration: float | None = None, d
 # ----------------------------------------------------------------------- time parametrize
 @guard(PlanningError)
 def time_parametrize(path: Any, robot: Robot, vmax: Any = None, amax: Any = None,
-                     interpolation: str = "cubic") -> Trajectory:
+                     interpolation: str = "cubic", method: str = "scale") -> Trajectory:
     """Timed trajectory through the waypoints of ``path`` (array ``(n, n_dof)``, rad or m).
 
     ``vmax`` (rad/s or m/s) and ``amax`` (rad/s^2) per DOF or scalar; default the joint velocity
     limits (1 where none) and 2. Segment times are scaled up until no velocity or acceleration
     limit is violated. Cubic interpolation falls back to linear when the spline would leave the
     joint limits. Returns a ``Trajectory`` (``ok``, ``report``).
+
+    ``method="topp"`` (API 1.2): time-optimal parametrisation (TOPP-RA) that also respects the
+    joint effort limits (torque, gravity on, friction left out of the solve). It raises
+    ``PlanningError`` when the torque limits cannot be met (for example the holding torque at
+    the start or end exceeds the limit). ``method="scale"`` (default) keeps the old behaviour.
     """
     from app.planning.shortcut import time_parametrize as _tp
+    if method not in ("scale", "topp"):
+        raise InvalidArgument("method must be 'scale' or 'topp'")
     p = np.asarray(path, dtype=float)
     if p.ndim != 2 or p.shape[1] != robot.n_dof or len(p) < 2:
         raise InvalidArgument(f"path must have shape (n >= 2, {robot.n_dof})")
@@ -240,7 +247,7 @@ def time_parametrize(path: Any, robot: Robot, vmax: Any = None, amax: Any = None
             a = np.asarray(v, dtype=float)
             if a.ndim > 1 or (a.ndim == 1 and a.shape[0] != robot.n_dof) or np.any(a <= 0):
                 raise InvalidArgument(f"{name} must be positive: scalar or n_dof values")
-    timed = _tp(p, robot._model, vmax=vmax, amax=amax, interpolation=interpolation)
+    timed = _tp(p, robot._model, vmax=vmax, amax=amax, interpolation=interpolation, method=method)
     rep = timed.report
     return Trajectory._wrap(timed.trajectory, bool(rep.ok), rep.summary())
 

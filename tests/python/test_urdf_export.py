@@ -284,5 +284,5 @@ def test_api_export_urdf_roundtrip(tmp_path):
 
 
 def test_api_version_bumped():
-    assert api.__api_version__ == "1.1"
+    assert api.__api_version__ == "1.2"
     assert hasattr(api, "export_urdf") and hasattr(api, "generate_report")

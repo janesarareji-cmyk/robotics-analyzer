@@ -13,7 +13,7 @@ Import: `import robotics_api as api`. The repo root and `bindings/` must be on `
 ## Version and compatibility rule
 
 `robotics_api.__api_version__ = "{API_VERSION}"` (`MAJOR.MINOR`, semantic; 1.1 added `export_urdf` and
-`generate_report`):
+`generate_report`, 1.2 added `time_parametrize(..., method="topp")`):
 
 -   MINOR (1.0 -> 1.1): additive only (new function, new optional argument, new key in a returned dict,
     new attribute). A script written for `1.x` keeps working on every later `1.y`.

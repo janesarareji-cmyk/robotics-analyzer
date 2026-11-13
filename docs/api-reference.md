@@ -12,8 +12,8 @@ Import: `import robotics_api as api`. The repo root and `bindings/` must be on `
 
 ## Version and compatibility rule
 
-`robotics_api.__api_version__ = "1.1"` (`MAJOR.MINOR`, semantic; 1.1 added `export_urdf` and
-`generate_report`):
+`robotics_api.__api_version__ = "1.2"` (`MAJOR.MINOR`, semantic; 1.1 added `export_urdf` and
+`generate_report`, 1.2 added `time_parametrize(..., method="topp")`):
 
 -   MINOR (1.0 -> 1.1): additive only (new function, new optional argument, new key in a returned dict,
     new attribute). A script written for `1.x` keeps working on every later `1.y`.
@@ -379,7 +379,7 @@ Samples every ``dt`` seconds (last sample at the duration): dict ``t, q, qd, qdd
 ### `time_parametrize`
 
 ```python
-time_parametrize(path: Any, robot: Robot, vmax: Any = None, amax: Any = None, interpolation: str = 'cubic') -> Trajectory
+time_parametrize(path: Any, robot: Robot, vmax: Any = None, amax: Any = None, interpolation: str = 'cubic', method: str = 'scale') -> Trajectory
 ```
 
 Timed trajectory through the waypoints of ``path`` (array ``(n, n_dof)``, rad or m).
@@ -388,6 +388,11 @@ Timed trajectory through the waypoints of ``path`` (array ``(n, n_dof)``, rad or
 limits (1 where none) and 2. Segment times are scaled up until no velocity or acceleration
 limit is violated. Cubic interpolation falls back to linear when the spline would leave the
 joint limits. Returns a ``Trajectory`` (``ok``, ``report``).
+
+``method="topp"`` (API 1.2): time-optimal parametrisation (TOPP-RA) that also respects the
+joint effort limits (torque, gravity on, friction left out of the solve). It raises
+``PlanningError`` when the torque limits cannot be met (for example the holding torque at
+the start or end exceeds the limit). ``method="scale"`` (default) keeps the old behaviour.
 
 Example:
 

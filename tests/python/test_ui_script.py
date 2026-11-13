@@ -66,7 +66,7 @@ def test_run_editor_text_output_in_panel_and_log(win):
     assert p.run_button.isEnabled() is False and p.cancel_button.isEnabled() is True
     wait(win)
     out = p.output_text()
-    assert "from the editor" in out and "1.1" in out and "[err] warn" in out
+    assert "from the editor" in out and "1.2" in out and "[err] warn" in out
     log = win.log_panel.toPlainText()
     assert "[script] from the editor" in log and "[script stderr] warn" in log
     assert p.status_text() == "Finished"

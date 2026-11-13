@@ -115,6 +115,10 @@ class PlanningPanel(QWidget):
         self._resolution.setSingleStep(0.005)
         self._resolution.setValue(DEFAULT_RESOLUTION)
         form.addRow("Edge resolution", self._resolution)
+        self._time_method = QComboBox()
+        self._time_method.addItem("Scale (velocity / acceleration)", "scale")
+        self._time_method.addItem("Time-optimal (torque limits)", "topp")
+        form.addRow("Timing", self._time_method)
         self._chk_shortcut = QCheckBox("Shortcut path")
         self._chk_shortcut.setChecked(True)
         form.addRow("", self._chk_shortcut)
@@ -299,6 +303,15 @@ class PlanningPanel(QWidget):
         idx = self._planner.findData(cur)
         self._planner.setCurrentIndex(idx if idx >= 0 else 0)
 
+    def time_method(self) -> str:
+        """``"scale"`` or ``"topp"`` (F1.3); not part of ``options()`` (those go to the planner)."""
+        return str(self._time_method.currentData())
+
+    def set_time_method(self, method: str) -> None:
+        idx = self._time_method.findData(method)
+        if idx >= 0:
+            self._time_method.setCurrentIndex(idx)
+
     def options(self) -> dict:
         return dict(planner=self._planner.currentData(), time_limit=float(self._time_limit.value()),
                     seed=int(self._seed.value()), resolution=float(self._resolution.value()),
@@ -335,6 +348,7 @@ class PlanningPanel(QWidget):
                 self._progress.emit(int(it))
 
         plugin_planners = dict(self._plugin_planners)
+        time_method = self._time_method.currentData()
 
         def work():
             world = None
@@ -350,7 +364,7 @@ class PlanningPanel(QWidget):
                 res = plan(model, start, goal, world, (lo, hi), cancel=evt, progress=progress, **opts)
             timed = None
             if res.success:
-                timed = time_parametrize(res.path, model, collision=world)
+                timed = time_parametrize(res.path, model, collision=world, method=time_method)
             return res, timed
 
         task = FunctionTask(work)       # connect before submit: a fast task must not lose its result
