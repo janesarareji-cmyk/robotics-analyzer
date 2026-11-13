@@ -81,6 +81,13 @@ class RobotView:
         self._path_actor: Any = None
         self._path_points: np.ndarray | None = None
 
+        # U3.5 collision highlight: link indices, env object indices, overlay marker actor
+        self._hl_links: set[int] = set()
+        self._hl_env: set[int] = set()
+        self._hl_actor: Any = None
+        self._hl_frames: list[np.ndarray] | None = None
+        self._visual_rgba: list[list[float]] = []
+
         # R7.6 ghosts: translucent static copies of the robot, key -> (actors, tcp 4x4)
         self._ghosts: dict[Any, tuple[list[Any], np.ndarray]] = {}
 
@@ -318,6 +325,7 @@ class RobotView:
         for actor in self._visual_actors:
             actor.visibility = self._show_visuals
         self._apply_marker_visibility()
+        self._update_highlight_overlay()
         self._render()
 
     def _apply_marker_visibility(self) -> None:
@@ -348,6 +356,7 @@ class RobotView:
         self._visual_actors.clear()
         self._visual_isos.clear()
         self._visual_links.clear()
+        self._visual_rgba.clear()
 
     def _build_visual_actors(self) -> None:
         from app.importers.visuals import load_visual_mesh, visual_origin_iso
@@ -367,7 +376,9 @@ class RobotView:
             self._visual_actors.append(actor)
             self._visual_isos.append(iso)
             self._visual_links.append(v.link_index)
+            self._visual_rgba.append(rgba)
         self._apply_marker_visibility()
+        self._apply_collision_highlight()
 
     def _update_visual_matrices(self, frames: list[np.ndarray]) -> None:
         for actor, iso, li in zip(self._visual_actors, self._visual_isos,
@@ -388,6 +399,8 @@ class RobotView:
         self.set_tcp_path(None)
         self.clear_ghosts()
         self._remove_floor()
+        self._hl_links = set()
+        self._hl_env = set()
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -610,6 +623,12 @@ class RobotView:
                 except Exception:
                     pass
 
+        if self._hl_actor is not None:
+            try:
+                self._plotter.remove_actor(self._hl_actor)
+            except Exception:
+                pass
+            self._hl_actor = None
         self._frame_actors.clear()
         self._tcp_actor = None
         self._polyline_actor = None
@@ -637,6 +656,7 @@ class RobotView:
 
         frames = fk_result["frames"]
         tcp = fk_result["tcp"]
+        self._hl_frames = [np.asarray(f) for f in frames]
 
         current_scale = self._calculate_scale(model)
         scale_changed = (
@@ -665,8 +685,80 @@ class RobotView:
                 self._floor_actors.clear()
         else:
             self._update_in_place(model, frames, tcp, fk_result)
+        self._update_highlight_overlay()
 
         self._render()
+
+    # ------------------------------------------------------------------
+    # U3.5 collision highlight
+    # ------------------------------------------------------------------
+
+    HIGHLIGHT_COLOR = "#ff3030"
+
+    @property
+    def collision_links(self) -> set[int]:
+        """Link indices drawn red."""
+        return set(self._hl_links)
+
+    @property
+    def collision_env(self) -> set[int]:
+        """Environment object indices drawn red."""
+        return set(self._hl_env)
+
+    @property
+    def highlight_actor(self) -> Any:
+        """Red markers for colliding links that have no visible mesh (None when not needed)."""
+        return self._hl_actor
+
+    def visual_color(self, i: int) -> tuple:
+        """Current (r, g, b) of visual actor ``i`` (test helper)."""
+        return tuple(self._visual_actors[i].prop.color)[:3]
+
+    def set_collision_highlight(self, links: Any = (), env: Any = ()) -> None:
+        """Colliding link visuals (or a marker when the link has no mesh) turn red; others normal."""
+        self._hl_links = {int(i) for i in links}
+        self._hl_env = {int(i) for i in env}
+        self._apply_collision_highlight()
+        self._render()
+
+    def _apply_collision_highlight(self) -> None:
+        for actor, li, rgba in zip(self._visual_actors, self._visual_links, self._visual_rgba):
+            try:
+                if li in self._hl_links:
+                    actor.prop.color = self.HIGHLIGHT_COLOR
+                    actor.prop.opacity = 1.0
+                else:
+                    actor.prop.color = rgba[:3]
+                    actor.prop.opacity = rgba[3]
+            except Exception:
+                pass
+        self._update_highlight_overlay()
+
+    def _update_highlight_overlay(self) -> None:
+        """Red spheres at the origin of colliding links without a visible visual mesh."""
+        import pyvista as pv
+
+        if self._hl_actor is not None:
+            try:
+                self._plotter.remove_actor(self._hl_actor)
+            except Exception:
+                pass
+            self._hl_actor = None
+        frames = self._hl_frames
+        if not self._hl_links or not frames:
+            return
+        drawn = {li for a, li in zip(self._visual_actors, self._visual_links)
+                 if self._show_visuals and a is not None}
+        need = [i for i in sorted(self._hl_links) if i not in drawn and 0 <= i < len(frames)]
+        if not need:
+            return
+        r = max(0.015, 0.03 * float(self._last_scale or 1.0))
+        meshes = [pv.Sphere(radius=r, center=tuple(frames[i][:3, 3])) for i in need]
+        mesh = meshes[0]
+        for m in meshes[1:]:
+            mesh = mesh.merge(m)
+        self._hl_actor = self._plotter.add_mesh(mesh, color=self.HIGHLIGHT_COLOR,
+                                                reset_camera=False, pickable=False)
 
     def highlight_joint(self, index: int | None) -> None:
         """Draw the marker of joint `index` 1.6x larger; reset the previous one."""

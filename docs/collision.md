@@ -77,3 +77,16 @@ add/remove shape, ACM edit list. Environment shape k has pair id `-1 - k`.
 New optional members: `collision.json` (ACM edits, environment, fit mode; written only when not
 default) and `configs.json` (named joint poses). Files 1.0.x-1.2.x load with `collision = None`
 and an empty config store. Details: `docs/trajectory.md`.
+
+## Red highlight (U3.5)
+`CollisionService.collision_changed` drives `RobotView.set_collision_highlight(links, env)`: the
+visual mesh of every colliding link turns red (#ff3030, opacity 1); other links return to their
+own colour. A colliding link with no visible mesh (meshes hidden, or a model without visuals) gets
+a red sphere at its frame origin. The status bar shows "Collision: A touches B". The highlight is
+cleared when blocking is switched off, and when another project loads.
+
+## Start pose (U3.4b)
+After an URDF import, the auto-ACM worker also checks the start pose with the new matrix and the
+floor. If it collides, the nearest free pose (mid-range, 0.25-step blends towards it, then seeded
+random samples; smallest L2 distance to the original) becomes the start pose; the log says so.
+Code: `app/start_pose.py`.

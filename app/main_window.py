@@ -995,6 +995,7 @@ class MainWindow(QMainWindow):
         Ghost set_model drops configurations whose length differs from the robot DOF count.
         """
         self._collision_service.set_project(project)
+        self._viewport.robot_view.set_collision_highlight()
         gp = self._ghost_panel
         gp.set_store(project.configs if project is not None else None)
         gp.set_model(model)
@@ -1038,6 +1039,13 @@ class MainWindow(QMainWindow):
         self._sim_panel.set_pose_check(self._pose_check)
         self._sim_panel.collision_stopped.connect(self._on_collision_stopped)
         self._action_collision.toggled.connect(self._on_collision_toggled)
+        svc.collision_changed.connect(self._on_collision_highlight)
+
+    def _on_collision_highlight(self, res: Any) -> None:
+        """U3.5: colliding links (and touched objects) turn red in the viewport."""
+        self._viewport.robot_view.set_collision_highlight(res.links, res.env_ids)
+        if not res.ok and res.text():
+            self.set_status(f"Collision: {res.text()}")
 
     def _on_collision_toggled(self, on: bool) -> None:
         self._settings.set_collision_enabled(on)

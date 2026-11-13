@@ -349,3 +349,7 @@ Playback stops at the last free sample ("Playback stopped: collision at t = ... 
 button off to pass through shapes. If a pose already touches something (floor, for example), moves
 that do not add a contact or push an existing one deeper than 1 mm are allowed, so you can always
 move away.
+
+Colliding links turn red in the viewport while a pose touches something (it can happen at a start
+pose or with blocking off). A robot whose imported start pose collides starts at the nearest free
+pose instead (see the log).

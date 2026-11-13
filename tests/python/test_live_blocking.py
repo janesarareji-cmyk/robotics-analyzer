@@ -324,3 +324,55 @@ def test_pass_through_playback_not_stopped(win):
     _tick(sp, 80)
     assert stops == []
     assert np.allclose(current_q(model), b, atol=1e-6)
+
+
+# ---------------------------------------------------------------- U3.5 red highlight
+def test_highlight_follows_collision_service(win):
+    load(win, "ur5")
+    a = random_free_q(win)
+    put_q(win, a)
+    dof, v = find_blocked_move(win, a)
+    b = a.copy()
+    b[dof] = v
+    svc = win.collision_service
+    rv = win.viewport.robot_view
+    res = svc.check(b)                                  # emits collision_changed
+    assert not res.ok
+    assert rv.collision_links == res.links and rv.collision_links
+    assert win._status_label.text().startswith("Collision:")
+    red = rv._visual_links
+    for i, li in enumerate(red):
+        if li in res.links:
+            assert rv.visual_color(i) == pytest.approx((1.0, 0.1882, 0.1882), abs=0.01)
+            assert rv._visual_actors[i].prop.opacity == 1.0
+        else:
+            assert rv.visual_color(i) != pytest.approx((1.0, 0.1882, 0.1882), abs=0.01)
+    svc.check(a)                                        # free again: back to normal
+    assert rv.collision_links == set()
+    for i in range(len(rv._visual_actors)):
+        assert rv.visual_color(i) == pytest.approx(tuple(rv._visual_rgba[i][:3]), abs=0.005)
+
+
+def test_highlight_marker_without_meshes(win):
+    load(win, "ur5")
+    rv = win.viewport.robot_view
+    rv.set_show_visuals(False)
+    rv.set_collision_highlight({2})
+    assert rv.highlight_actor is not None
+    rv.set_collision_highlight(set())
+    assert rv.highlight_actor is None
+    rv.set_show_visuals(True)
+    rv.set_collision_highlight({2})
+    assert rv.highlight_actor is None            # link 2 has a mesh: the mesh turns red
+
+
+def test_highlight_cleared_on_collision_off(win):
+    load(win, "ur5")
+    a = random_free_q(win)
+    dof, v = find_blocked_move(win, a)
+    b = a.copy()
+    b[dof] = v
+    win.collision_service.check(b)
+    assert win.viewport.robot_view.collision_links
+    win.collision_action.setChecked(False)
+    assert win.viewport.robot_view.collision_links == set()
