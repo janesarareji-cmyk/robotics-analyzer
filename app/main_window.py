@@ -44,6 +44,7 @@ from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
 from app import __version__
+from app.viewport.view_tools import LinkPicker, ViewButtons, apply_view
 from app.cartesian_jog import CartesianJog
 from app.panels.jog_panel import JogPanel
 from app.panels.start_screen import StartScreen, attach as _attach_start
@@ -485,6 +486,14 @@ class MainWindow(QMainWindow):
         self._tcp_drag.committed.connect(self._on_tcp_drag_committed)
         self._tcp_drag.reachable_changed.connect(self._on_tcp_reachable)
         self._action_drag_tcp.toggled.connect(self._tcp_drag.set_enabled)
+
+        # U5.8: view buttons (Front, Top, Side, Iso, Fit), hover name and click on a link
+        self._view_buttons = ViewButtons(self._viewport)
+        self._view_buttons.view_requested.connect(lambda n: apply_view(self._viewport.plotter, n))
+        self._link_picker = LinkPicker(
+            self._viewport, lambda: self._project_controller.robot,
+            enabled_fn=lambda: not self._target_panel_picking(), parent=self)
+        self._link_picker.link_clicked.connect(self._on_link_clicked)
 
         # U5.5: start screen over the 3D view until a robot is loaded
         self._start_screen = StartScreen()
@@ -967,17 +976,35 @@ class MainWindow(QMainWindow):
     def start_screen(self) -> StartScreen:
         return self._start_screen
 
+    def _target_panel_picking(self) -> bool:
+        tp = getattr(self, "_target_panel", None)
+        return bool(tp is not None and tp._btn_click.isChecked())
+
+    def _on_link_clicked(self, index: int) -> None:
+        """A link was clicked in the 3D view: select it in the model tree (and Properties)."""
+        self._model_panel.select("link", index)
+
+    @property
+    def link_picker(self) -> LinkPicker:
+        return self._link_picker
+
+    @property
+    def view_buttons(self) -> ViewButtons:
+        return self._view_buttons
+
     def _refresh_start_screen(self) -> None:
         """Show the start screen while no robot is loaded; list the recent projects."""
         has_robot = self._project_controller.robot is not None
         self._start_screen.set_recent(self._settings.recent_projects())
         self._start_screen.setVisible(not has_robot)
+        self._view_buttons.setVisible(has_robot)
         if not has_robot:
             self._start_screen.raise_()
 
     def _on_project_opened(self, project: ProjectData) -> None:
         """Update UI when a project is opened or created."""
         self._start_screen.setVisible(project.robot_model is None)
+        self._view_buttons.setVisible(project.robot_model is not None)
         self._action_save.setEnabled(True)
         self._action_save_as.setEnabled(True)
         self._action_close.setEnabled(True)

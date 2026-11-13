@@ -25,7 +25,8 @@ class JogPanel(QGroupBox):
         lay.setContentsMargins(6, 8, 6, 6)
         lay.setSpacing(6)
 
-        opts = QHBoxLayout()
+        opts = QGridLayout()
+        opts.setHorizontalSpacing(6)
         self._lin = QComboBox()
         for v in LIN_STEPS_MM:
             self._lin.addItem(f"{v:g} mm", v)
@@ -43,9 +44,12 @@ class JogPanel(QGroupBox):
         self._frame.addItem("Tool frame", "tool")
         self._frame.setToolTip("Move along the axes of the robot base, or along the axes of the tool")
         self._frame.setAccessibleName("Jog frame")
-        for label, box in (("Move", self._lin), ("Turn", self._ang), ("In", self._frame)):
-            opts.addWidget(QLabel(label))
-            opts.addWidget(box)
+        opts.addWidget(QLabel("Move"), 0, 0)
+        opts.addWidget(self._lin, 0, 1)
+        opts.addWidget(QLabel("Turn"), 0, 2)
+        opts.addWidget(self._ang, 0, 3)
+        opts.addWidget(QLabel("In"), 1, 0)
+        opts.addWidget(self._frame, 1, 1, 1, 3)
         lay.addLayout(opts)
 
         grid = QGridLayout()

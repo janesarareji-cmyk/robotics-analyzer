@@ -16,11 +16,11 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushBu
 from app.sample_robots import list_sample_robots
 
 COLUMNS = 3
-THUMB = QSize(260, 170)
+THUMB = QSize(200, 131)
 
 STYLE = """
 QWidget#start_screen { background: #1a1a2e; }
-QLabel#start_title { color: #ffffff; font-size: 22pt; font-weight: 600; }
+QLabel#start_title { color: #ffffff; font-size: 20pt; font-weight: 600; }
 QLabel#start_sub { color: #c8c8d4; font-size: 11pt; }
 QLabel#start_head { color: #e0e0e8; font-size: 12pt; font-weight: 600; }
 QToolButton#start_card { color: #e8e8f0; background: #24243a; border: 1px solid #3a3a55;
@@ -52,8 +52,8 @@ class StartScreen(QWidget):
         self._cards: dict[str, QToolButton] = {}
         self._recent_buttons: list[QPushButton] = []
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(40, 24, 40, 24)
-        outer.setSpacing(12)
+        outer.setContentsMargins(32, 16, 32, 16)
+        outer.setSpacing(8)
         title = QLabel("Robotics Analyzer")
         title.setObjectName("start_title")
         sub = QLabel("Pick a sample robot to start. Then move it, set a target, plan around objects and simulate.")
@@ -66,6 +66,7 @@ class StartScreen(QWidget):
         outer.addWidget(head)
         self._grid = QGridLayout()
         self._grid.setSpacing(12)
+        self._grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         outer.addLayout(self._grid)
         self._build_cards()
         row = QHBoxLayout()
@@ -98,6 +99,7 @@ class StartScreen(QWidget):
             btn.setText(title)
             btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
             btn.setIconSize(THUMB)
+            btn.setFixedSize(THUMB.width() + 24, THUMB.height() + 46)
             thumb = Path(path).parent / "thumb.png"
             if thumb.is_file():
                 btn.setIcon(QIcon(QPixmap(str(thumb))))
