@@ -46,6 +46,7 @@ _VISUALS_FILE = "visuals.json"
 _TRAJ_FILE = "trajectory.json"
 _COLLISION_FILE = "collision.json"
 _CONFIGS_FILE = "configs.json"
+_TARGETS_FILE = "targets.json"
 _ASSET_DIR = "assets"
 
 log = logging.getLogger("robotics_analyzer.project")
@@ -110,6 +111,9 @@ def _write_archive(project: ProjectData, target: Path) -> None:
         configs = getattr(project, "configs", None)
         if configs is not None and len(configs) > 0:
             _write_json(zf, _CONFIGS_FILE, configs.to_dict())
+        targets = getattr(project, "targets", None)
+        if targets is not None and len(targets) > 0:
+            _write_json(zf, _TARGETS_FILE, targets.to_dict())
     with open(target, "rb+") as fh:
         os.fsync(fh.fileno())
 
@@ -206,6 +210,7 @@ def load(path: str | Path) -> ProjectData:
             trajectory = _read_trajectory(zf, names)
             collision = _read_collision(zf, names)
             configs = _read_configs(zf, names)
+            targets = _read_targets(zf, names)
 
     except zipfile.BadZipFile as exc:
         raise ProjectSerializationError(
@@ -239,6 +244,7 @@ def load(path: str | Path) -> ProjectData:
         trajectory=trajectory,
         collision=collision,
         configs=configs,
+        targets=targets,
         migrated_from=file_version if steps else None,
     )
 
@@ -359,6 +365,18 @@ def _read_configs(zf: zipfile.ZipFile, names: list[str]) -> Any:
     except (KeyError, TypeError, ValueError) as exc:
         log.warning("Invalid configurations in project archive ignored: %s", exc)
         return ConfigStore()
+
+
+def _read_targets(zf: zipfile.ZipFile, names: list[str]) -> Any:
+    """targets.json -> TargetStore. Absent or invalid: empty store (U4a.1, optional member)."""
+    from app.target import TargetStore
+    if _TARGETS_FILE not in names:
+        return TargetStore()
+    try:
+        return TargetStore.from_dict(_read_json(zf, _TARGETS_FILE))
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        log.warning("Invalid targets in project archive ignored: %s", exc)
+        return TargetStore()
 
 
 def _read_json(zf: zipfile.ZipFile, name: str) -> Any:

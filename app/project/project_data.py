@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.configs.store import ConfigStore
+from app.target import TargetStore
 
 
 # Current file format version. Increment on breaking schema changes.
@@ -163,6 +164,7 @@ class ProjectData:
     trajectory: Any = None         # app.sim.trajectory.Trajectory or None (R6.4)
     collision: Any = None          # app.planning.collision.CollisionConfig or None (R7.2)
     configs: Any = field(default_factory=ConfigStore)   # named joint configurations (R7.6)
+    targets: Any = field(default_factory=TargetStore)   # named TCP targets (U4a.1, optional file)
     migrated_from: str | None = None   # format version of the file if it was migrated (R8.4)
 
     def __post_init__(self) -> None:
