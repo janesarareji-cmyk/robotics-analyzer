@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem, QHeaderView)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont
 
@@ -82,6 +84,12 @@ class ModelPanel(QWidget):
         self._tree = QTreeWidget()
         self._tree.setHeaderLabel("No robot loaded")
         self._tree.setStyleSheet("background: #1e1e1e; color: #cccccc; border: none;")
+        self._tree.setIndentation(12)
+        self._tree.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self._tree.header().setStretchLastSection(False)
+        self._tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents)
+        self._tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._tree.itemSelectionChanged.connect(self._on_selection)
         layout.addWidget(self._tree)
 

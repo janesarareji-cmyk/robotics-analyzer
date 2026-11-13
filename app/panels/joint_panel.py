@@ -87,7 +87,9 @@ class JointRow:
 
         # Widgets
         self.name_label = QLabel(joint_name)
-        self.name_label.setMinimumWidth(60)
+        self.name_label.setMinimumWidth(50)
+        self.name_label.setMaximumWidth(110)
+        self.name_label.setToolTip(joint_name)
         self.name_label.setStyleSheet("font-weight: 500;")
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
@@ -95,15 +97,17 @@ class JointRow:
         max_slider = int(math.ceil(self.upper_disp * SLIDER_SCALE))
         self.slider.setRange(min_slider, max_slider)
         self.slider.setTracking(True)
+        self.slider.setMinimumWidth(60)
 
         self.spinbox = QDoubleSpinBox()
         self.spinbox.setRange(self.lower_disp, self.upper_disp)
         self.spinbox.setDecimals(self.decimals)
         self.spinbox.setSingleStep(self.step)
-        self.spinbox.setMinimumWidth(80)
+        self.spinbox.setMinimumWidth(70)
+        self.spinbox.setMaximumWidth(90)
 
         self.unit_label = QLabel(self.unit)
-        self.unit_label.setMinimumWidth(25)
+        self.unit_label.setMinimumWidth(28)
         self.unit_label.setStyleSheet("color: #888888;")
 
         self.warning_label = QLabel("⚠️")
@@ -193,16 +197,13 @@ class JointPanel(QWidget):
         joints_vbox = QVBoxLayout(self._joints_group)
         joints_vbox.setContentsMargins(4, 4, 4, 4)
 
-        # Scroll area for many joints
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        # No inner scroll area: the dock's outer scroll area handles overflow.
         self._rows_container = QWidget()
         self._rows_layout = QGridLayout(self._rows_container)
         self._rows_layout.setContentsMargins(2, 2, 2, 2)
         self._rows_layout.setSpacing(4)
-        scroll.setWidget(self._rows_container)
-        joints_vbox.addWidget(scroll)
+        self._rows_stretch_row = -1
+        joints_vbox.addWidget(self._rows_container)
 
         # Other branches: collapsible group (hidden when empty)
         self._branch_group = QGroupBox("Other branches")
@@ -230,7 +231,7 @@ class JointPanel(QWidget):
         btn_layout.addWidget(self._btn_reset)
         joints_vbox.addLayout(btn_layout)
 
-        main_layout.addWidget(self._joints_group, stretch=1)
+        main_layout.addWidget(self._joints_group, stretch=0)
 
         # TCP Pose Readout Group
         tcp_group = QGroupBox("TCP Pose (World Frame)")
@@ -242,6 +243,8 @@ class JointPanel(QWidget):
         self._lbl_pos.setStyleSheet("font-family: Consolas, monospace; font-size: 11px;")
         self._lbl_rot = QLabel("Rotation: Roll: 0.00°, Pitch: 0.00°, Yaw: 0.00°")
         self._lbl_rot.setStyleSheet("font-family: Consolas, monospace; font-size: 11px;")
+        self._lbl_pos.setWordWrap(True)
+        self._lbl_rot.setWordWrap(True)
         tcp_layout.addWidget(self._lbl_pos)
         tcp_layout.addWidget(self._lbl_rot)
 
@@ -251,6 +254,7 @@ class JointPanel(QWidget):
         tcp_layout.addWidget(self._btn_copy)
 
         main_layout.addWidget(tcp_group, stretch=0)
+        main_layout.addStretch(1)
 
     # ------------------------------------------------------------------
     # Public API
@@ -357,6 +361,9 @@ class JointPanel(QWidget):
                     widget.deleteLater()
         self._rows.clear()
         self._branch_rows.clear()
+        if self._rows_stretch_row >= 0:
+            self._rows_layout.setRowStretch(self._rows_stretch_row, 0)
+            self._rows_stretch_row = -1
         self._branch_group.setVisible(False)
         self._current_joint_signature = []
 
@@ -389,6 +396,9 @@ class JointPanel(QWidget):
                 self._rows.append(self._make_row(i, self._rows_layout, r))
             for r, i in enumerate(others):
                 self._branch_rows.append(self._make_row(i, self._branch_layout, r))
+            # Rows pack at the top: an empty stretch row absorbs spare height.
+            self._rows_stretch_row = len(chain)
+            self._rows_layout.setRowStretch(self._rows_stretch_row, 1)
             self._branch_group.setVisible(bool(others))
             self._current_joint_signature = signature
         finally:

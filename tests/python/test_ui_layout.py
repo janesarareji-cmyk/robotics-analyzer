@@ -48,7 +48,7 @@ def _visible(win) -> set:
 
 
 def test_default_viewport_is_large():
-    win = _make()
+    win = _make(1700, 1000)
     try:
         c = win.centralWidget()
         assert c.width() >= 0.55 * win.width()
@@ -224,3 +224,25 @@ def test_close_in_focus_mode_saves_normal_layout():
         assert "model_dock" in vis and "joint_dock" in vis
     finally:
         _close(w2)
+
+
+def test_side_bar_checked_only_for_current_tab():
+    win = _make()
+    try:
+        assert win.joint_dock.width() >= 360
+        win._action_view_ik.trigger()
+        QApplication.processEvents()
+        win._action_view_graphs.trigger()
+        QApplication.processEvents()
+        assert win._action_view_graphs.isChecked()
+        assert not win._action_view_ik.isChecked()
+        assert not win._action_view_joints.isChecked()
+        assert not win._ik_dock.isHidden() and not win.joint_dock.isHidden()
+        win._action_view_ik.trigger()          # covered but open: raise, do not hide
+        QApplication.processEvents()
+        assert win._action_view_ik.isChecked()
+        assert not win._action_view_graphs.isChecked()
+        assert not win._graph_dock.isHidden()
+        assert not win._action_view_joints.isChecked()
+    finally:
+        _close(win)

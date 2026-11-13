@@ -6,6 +6,8 @@ every handoff. Keep it short.
 
 ## Current
 
+-   **U1-fix committed (2026-11-13):** fixes from real-window screenshots: right dock 380 px, joint panel rows compact (inner scroll removed, names max 110 px + tooltip, TCP pose wraps), side bar checks only the shown tab (`_resync_dock_actions`), model tree indentation 12 + horizontal scroll, joint markers hidden when visual meshes shown. Full suite 1320 passed, 5 skipped, exit 0. test_default_viewport_is_large now 1700x1000 (at 1400x900 viewport 0.50 with 380 px dock).
+
 -   **U1 committed (2026-11-13, post v1.0-academic):** viewport-first layout (Properties tabbed left with Robot Model, Joints right, bottom log only under viewport, panels in scroll areas, min widths 200/260), side panel bar, Focus 3D (F11), Reset layout, layout version 2 (old saved dock state dropped once), File -> Open Sample Robot + toolbar button. New `robots/` folder: kuka_iiwa, panda, ur3, ur5, ur10, xarm5, xarm5_gripper (UFACTORY xArm 5 + xArm Gripper, user asked for "AG1010", no such product found, user chose xArm Gripper), xarm6, xarm7; xacro expanded, .dae converted to .stl, mesh paths relative, SOURCE.txt per robot. Tests: test_ui_layout.py, test_sample_robots.py. Full suite 1314 passed, 5 skipped, 1 failed: PRM cancel timing flake (test_audit_numerics.py::test_m7_prm_cancel_in_blocked_space, 0.511 s vs 0.5 s under load, passes alone; test_milestone_a1.py green). Close-in-Focus-mode test added. Exit code 1 from the one failure.
 
 -   **A1-fix committed:** `app/main.py` deletes the window via deleteLater + DeferredDelete before exit (app and `smoke()`), repo root put on sys.path (not when frozen) so `python app/main.py` works; 3 new tests in `tests/python/test_exit_clean.py`.
@@ -182,6 +184,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | F1.4 | Save shown ghost set (format 1.4.0) | test_configs.py, test_ui_ghosts.py, test_migration.py | stage-approved |
 | F1.5 | F1 milestone | test_milestone_f1.py | stage-approved |
 | U1 | Viewport-first layout + sample robots | test_ui_layout.py, test_sample_robots.py | committed |
+| U1-fix | UI fixes from screenshots | test_ui_layout.py, test_joint_panel.py, test_ui_tree.py, test_urdf_meshes.py | committed |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.

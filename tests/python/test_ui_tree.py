@@ -429,3 +429,11 @@ def test_saved_project_with_imported_robot_roundtrips(win, tmp_path):
     assert win.project_controller.open_project(win, path)
     assert win.model_panel.link_item_count == 3
     assert win.robot_view.branch_segments is not None
+
+
+def test_model_tree_indent_and_no_elide(qapp):
+    from PySide6.QtCore import Qt
+    from app.panels.model_panel import ModelPanel
+    p = ModelPanel()
+    assert p.tree.indentation() == 12
+    assert p.tree.textElideMode() == Qt.TextElideMode.ElideNone

@@ -223,9 +223,7 @@ class RobotView:
             self._polyline_actor.visibility = self._show_links
         if self._branch_actor is not None:
             self._branch_actor.visibility = self._show_links
-        for actor in self._marker_actors:
-            if actor is not None:
-                actor.visibility = self._show_links
+        self._apply_marker_visibility()
         self._render()
 
     def set_show_tcp(self, show: bool) -> None:
@@ -240,7 +238,16 @@ class RobotView:
         self._show_visuals = bool(show)
         for actor in self._visual_actors:
             actor.visibility = self._show_visuals
+        self._apply_marker_visibility()
         self._render()
+
+    def _apply_marker_visibility(self) -> None:
+        """Joint markers show with links, but not over shown visual meshes."""
+        covered = self._show_visuals and bool(self._visual_actors)
+        vis = self._show_links and not covered
+        for actor in self._marker_actors:
+            if actor is not None:
+                actor.visibility = vis
 
     # ------------------------------------------------------------------
     # Visuals (R3.5)
@@ -281,6 +288,7 @@ class RobotView:
             self._visual_actors.append(actor)
             self._visual_isos.append(iso)
             self._visual_links.append(v.link_index)
+        self._apply_marker_visibility()
 
     def _update_visual_matrices(self, frames: list[np.ndarray]) -> None:
         for actor, iso, li in zip(self._visual_actors, self._visual_isos,

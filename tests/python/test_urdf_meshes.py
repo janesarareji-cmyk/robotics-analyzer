@@ -432,3 +432,14 @@ def test_mesh_search_roots_setting_and_dialog(qapp):
         assert s.mesh_search_roots() == ["C:/a", "C:/b", "C:/c"]
     finally:
         s.set_mesh_search_roots(old)
+
+
+def test_joint_markers_hidden_over_visuals(win):
+    _import(win, PRIMS)
+    rv = win.robot_view
+    assert rv.marker_actors and rv.visual_actors
+    assert not any(a.visibility for a in rv.marker_actors)
+    win._action_show_visuals.setChecked(False)
+    assert all(a.visibility for a in rv.marker_actors)
+    win._action_show_visuals.setChecked(True)
+    assert not any(a.visibility for a in rv.marker_actors)

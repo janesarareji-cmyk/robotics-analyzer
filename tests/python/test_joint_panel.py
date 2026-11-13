@@ -319,3 +319,31 @@ def test_slider_drag_does_not_rebuild_dh_table_widgets(qapp):
     finally:
         win.close()
 
+
+
+def test_rows_pack_at_top(qapp):
+    panel = JointPanel()
+    panel.resize(360, 900)
+    panel.set_model(make_test_arm(6))
+    panel.show()
+    qapp.processEvents()
+    r0, r1 = panel.rows[0], panel.rows[1]
+    dy = r1.spinbox.mapTo(panel, r1.spinbox.rect().topLeft()).y()         - r0.spinbox.mapTo(panel, r0.spinbox.rect().topLeft()).y()
+    assert 0 < dy < 60
+    assert r0.name_label.maximumWidth() <= 110
+    panel.close()
+
+
+def test_all_rows_visible_7_joints(qapp):
+    panel = JointPanel()
+    panel.resize(380, 1000)
+    panel.set_model(make_test_arm(7))
+    panel.show()
+    qapp.processEvents()
+    assert len(panel.rows) == 7
+    for r in panel.rows:
+        top = r.spinbox.mapTo(panel, r.spinbox.rect().topLeft())
+        bot = r.spinbox.mapTo(panel, r.spinbox.rect().bottomRight())
+        assert panel.rect().contains(top) and panel.rect().contains(bot)
+        assert not r.spinbox.visibleRegion().isEmpty()
+    panel.close()

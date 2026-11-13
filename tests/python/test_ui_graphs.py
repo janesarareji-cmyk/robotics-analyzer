@@ -165,8 +165,12 @@ def test_no_robot_is_safe(qapp):
     assert gp.plot.curve_count == 0
 
 
-def test_main_window_graphs_dock_hidden_and_wired(qapp):
+def test_main_window_graphs_dock_hidden_and_wired(qapp, monkeypatch):
     from app.main_window import MainWindow
+    from app.settings import AppSettings
+    # isolate from the real saved layout (it may have the Graphs dock open)
+    monkeypatch.setattr(AppSettings, "_ORGANIZATION", "RoboticsAnalyzer_test_graphs")
+    monkeypatch.setattr(AppSettings, "_APPLICATION", "RoboticsAnalyzer_test_graphs")
     mw = MainWindow()
     assert mw.graph_dock.isHidden() and not mw.graph_panel.timer.isActive()
     mw._action_view_graphs.setChecked(True)

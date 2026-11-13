@@ -94,7 +94,11 @@ def test_panels_hidden_at_start_and_toggle(win):
     win._action_view_analysis.trigger()
     QApplication.processEvents()
     assert win.ik_dock.isVisible() and win.analysis_dock.isVisible()
+    # IK is open but covered by the Analysis tab: a click raises it (U1-fix)
     win._action_view_ik.trigger()
+    QApplication.processEvents()
+    assert win.ik_dock.isVisible() and win._action_view_ik.isChecked()
+    win._action_view_ik.trigger()   # now current: a click hides it
     QApplication.processEvents()
     assert not win.ik_dock.isVisible()
 

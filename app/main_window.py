@@ -12,9 +12,9 @@ from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QLabel,
     QVBoxLayout, QMenuBar, QStatusBar, QToolBar,
     QMessageBox, QFileDialog, QInputDialog, QToolButton, QTabWidget, QMenu,
-    QScrollArea, QFrame
+    QScrollArea, QFrame, QTabBar
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QIcon
 
 from app.panels.log_panel import LogPanel
@@ -633,10 +633,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _apply_default_sizes(self) -> None:
-        """Default dock sizes: left 240, right 300, bottom 110 px."""
+        """Default dock sizes: left 240, right 380, bottom 110 px."""
         H, V = Qt.Orientation.Horizontal, Qt.Orientation.Vertical
         self.resizeDocks([self._model_dock], [240], H)
-        self.resizeDocks([self._joint_dock], [300], H)
+        self.resizeDocks([self._joint_dock], [380], H)
         self.resizeDocks([self._log_dock], [110], V)
 
     def _view_action_docks(self) -> list:
@@ -688,7 +688,27 @@ class MainWindow(QMainWindow):
             self._dock_opening = False
         # Showing a tabbed dock reports "hidden" once before it is the current tab;
         # the action must say checked now that the dock is open and raised.
-        self._sync_action(self._action_for_dock(dock), not dock.isHidden())
+        self._resync_dock_actions()
+        QTimer.singleShot(0, self._resync_dock_actions)
+
+    def _dock_is_current(self, dock: QDockWidget) -> bool:
+        """True if dock is open and, when tabbed, the shown tab of its group."""
+        if dock.isHidden():
+            return False
+        if dock.isFloating() or not self.tabifiedDockWidgets(dock):
+            return True
+        title = dock.windowTitle()
+        for tb in self.findChildren(QTabBar):
+            texts = [tb.tabText(i) for i in range(tb.count())]
+            if title in texts:
+                return tb.tabText(tb.currentIndex()) == title
+        return True
+
+    def _resync_dock_actions(self) -> None:
+        """Set every view action from its dock: checked = open and current tab."""
+        for action, dock in self._view_action_docks():
+            if dock is not None:
+                self._sync_action(action, self._dock_is_current(dock))
 
     def _on_dock_visibility(self, visible: bool, action: QAction, dock: QDockWidget) -> None:
         """Dock shown or hidden (or covered by another tab): mirror it in its action."""
