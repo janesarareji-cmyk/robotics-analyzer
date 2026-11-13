@@ -218,6 +218,16 @@ class MainWindow(QMainWindow):
         self._action_export_meshes.triggered.connect(self.export_meshes_files)
         for a in (self._action_export_report, self._action_export_urdf, self._action_export_meshes):
             self._menu_export.addAction(a)
+        self._menu_export.addSeparator()
+        self._action_export_video = QAction("Playback &video...", self)
+        self._action_export_video.setStatusTip("Save the loaded motion as MP4, GIF or PNG frames")
+        self._action_export_video.triggered.connect(lambda: self.export_video())
+        self._action_screenshot = QAction("&Screenshot", self)
+        self._action_screenshot.setToolTip("Save the 3D view as a PNG picture")
+        self._action_screenshot.setStatusTip("Save the 3D view as a PNG picture")
+        self._action_screenshot.triggered.connect(lambda: self.save_screenshot())
+        self._menu_export.addAction(self._action_export_video)
+        self._menu_export.addAction(self._action_screenshot)
 
         file_menu.addSeparator()
         self._action_run_script = QAction("Run &script...", self)
@@ -493,6 +503,8 @@ class MainWindow(QMainWindow):
         self._action_reset_camera.triggered.connect(self._on_reset_camera)
         toolbar.addAction(self._action_reset_camera)
         toolbar.addAction(self._action_focus)
+        self._action_screenshot.setIcon(glyph_icon("\u25ce"))
+        toolbar.addAction(self._action_screenshot)
         # tooltips with the shortcut
         for act in toolbar.actions():
             sc = act.shortcut().toString()
@@ -704,6 +716,22 @@ class MainWindow(QMainWindow):
         self._sim_panel.state_updated.connect(self._on_sim_state)
         self._sim_panel.log_requested.connect(self.log)
         self._sim_panel.trajectory_changed.connect(self._on_trajectory_changed)
+
+        # Playback bar over the 3D view (U6.5) and video export
+        from app.sim.video_export import VideoExporter
+        from app.viewport.playback_bar import PlaybackBar
+        self._playback_bar = PlaybackBar(self._viewport)
+        self._playback_bar.play_clicked.connect(self._bar_play)
+        self._playback_bar.pause_clicked.connect(self._sim_panel.pause_trajectory)
+        self._playback_bar.step_requested.connect(self._sim_panel.step_trajectory)
+        self._playback_bar.seek_requested.connect(self._sim_panel.seek_trajectory)
+        self._playback_bar.loop_toggled.connect(self._sim_panel.set_loop)
+        self._sim_panel.trajectory_changed.connect(lambda _t: self._refresh_playback_bar())
+        self._sim_panel.transport_changed.connect(self._refresh_playback_bar)
+        self._sim_panel.position_changed.connect(self._playback_bar.set_position)
+        self._video_exporter = VideoExporter(self._task_runner, self)
+        self._video_dialog: Any = None
+        self._video_resume = 0.0
 
         # Graphs dock (R6.6) - right side, tabbed with Joints. Hidden by default.
         self._graph_panel = GraphPanel()
@@ -2216,6 +2244,7 @@ class MainWindow(QMainWindow):
         self._matrix_panel.dispose()
         self._compare_panel.shutdown()
         self._overlays.dispose()
+        self._video_exporter.cancel()
         self._script_runner.cancel()
         self._workspace_panel.cancel()
         self._workspace_panel.dispose()
@@ -2437,6 +2466,114 @@ class MainWindow(QMainWindow):
     @property
     def overlay_dock(self) -> QDockWidget:
         return self._overlay_dock
+
+    # ------------------------------------------------------------------
+    # U6.5: playback bar, screenshot, video export
+    # ------------------------------------------------------------------
+
+    def _bar_play(self) -> None:
+        self._sim_panel.set_background_play(True)
+        self._sim_panel.play_trajectory()
+
+    def _refresh_playback_bar(self) -> None:
+        bar = self._playback_bar
+        sp = self._sim_panel
+        model = self._project_controller.robot
+        traj = sp.trajectory
+        dur = 0.0
+        if model is not None and traj is not None and traj.n_dof == model.dof():
+            dur = float(traj.duration)
+        if abs(dur - bar.duration) > 1e-9:
+            bar.set_duration(dur)
+        bar.set_playing(sp.is_playing)
+        bar.set_loop(sp.timeline.loop)
+
+    def grab_view(self, size: Any = None) -> Any:
+        """The 3D view as an (H, W, 3) uint8 array, overlays as shown. ``size`` (w, h) scales and crops."""
+        from PySide6.QtCore import QCoreApplication, Qt as _Qt
+        from app.sim.video_export import image_to_array
+        hide = [w for w in (self._view_buttons, self._playback_bar) if w.isVisible()]
+        for w in hide:
+            w.hide()
+        try:
+            self._viewport.plotter.render()
+            QCoreApplication.processEvents()
+            img = self._viewport.grab().toImage()
+        finally:
+            for w in hide:
+                w.show()
+        arr = image_to_array(img)
+        if float(arr.std()) < 1e-6:          # a Qt grab of the GL window can be flat: ask VTK instead
+            try:
+                shot = self._viewport.plotter.screenshot(None, return_img=True)
+                if shot is not None and getattr(shot, "ndim", 0) == 3:
+                    arr = np.ascontiguousarray(shot[:, :, :3], dtype=np.uint8)
+            except Exception:
+                pass
+        if size:
+            from PySide6.QtGui import QImage
+            h, w = arr.shape[:2]
+            qi = QImage(arr.data, w, h, arr.strides[0], QImage.Format.Format_RGB888).copy()
+            qi = qi.scaled(size[0], size[1], _Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                           _Qt.TransformationMode.SmoothTransformation)
+            x0, y0 = max(0, (qi.width() - size[0]) // 2), max(0, (qi.height() - size[1]) // 2)
+            arr = image_to_array(qi.copy(x0, y0, size[0], size[1]))
+        return arr
+
+    def save_screenshot_to(self, path: str) -> str:
+        from app.sim.video_export import _save_png
+        _save_png(__import__("pathlib").Path(path), self.grab_view())
+        self.set_status(f"Screenshot saved: {path}")
+        return path
+
+    def save_screenshot(self) -> str | None:
+        if self._project_controller.robot is None:
+            self.set_status("Open a robot first, then take a screenshot.")
+            return None
+        path, _ = QFileDialog.getSaveFileName(self, "Save screenshot", "screenshot.png", "PNG (*.png)")
+        if not path:
+            return None
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        return self.save_screenshot_to(path)
+
+    def export_video(self, modal: bool = True) -> Any:
+        """File -> Export -> Playback video: the loaded motion as MP4, GIF or PNG frames."""
+        sp = self._sim_panel
+        traj = sp.trajectory
+        model = self._project_controller.robot
+        if model is None or traj is None or traj.n_dof != model.dof() or traj.duration <= 0:
+            self.set_status("No motion to export: make one in the Target, Curve or Simulation dock first.")
+            return None
+        from app.panels.video_dialog import VideoExportDialog
+        self._video_resume = sp.playback_time
+        dlg = VideoExportDialog(self._video_exporter, traj.duration, self._make_frame_grabber,
+                                sp.seek_trajectory, default_dir=str(__import__("pathlib").Path.home()),
+                                parent=self)
+        self._video_dialog = dlg
+        for sig in (self._video_exporter.finished, self._video_exporter.cancelled,
+                    self._video_exporter.failed):
+            sig.connect(self._video_done)
+        if modal:
+            dlg.exec()
+            self._video_dialog = None
+        else:
+            dlg.show()
+        return dlg
+
+    def _make_frame_grabber(self, size: Any) -> Any:
+        self._sim_panel.pause_trajectory()
+        return lambda: self.grab_view(size)
+
+    def _video_done(self, *_args) -> None:
+        """Export ended (any way): go back to the position the motion had before."""
+        for sig in (self._video_exporter.finished, self._video_exporter.cancelled,
+                    self._video_exporter.failed):
+            try:
+                sig.disconnect(self._video_done)
+            except (RuntimeError, TypeError):
+                pass
+        self._sim_panel.seek_trajectory(self._video_resume)
 
     def _live_state(self) -> tuple:
         """(q, qd, qdd) for the live overlays: the simulation state while it is shown, else rest."""

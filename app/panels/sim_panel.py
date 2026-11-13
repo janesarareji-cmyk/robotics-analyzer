@@ -38,6 +38,7 @@ class SimPanel(QWidget):
     model_replaced = Signal()             # engine / recorder rebuilt (R6.6 graphs)
     position_changed = Signal(float)      # playback / seek time (R6.6 graph cursor)
     playback_finished = Signal()          # U4b.4: a trajectory played to its end
+    transport_changed = Signal()          # U6.5: play / pause state or trajectory changed
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -468,6 +469,28 @@ class SimPanel(QWidget):
             self._emit_state()
             self.position_changed.emit(0.0)
 
+    @property
+    def is_playing(self) -> bool:
+        """A trajectory is being played (clock running with a player)."""
+        e = self._engine
+        return e is not None and self._player is not None and e.clock.state == RUNNING
+
+    @property
+    def playback_time(self) -> float:
+        return float(self._player.t) if self._player is not None else 0.0
+
+    def step_trajectory(self, dt: float) -> None:
+        """U6.5: move the playback position by ``dt`` seconds (frame step); pauses a running play."""
+        traj = self._timeline.playable
+        if traj is None:
+            return
+        if self.is_playing:
+            self.pause_trajectory()
+        self.seek_trajectory(min(max(self.playback_time + float(dt), 0.0), traj.duration))
+
+    def set_loop(self, on: bool) -> None:
+        self._timeline._loop.setChecked(bool(on))
+
     def seek_trajectory(self, t: float) -> None:
         pl = self._ensure_player()
         if pl is None:
@@ -510,6 +533,7 @@ class SimPanel(QWidget):
         else:
             self._timer.stop()
         self._refresh_status()
+        self.transport_changed.emit()
 
     def _interval_ms(self) -> int:
         fps = float(getattr(self._settings, "render_framerate", DEFAULT_FPS) or DEFAULT_FPS)

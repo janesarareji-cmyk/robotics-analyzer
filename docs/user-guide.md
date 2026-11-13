@@ -434,4 +434,13 @@ Details: [user-interface.md](user-interface.md); review of the design: [ui-revie
 
 Open the **Overlays** dock (Analyze mode) or View -> Analysis overlays. Each overlay is a toggle with an
 opacity slider and a colour bar. Results are kept until the robot or its tool changes; "Recompute" makes
-a new one. Details: [overlays.md](overlays.md).
+a new one.
+
+-   **Reach map**: where the tool can reach, coloured by dexterity; a height slice; the voxel under a dragged target is outlined.
+-   **Singularity zones**: red / orange voxels for the arm singularities, by kind (wrist, elbow, shoulder), a threshold
+    slider (starts at the value of the Joints / Matrices bars) and a CSV export.
+-   **Joint load**: a torque and a speed bar next to each joint while you move, green / orange / red.
+-   **Playback bar** under the 3D view (play, frame step, scrub, loop), the **Screenshot** button and
+    File -> Export -> Playback video (MP4 if ffmpeg exists, GIF, PNG frames).
+
+Details: [overlays.md](overlays.md).

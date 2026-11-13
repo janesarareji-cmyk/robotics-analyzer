@@ -69,3 +69,23 @@ red above; a bar is full at 100 %.
     state. The bars follow the camera when you rotate or zoom.
 -   Refresh at most 30 Hz, the newest state is always drawn after the pause. Cost of one update (RNEA + ratios):
     0.2 ms on ur5. Gripper joints are not drawn.
+
+## Playback bar, screenshot and video
+
+-   **Playback bar**: when a motion is loaded (Simulation dock, Curve, Target) a bar appears at the bottom of
+    the 3D view: play / pause, one-frame step back and forward (1/30 s), the scrub slider, the time and Loop.
+    It drives the same player as the Simulation dock (`SimPanel.play_trajectory`, `seek_trajectory`,
+    `step_trajectory`); no second playback logic. The bar hides when there is no motion.
+-   **Screenshot**: toolbar button "Screenshot" (also File -> Export -> Screenshot) saves the 3D view as PNG, with the
+    overlays as shown.
+-   **File -> Export -> Playback video...** opens the export dialog: format, frame rate (default 30), size, file.
+    Frame `i` shows the time `i / fps`; the frame count is `round(duration * fps)` (a 2 s motion at 30 fps gives 60
+    frames). The frames are rendered on the GUI thread (one per timer tick, the window stays alive), and encoded in a
+    worker with a bounded queue. Cancel stops at once and removes the partial file.
+-   Formats (`app/sim/video_export.py`), only those that work on the machine are offered:
+    -   MP4: needs `imageio-ffmpeg` or an `ffmpeg` program on the PATH (frames go to ffmpeg as raw video, H.264).
+        Neither is installed here and the app adds no dependency, so on this machine MP4 is not offered.
+    -   GIF: Pillow (always present with PyVista). The GIF delay has 10 ms steps: 30 fps plays at 33 fps.
+    -   PNG frames: a folder `frame_0001.png`, ...
+-   Size: "Viewport size" is a grab of the view including the joint load bars; "1280 x 720" and "1920 x 1080" scale the
+    view up (and crop to the aspect), so make the 3D view large for a sharp result.
