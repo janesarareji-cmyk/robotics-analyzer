@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 import core_bridge as cb
+from app.gripper import gripper_dofs
 from app.panels.model_panel import joint_links, resolved_tcp_link
 
 # Multiplier for mapping continuous angles/displacements to integer QSlider
@@ -233,6 +234,25 @@ class JointPanel(QWidget):
 
         main_layout.addWidget(self._joints_group, stretch=0)
 
+        # Gripper group (U2.4): only when the robot has gripper DOFs.
+        self._gripper_group = QGroupBox("Gripper")
+        g_lay = QHBoxLayout(self._gripper_group)
+        self._btn_g_open = QPushButton("Open")
+        self._btn_g_close = QPushButton("Close")
+        self._g_slider = QSlider(Qt.Orientation.Horizontal)
+        self._g_slider.setRange(0, 100)
+        self._g_label = QLabel("Open 0 %")
+        g_lay.addWidget(self._btn_g_open)
+        g_lay.addWidget(self._btn_g_close)
+        g_lay.addWidget(self._g_slider, stretch=1)
+        g_lay.addWidget(self._g_label)
+        self._btn_g_open.clicked.connect(lambda: self.set_gripper(0.0))
+        self._btn_g_close.clicked.connect(lambda: self.set_gripper(1.0))
+        self._g_slider.valueChanged.connect(lambda v: self.set_gripper(v / 100.0))
+        self._gripper_group.setVisible(False)
+        self._gripper: list = []
+        main_layout.addWidget(self._gripper_group, stretch=0)
+
         # TCP Pose Readout Group
         tcp_group = QGroupBox("TCP Pose (World Frame)")
         tcp_layout = QVBoxLayout(tcp_group)
@@ -288,6 +308,7 @@ class JointPanel(QWidget):
         if self._model is None:
             self._clear_rows()
             self._baseline_q.clear()
+            self._update_gripper()
             return
 
         if save_baseline or not self._baseline_q:
@@ -309,6 +330,49 @@ class JointPanel(QWidget):
             self._rebuild_rows(new_sig, chain, others)
         else:
             self._sync_values_to_ui()
+        self._update_gripper()
+
+    @property
+    def gripper_group(self) -> QGroupBox:
+        return self._gripper_group
+
+    def set_gripper(self, closed_fraction: float) -> None:
+        """Move every gripper DOF to ``closed_fraction`` (0 = open, 1 = closed)."""
+        if self._model is None or not self._gripper:
+            return
+        f = min(max(float(closed_fraction), 0.0), 1.0)
+        self._updating = True
+        try:
+            for g in self._gripper:
+                v = g.value_at(f)
+                self._model.joints[g.joint_index].q = v
+            self._sync_gripper_slider(f)
+            self._sync_values_to_ui_force()
+        finally:
+            self._updating = False
+        self.q_changed.emit()
+
+    def _sync_values_to_ui_force(self) -> None:
+        for row in self._all_rows():
+            row.set_value(self._model.joints[row.joint_index].q)
+
+    def _sync_gripper_slider(self, f: float) -> None:
+        self._g_slider.blockSignals(True)
+        try:
+            self._g_slider.setValue(int(round(f * 100)))
+        finally:
+            self._g_slider.blockSignals(False)
+        self._g_label.setText(f"Closed {int(round(f * 100))} %")
+
+    def _update_gripper(self) -> None:
+        try:
+            self._gripper = gripper_dofs(self._model) if self._model is not None else []
+        except Exception:
+            self._gripper = []
+        self._gripper_group.setVisible(bool(self._gripper))
+        if self._gripper:
+            g = self._gripper[0]
+            self._sync_gripper_slider(g.fraction_of(self._model.joints[g.joint_index].q))
 
     @staticmethod
     def _split_joints(model: Any) -> tuple[list[int], list[int]]:

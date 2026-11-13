@@ -118,6 +118,9 @@ Joints (with the DH editor as a second tab) and the Log are open.
     link. **Robot -> Set TCP link...** chooses another link.
 -   **View -> Robot** toggles frames, links, the TCP marker and visual meshes in the 3D view.
 -   Joint values are in radians for revolute joints and metres for prismatic joints.
+-   **Gripper:** a robot with gripper DOFs (joint name with `drive_joint`, `finger` or `gripper`, not a
+    mimic joint; for example xArm 5 + Gripper and Panda) gets a Gripper group in the Joints panel with Open,
+    Close and an opening slider (0 % open, 100 % closed). Arm-only robots have no group.
 
 Forward kinematics, the Jacobian and singularity indicators are described in
 [jacobian-ik.md](jacobian-ik.md) and [compiled-model.md](compiled-model.md).
