@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -59,13 +59,15 @@ class SimPanel(QWidget):
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         lay = QVBoxLayout(self)
-        row = QHBoxLayout()
+        self._timeline = TimelinePanel()
+        lay.addWidget(self._timeline.detach_teach_group())   # U2-fix: Teach group on top
+        row = QGridLayout()
         self._btn_start = QPushButton("Start")
         self._btn_pause = QPushButton("Pause")
         self._btn_resume = QPushButton("Resume")
         self._btn_stop = QPushButton("Stop")
-        for b in (self._btn_start, self._btn_pause, self._btn_resume, self._btn_stop):
-            row.addWidget(b)
+        for i, b in enumerate((self._btn_start, self._btn_pause, self._btn_resume, self._btn_stop)):
+            row.addWidget(b, i // 2, i % 2)
         lay.addLayout(row)
         self._btn_start.clicked.connect(self.start)
         self._btn_pause.clicked.connect(self.pause)
@@ -92,7 +94,8 @@ class SimPanel(QWidget):
         self._gravity.setChecked(True)
         self._friction = QCheckBox("Friction on")
         self._friction.setChecked(True)
-        self._estimate = QCheckBox("Estimate torque (kinematic)")
+        self._estimate = QCheckBox("Estimate torque")
+        self._estimate.setToolTip("Estimate torque in kinematic mode")
         form.addRow("Mode", self._mode_combo)
         form.addRow("Integrator", self._integ_combo)
         form.addRow("dt", self._dt)
@@ -116,7 +119,6 @@ class SimPanel(QWidget):
         self._status = QLabel("No robot")
         self._status.setWordWrap(True)
         lay.addWidget(self._status)
-        self._timeline = TimelinePanel()
         lay.addWidget(self._timeline)
         lay.addStretch(1)
         tl = self._timeline

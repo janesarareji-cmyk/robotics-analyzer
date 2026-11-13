@@ -1481,6 +1481,10 @@ class MainWindow(QMainWindow):
             return
         from app.sample_robots import import_display_name
         name = import_display_name(path, result.model.metadata.name)
+        try:
+            result.model.metadata.name = name      # U2-fix: tree root = project display name
+        except Exception:
+            pass
         if not self._project_controller.import_robot(
             self, result.model, name, result.visuals, result.collisions
         ):

@@ -18,7 +18,7 @@ from typing import Callable
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton,
     QSlider, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -60,6 +60,11 @@ class TimelinePanel(QWidget):
         self._build_ui()
         self._update_controls()
 
+    def detach_teach_group(self) -> QWidget:
+        """Remove the Teach group from this panel and return it (SimPanel puts it on top)."""
+        self._outer.removeWidget(self._teach_group)
+        return self._teach_group
+
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         box = QGroupBox("Trajectory")
@@ -68,15 +73,21 @@ class TimelinePanel(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         # Teach group (U2.5): record the current pose as a waypoint, then play.
         teach = QGroupBox("Teach waypoints")
-        tlay = QHBoxLayout(teach)
-        self._btn_teach = QPushButton("Add current pose as waypoint")
+        self._teach_group = teach
+        tlay = QGridLayout(teach)
+        self._btn_teach = QPushButton("Add pose")
+        self._btn_teach.setToolTip("Add current pose as waypoint")
         self._btn_teach_undo = QPushButton("Undo last")
-        self._btn_teach_clear = QPushButton("Clear waypoints")
+        self._btn_teach_clear = QPushButton("Clear")
+        self._btn_teach_clear.setToolTip("Clear waypoints")
         self._btn_teach_play = QPushButton("Play")
         self._teach_count = QLabel("Waypoints: 0")
-        for w in (self._btn_teach, self._btn_teach_undo, self._btn_teach_clear,
-                  self._btn_teach_play, self._teach_count):
-            tlay.addWidget(w)
+        tlay.addWidget(self._btn_teach, 0, 0)
+        tlay.addWidget(self._btn_teach_undo, 0, 1)
+        tlay.addWidget(self._btn_teach_clear, 1, 0)
+        tlay.addWidget(self._btn_teach_play, 1, 1)
+        tlay.addWidget(self._teach_count, 2, 0, 1, 2)
+        self._outer = outer
         outer.addWidget(teach)
         outer.addWidget(box)
         self._btn_teach.clicked.connect(self.teach_add)
@@ -90,9 +101,9 @@ class TimelinePanel(QWidget):
         self._clamped = QCheckBox("Clamped ends")
         self._clamped.setChecked(True)
         row.addWidget(QLabel("Interpolation"))
-        row.addWidget(self._interp)
-        row.addWidget(self._clamped)
+        row.addWidget(self._interp, 1)
         lay.addLayout(row)
+        lay.addWidget(self._clamped)
 
         self._table = QTableWidget(0, 1)
         self._table.setMinimumHeight(120)
@@ -103,10 +114,13 @@ class TimelinePanel(QWidget):
         self._btn_del = QPushButton("Delete")
         self._btn_up = QPushButton("Up")
         self._btn_down = QPushButton("Down")
-        self._btn_capture = QPushButton("Capture current pose")
-        for b in (self._btn_add, self._btn_del, self._btn_up, self._btn_down, self._btn_capture):
-            row.addWidget(b)
-        lay.addLayout(row)
+        self._btn_capture = QPushButton("Capture")
+        self._btn_capture.setToolTip("Capture current pose")
+        grid = QGridLayout()
+        for i, b in enumerate((self._btn_add, self._btn_del, self._btn_up, self._btn_down,
+                               self._btn_capture)):
+            grid.addWidget(b, i // 3, i % 3)
+        lay.addLayout(grid)
 
         self._info = QLabel("")
         self._info.setWordWrap(True)
@@ -132,7 +146,7 @@ class TimelinePanel(QWidget):
         self._speed.setValue(1.0)
         self._speed.setSuffix("x")
         self._loop = QCheckBox("Loop")
-        row.addWidget(self._time_label)
+        lay.addWidget(self._time_label)
         row.addStretch(1)
         row.addWidget(self._speed)
         row.addWidget(self._loop)

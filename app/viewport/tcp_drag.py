@@ -83,6 +83,7 @@ class TcpDragController(QObject):
         else:
             self._finish()
             self._remove_widget()
+            self._set_reachable(True)       # U2-fix: clears "Target not reachable"
 
     def invalidate(self) -> None:
         """Robot replaced or edited: drop the compiled model and recreate the handle."""

@@ -22,6 +22,7 @@ from app.sample_robots import list_sample_robots
 from app.task_runner import Task
 
 MIN_ROBOTS = 2
+NAME_COL_MAX = 160          # px, robot name column (text elided, tooltip has the full name)
 
 
 class CompareTask(Task):
@@ -132,6 +133,9 @@ class ComparePanel(QWidget):
         self._table.setHorizontalHeaderLabels(cmp_mod.HEADERS)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setMinimumHeight(140)
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._table.setTextElideMode(Qt.TextElideMode.ElideRight)
         layout.addWidget(self._table, stretch=1)
         self._update_buttons()
 
@@ -285,8 +289,12 @@ class ComparePanel(QWidget):
         self._table.setRowCount(len(rows))
         for r, cells in enumerate(rows):
             for c, text in enumerate(cells):
-                self._table.setItem(r, c, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                item.setToolTip(text)
+                self._table.setItem(r, c, item)
         self._table.resizeColumnsToContents()
+        if self._table.columnWidth(0) > NAME_COL_MAX:
+            self._table.setColumnWidth(0, NAME_COL_MAX)
         self._bar.setValue(100)
         self._status.setText(f"Compared {len(rows)} robots (samples {self._samples.value()}, "
                              f"voxel {self._voxel.value():g} m).")
