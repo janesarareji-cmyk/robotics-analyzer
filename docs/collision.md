@@ -99,3 +99,15 @@ widget: drag it to move it (position only). The Collision panel lists the object
 loads name, size, xyz and rpy into the form, "Update selected" writes them back, "Remove selected"
 deletes. The viewport redraw is debounced 100 ms; the collision world rebuilds lazily at the next
 check. A touched object turns red. Code: `app/scene_objects.py`, `RobotView.set_env_objects`.
+
+## Grasp (U3.7)
+Closing the gripper (Joints panel gripper group) with a finger link within 5 mm of an object attaches
+the object: it leaves `collision.environment` and goes to `collision.attached` with
+`attached_to` = link name and a pose relative to that link, frozen at that moment. The carrier link
+is the TCP link, or the gripper base when the TCP link is a finger (xarm5_gripper), because a
+finger moves when the gripper opens. The grasped object moves with the arm, is drawn green, and
+collides with the floor, the objects and the arm links, but not with the gripper links (fingers,
+their parents, the carrier and its neighbours). Opening the gripper releases every grasped object
+back into `environment` at its current world pose; there is no gravity drop (it stays in the air).
+Status bar: "Grasped <name>" / "Released <name>". Saved in `collision.json` as `attached`
+(old files load without it). The planner and TOPP do not see attached objects. Code: `app/grasp.py`.

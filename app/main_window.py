@@ -1043,6 +1043,9 @@ class MainWindow(QMainWindow):
         svc.enabled = self._action_collision.isChecked()
         self._joint_panel.set_guard(g.filter)
         self._joint_panel.blocked.connect(self.set_status)
+        from app.grasp import GraspManager
+        self._grasp = GraspManager()
+        self._joint_panel.gripper_moved.connect(self._on_gripper_moved)
         self._tcp_drag.set_guard(g.filter)
         self._tcp_drag.blocked_changed.connect(self._on_tcp_blocked)
         self._ik_panel.set_guard(g.reject_jump)
@@ -1077,6 +1080,22 @@ class MainWindow(QMainWindow):
             self.set_status(f"Added {kind}: drag it, or edit it in the Collision panel")
         return ok
 
+    def _on_gripper_moved(self, f_before: float, f_requested: float, f_final: float) -> None:
+        """U3.7: closing on an object grasps it, opening releases it."""
+        project = self._project_controller.current_project
+        model = self._project_controller.robot
+        if project is None or model is None or not self._collision_service.enabled:
+            return
+        changed, msg = self._grasp.on_gripper(project, model, f_before, f_requested)
+        if not changed:
+            return
+        self._collision_panel.refresh()
+        self._collision_service.invalidate()
+        self._project_controller.mark_modified()
+        self._sync_env_objects()
+        self.set_status(msg)
+        self.log(f"[INFO] {msg}")
+
     def _on_object_selected(self, index: int) -> None:
         cfg = getattr(self._project_controller.current_project, "collision", None)
         env = list(cfg.environment) if cfg is not None else []
@@ -1094,6 +1113,11 @@ class MainWindow(QMainWindow):
         env = list(cfg.environment) if cfg is not None else []
         sel = self._collision_panel.selected_shape
         self._viewport.robot_view.set_env_objects(env, sel)
+        att = list(getattr(cfg, "attached", []) or []) if cfg is not None else []
+        from app.grasp import link_index
+        model = getattr(p, "robot_model", None)
+        self._viewport.robot_view.set_attached_objects(
+            att, [link_index(model, e.attached_to) if model is not None else -1 for e in att])
         self._object_drag.select(sel, env[sel] if 0 <= sel < len(env) else None)
         self._collision_service.invalidate()
 

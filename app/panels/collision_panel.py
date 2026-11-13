@@ -309,6 +309,10 @@ class CollisionPanel(QWidget):
         self.select_shape(len(self.config.environment) - 1)
         return True
 
+    def refresh(self) -> None:
+        """Redraw the lists after the project's collision data changed elsewhere (grasp)."""
+        self._refresh()
+
     @property
     def selected_shape(self) -> int:
         rows = self._env.selectionModel().selectedRows()

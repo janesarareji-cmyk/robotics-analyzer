@@ -56,7 +56,7 @@ def test_add_object_defaults(win, kind):
     assert o.xyz == pytest.approx(xyz)
     assert o.xyz[0] == pytest.approx(0.4, abs=1e-6) and o.xyz[1] == pytest.approx(0.0, abs=1e-6)
     h = {"box": 0.05, "cylinder": 0.05, "sphere": 0.05}[kind]
-    assert o.xyz[2] == pytest.approx(-0.001 + h)
+    assert o.xyz[2] == pytest.approx(-0.001 + 0.0005 + h)
     # 0.1 m size
     if kind == "box":
         assert o.params["size"] == [0.1, 0.1, 0.1]

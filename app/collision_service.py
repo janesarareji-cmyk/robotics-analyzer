@@ -128,7 +128,15 @@ class CollisionService(QObject):
         try:
             shapes = [s for s in shapes_from_project(p) if s.link >= 0]
             cfg = getattr(p, "collision", None) or CollisionConfig()
-            self._world = CollisionWorld(model, shapes, cfg)
+            ignore: dict = {}
+            att = list(getattr(cfg, "attached", []) or [])
+            if att:                                   # U3.7: grasped objects ride on their link
+                from app.grasp import attached_shapes, gripper_ignore_links
+                skip = gripper_ignore_links(model)
+                for s in attached_shapes(model, att):
+                    ignore[len(shapes)] = set(skip)
+                    shapes.append(s)
+            self._world = CollisionWorld(model, shapes, cfg, ignore)
         except Exception as exc:                       # missing fcl, bad shapes: pass-through
             self.error = str(exc)
             log.warning("collision world not built: %s", exc)

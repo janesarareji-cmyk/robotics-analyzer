@@ -358,3 +358,8 @@ Scene objects: toolbar "Add object" puts a box, cylinder or sphere (0.1 m) on th
 the robot. Drag the yellow box widget to move it, or select it in the Collision panel to type name,
 size, position and rotation ("Update selected"). Objects block the robot like the floor does, turn
 red when touched, and are saved in the project.
+
+Grasp: close the gripper (Joints panel) with an object between the fingers. The object is grasped
+("Grasped <name>", drawn green) and moves with the hand; opening the gripper releases it where it is
+(it does not fall). A grasped object still blocks against the floor, other objects and the arm, but
+not against the gripper itself. Planning ignores grasped objects.

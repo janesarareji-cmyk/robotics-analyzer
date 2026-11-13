@@ -125,6 +125,7 @@ class EnvShape:
     xyz: list = field(default_factory=lambda: [0.0, 0.0, 0.0])
     rpy: list = field(default_factory=lambda: [0.0, 0.0, 0.0])
     name: str = ""
+    attached_to: str = ""        # U3.7: link name; xyz/rpy are then relative to that link frame
 
     def __post_init__(self) -> None:
         if self.kind not in ("sphere", "box", "cylinder"):
@@ -135,15 +136,18 @@ class EnvShape:
         return Shape(self.kind, dict(self.params), -1, pose_matrix(self.xyz, self.rpy))
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "kind": self.kind, "params": dict(self.params),
-                "xyz": [float(v) for v in self.xyz], "rpy": [float(v) for v in self.rpy]}
+        d = {"name": self.name, "kind": self.kind, "params": dict(self.params),
+             "xyz": [float(v) for v in self.xyz], "rpy": [float(v) for v in self.rpy]}
+        if self.attached_to:
+            d["attached_to"] = self.attached_to
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "EnvShape":
         return cls(kind=d["kind"], params=dict(d.get("params", {})),
                    xyz=[float(v) for v in d.get("xyz", (0, 0, 0))],
                    rpy=[float(v) for v in d.get("rpy", (0, 0, 0))],
-                   name=d.get("name", ""))
+                   name=d.get("name", ""), attached_to=d.get("attached_to", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +172,7 @@ class CollisionConfig:
     environment: list = field(default_factory=list)    # list[EnvShape]
     fit_mode: str = DEFAULT_FIT_MODE                   # mesh fit used by shapes_from_geometry
     floor: bool = True                                 # U3.3: floor collision (plane under the base)
+    attached: list = field(default_factory=list)       # U3.7: grasped objects (EnvShape, attached_to set)
 
     def __post_init__(self) -> None:
         if self.fit_mode not in FIT_MODES:
@@ -175,7 +180,7 @@ class CollisionConfig:
 
     def is_default(self) -> bool:
         return (not self.edits and not self.environment and self.fit_mode == DEFAULT_FIT_MODE
-                and not self.auto and not self.auto_info and self.floor)
+                and not self.auto and not self.auto_info and self.floor and not self.attached)
 
     def source(self, a: int, b: int) -> str:
         """Where the check state of a pair comes from: ``user`` edit, ``auto`` or ``default``."""
@@ -218,6 +223,7 @@ class CollisionConfig:
             "acm_auto": [[a, b, r] for (a, b), r in sorted(self.auto.items())],
             "acm_auto_info": dict(self.auto_info),
             "environment": [e.to_dict() for e in self.environment],
+            **({"attached": [e.to_dict() for e in self.attached]} if self.attached else {}),
         }
 
     @classmethod
@@ -228,6 +234,7 @@ class CollisionConfig:
         auto = {_key(int(a), int(b)): str(r) for a, b, r in d.get("acm_auto", [])}
         return cls(edits=edits, auto=auto, floor=bool(d.get("floor", True)), auto_info=dict(d.get("acm_auto_info", {})),
                    environment=[EnvShape.from_dict(e) for e in d.get("environment", [])],
+                   attached=[EnvShape.from_dict(e) for e in d.get("attached", [])],
                    fit_mode=d.get("fit_mode", "obb"))   # old file without the key
 
 
@@ -365,11 +372,12 @@ class CollisionWorld:
     """
 
     def __init__(self, model: Any, shapes: Iterable[Shape],
-                 config: CollisionConfig | None = None):
+                 config: CollisionConfig | None = None, ignore: dict | None = None):
         if fcl is None:
             raise RuntimeError("python-fcl is not installed (pip install python-fcl)")
         self.model = model
         self.config = config if config is not None else CollisionConfig(floor=False)
+        self._ignore = {int(k): set(int(x) for x in v) for k, v in (ignore or {}).items()}
         self._cm = cb.compile(model)
         self.n_links = len(model.links)
         self.adjacent = {_key(int(p), int(c)) for p, c in cb.effective_links(model)}
@@ -429,6 +437,9 @@ class CollisionWorld:
                 a, b = int(self._link_of[i]), int(self._link_of[j])
                 if a == b:
                     continue
+                if (i in self._ignore and b in self._ignore[i]) or \
+                        (j in self._ignore and a in self._ignore[j]):
+                    continue                    # U3.7: grasped object vs gripper links
                 if self.config.checked(a, b, _key(a, b) in self.adjacent):
                     rr.append((i, j))
         self._rr = rr

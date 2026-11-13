@@ -90,6 +90,9 @@ class RobotView:
         # U3.6 environment objects: one actor per EnvShape
         self._env_actors: list[Any] = []
         self._env_selected: int = -1
+        self._att_actors: list[Any] = []            # U3.7 grasped objects (ride on a link)
+        self._att_links: list[int] = []
+        self._att_rel: list[np.ndarray] = []
 
         # R7.6 ghosts: translucent static copies of the robot, key -> (actors, tcp 4x4)
         self._ghosts: dict[Any, tuple[list[Any], np.ndarray]] = {}
@@ -405,6 +408,7 @@ class RobotView:
         self._hl_links = set()
         self._hl_env = set()
         self.set_env_objects([])
+        self.set_attached_objects([], [])
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -690,6 +694,7 @@ class RobotView:
         else:
             self._update_in_place(model, frames, tcp, fk_result)
         self._update_highlight_overlay()
+        self._update_attached_matrices()
 
         self._render()
 
@@ -814,6 +819,42 @@ class RobotView:
             self._env_actors.append(actor)
         self._apply_env_colors()
         self._render()
+
+    ATTACHED_COLOR = "#8bc34a"
+
+    @property
+    def attached_actors(self) -> list[Any]:
+        return list(self._att_actors)
+
+    def set_attached_objects(self, shapes: Any, link_of: Any) -> None:
+        """Draw grasped objects: ``shapes`` (EnvShape, pose relative to the link) and their link index."""
+        from app.planning.collision import pose_matrix
+
+        for a in self._att_actors:
+            try:
+                self._plotter.remove_actor(a)
+            except Exception:
+                pass
+        self._att_actors, self._att_links, self._att_rel = [], [], []
+        for s, li in zip(shapes or [], link_of or []):
+            try:
+                actor = self._plotter.add_mesh(self._env_mesh(s), color=self.ATTACHED_COLOR,
+                                               opacity=0.9, reset_camera=False)
+            except Exception:
+                continue
+            self._att_actors.append(actor)
+            self._att_links.append(int(li))
+            self._att_rel.append(pose_matrix(s.xyz, s.rpy))
+        self._update_attached_matrices()
+        self._render()
+
+    def _update_attached_matrices(self) -> None:
+        frames = self._hl_frames
+        if not frames:
+            return
+        for a, li, rel in zip(self._att_actors, self._att_links, self._att_rel):
+            if 0 <= li < len(frames):
+                a.user_matrix = frames[li] @ rel
 
     def set_env_selected(self, index: int) -> None:
         self._env_selected = int(index)

@@ -19,6 +19,7 @@ from app.planning.collision import FLOOR_CLEARANCE, EnvShape
 log = logging.getLogger(__name__)
 
 DEFAULT_SIZE = 0.1
+FLOOR_LIFT = 0.0005          # m: new objects float 0.5 mm over the floor plane (no boundary contact)
 FRONT_DISTANCE = 0.4
 
 
@@ -56,7 +57,7 @@ def default_object(kind: str, model: Any) -> tuple:
     n = float(np.linalg.norm(fwd))
     fwd = fwd / n if n > 1e-9 else np.array([1.0, 0.0, 0.0])
     xy = base[:2, 3] + FRONT_DISTANCE * fwd[:2]
-    z = float(base[2, 3]) - FLOOR_CLEARANCE + half_height(kind, params)
+    z = float(base[2, 3]) - FLOOR_CLEARANCE + FLOOR_LIFT + half_height(kind, params)
     return params, [float(xy[0]), float(xy[1]), z]
 
 

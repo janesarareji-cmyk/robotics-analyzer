@@ -175,6 +175,7 @@ class JointPanel(QWidget):
     """
 
     q_changed = Signal()
+    gripper_moved = Signal(float, float, float)   # U3.7: closed fraction before, requested, reached
     blocked = Signal(str)       # U3.4: a move was stopped by the motion guard (status text)
     log_requested = Signal(str)
 
@@ -359,6 +360,8 @@ class JointPanel(QWidget):
             return
         f = min(max(float(closed_fraction), 0.0), 1.0)
         want = current_q(self._model)
+        f_before = self._gripper[0].fraction_of(want[self._gripper[0].dof_index])
+        f_requested = f
         for g in self._gripper:
             want[g.dof_index] = g.value_at(f)
         final, blocked = self._guarded(want)
@@ -374,6 +377,7 @@ class JointPanel(QWidget):
         finally:
             self._updating = False
         self.q_changed.emit()
+        self.gripper_moved.emit(float(f_before), float(f_requested), float(f))
 
     def _sync_values_to_ui_force(self) -> None:
         for row in self._all_rows():
