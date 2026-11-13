@@ -115,7 +115,20 @@ dependency.
 Tests: `tests/python/test_compare.py` (ur3 vs ur5 vs ur10: reach order ur3 < ur5 < ur10 and close
 to the known nominal reaches 0.50/0.85/1.30 m within 10 %; payload > 0; CSV round trip).
 
-## U2.8 Pinocchio validator via conda-forge (sonnet)
+## U2.8 (changed 2026-11-13) Independent validator: MuJoCo now, Pinocchio optional
+
+Downloading micromamba was blocked by the session's safety policy. Build the validator on MuJoCo
+(pip wheel, dev-only dependency in `requirements-dev.txt`): same comparison as below, using
+`mujoco.MjModel.from_xml_path(urdf)` (set `<compiler fusestatic="false" discardvisual="true"
+balanceinertia="false"/>` via an injected `<mujoco>` tag or MjSpec so fixed links and inertias are
+kept exactly), `mj_kinematics`/`mj_comPos` for FK, `mj_jacBody`/`mj_jacSite` for the TCP Jacobian,
+`mj_fullM` for the mass matrix, `mj_inverse` (or `mj_rne`) for RNEA with gravity and qd/qdd.
+Disable joint damping/armature/frictionloss/limits in the MuJoCo model for the comparison.
+Keep the script structure so a Pinocchio backend can be added: `tools/validate_dynamics.py --backend mujoco|pinocchio`;
+pinocchio backend calls an external python given by `--pinocchio-python PATH` (the user can create a
+conda env themselves: documented command lines in the report). Report: `docs/validation/dynamics-validation.md`.
+
+### Original U2.8 text (Pinocchio)
 
 `pin` has no Windows pip wheel. Use micromamba (official `mamba-org` release exe, placed in
 `tools/.pinenv/` which is git-ignored) to create an env with `pinocchio` from conda-forge and

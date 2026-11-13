@@ -62,6 +62,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [Planner decision](planner-decision.md): own planners instead of OMPL (R7.3).
 -   [GPU FK precision decision](gpu-precision-decision.md): float32 default (R5.2).
 -   [GPU batch IK: go / no-go](gpu-ik-decision.md): no-go, CPU batch IK is the product path (R5.4).
+-   [Dynamics validation](validation/dynamics-validation.md): independent check of the dynamics against MuJoCo (U2.8).
 
 ## Stage specifications
 
