@@ -8,6 +8,10 @@ from PySide6.QtCore import QSettings, QByteArray
 from PySide6.QtWidgets import QMainWindow
 from typing import Any, Optional
 
+# U1: bump when the default dock layout changes. A saved window state with another
+# (or no) version is ignored once, so users get the new default layout.
+LAYOUT_VERSION = 2
+
 
 class AppSettings:
     """
@@ -22,6 +26,7 @@ class AppSettings:
     # Setting keys
     KEY_WINDOW_GEOMETRY = "window/geometry"
     KEY_WINDOW_STATE = "window/state"
+    KEY_LAYOUT_VERSION = "window/layout_version"
     KEY_RECENT_PROJECTS = "project/recent_files"
     KEY_RECENT_MAX = "project/recent_max"
     KEY_LAST_PROJECT_DIR = "project/last_dir"
@@ -39,14 +44,27 @@ class AppSettings:
     # Window geometry
     # ------------------------------------------------------------------
 
+    def layout_version(self) -> int:
+        """Layout version stored with the window state (0 = none stored)."""
+        try:
+            return int(self._settings.value(self.KEY_LAYOUT_VERSION, 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def set_layout_version(self, version: int) -> None:
+        self._settings.setValue(self.KEY_LAYOUT_VERSION, int(version))
+
     def save_window(self, window: QMainWindow) -> None:
-        """Save window geometry and dock layout to settings."""
+        """Save window geometry, dock layout and layout version to settings."""
         self._settings.setValue(self.KEY_WINDOW_GEOMETRY, window.saveGeometry())
         self._settings.setValue(self.KEY_WINDOW_STATE, window.saveState())
+        self.set_layout_version(LAYOUT_VERSION)
 
     def restore_window(self, window: QMainWindow) -> bool:
         """
         Restore window geometry and dock layout from settings.
+        A dock state saved with another layout version is ignored (geometry is kept)
+        and dropped, and the current version is stored (U1).
         Returns True if geometry was restored, False if no saved state exists.
         """
         geometry = self._settings.value(self.KEY_WINDOW_GEOMETRY)
@@ -54,7 +72,10 @@ class AppSettings:
 
         if geometry is not None:
             window.restoreGeometry(geometry)
-        if state is not None:
+        if self.layout_version() != LAYOUT_VERSION:
+            self._settings.remove(self.KEY_WINDOW_STATE)
+            self.set_layout_version(LAYOUT_VERSION)
+        elif state is not None:
             window.restoreState(state)
 
         return geometry is not None

@@ -1,0 +1,3 @@
+Franka Emika Panda + hand
+Source: https://github.com/Gepetto/example-robot-data (panda_description, Apache-2.0)
+Converted for Robotics Analyzer: xacro expanded, mesh paths relative, .dae visuals converted to .stl, gazebo/transmission tags removed.

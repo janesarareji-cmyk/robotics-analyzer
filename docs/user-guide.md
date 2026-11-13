@@ -49,6 +49,24 @@ runs on the CPU (see [troubleshooting](#13-troubleshooting)).
 -   **File -> Open Project...** opens a `.robotproj` file. Older project formats are migrated on
     open; a backup of the old file is kept (see [project-recovery.md](project-recovery.md)).
 
+### Open a sample robot
+
+**File -> Open Sample Robot** (or the **Sample robot** button on the tool bar) opens one of the robots
+in the `robots/` folder next to the program. Each is a URDF with meshes; the entry text is the first line
+of the robot's `SOURCE.txt`, which also names the source and licence.
+
+| Entry | Source |
+|-------|--------|
+| KUKA LBR iiwa 14 R820 | bullet3 `data/kuka_iiwa` (zlib) |
+| Franka Emika Panda + hand | Gepetto `example-robot-data`, panda_description (Apache-2.0) |
+| Universal Robots UR3, UR5, UR10 | Gepetto `example-robot-data`, ur_description (BSD) |
+| UFACTORY xArm 5, xArm 6, xArm 7 | `xarm_ros`, xarm_description (BSD-3) |
+| UFACTORY xArm 5 + xArm Gripper | `xarm_ros`, xarm_description (BSD-3) |
+
+The xArm 5 + Gripper has 6 degrees of freedom: five arm joints and the gripper `drive_joint`; the
+other finger joints follow it (mimic). A sample opens like any URDF import: the import report is shown,
+and the project is new and unsaved.
+
 ### Import a URDF
 
 1.  **File -> Import -> URDF...** and choose the `.urdf` file.
@@ -76,6 +94,21 @@ The internal data model is described in [urm-schema-v2.md](urm-schema-v2.md) and
 Mass, centre of mass and inertia come from the import, from an estimate or from manual entry.
 **View -> Physical Properties** edits them and runs the physical checks. See
 [physical-properties.md](physical-properties.md).
+
+### Layout: side bar, Focus 3D (F11), Reset layout
+
+The 3D view is the main area. At first start only the Robot Model (with Properties as a second tab), the
+Joints (with the DH editor as a second tab) and the Log are open.
+
+-   The **side bar** on the left edge has one button per panel (Model, Joints, DH, IK, Analysis, Workspace,
+    Sim, Graphs, Planning, Ghosts, Collision, Physical, Script, Log). A click opens the panel and brings
+    it to the front of its tab group; a second click closes it.
+-   **View -> Focus 3D view** (**F11**, also a tool bar button) hides all panels so the 3D view uses the
+    whole window. Press it again to bring back exactly the panels that were open. Opening any panel
+    while in Focus 3D leaves the mode.
+-   **View -> Reset layout** restores the default layout and panel sizes.
+-   Panels can still be dragged, tabbed and floated. The layout is saved when the program closes. When a
+    new version changes the default layout, the old saved layout is ignored once.
 
 ## 3. Joints and the TCP
 

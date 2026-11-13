@@ -24,6 +24,7 @@ HIDDEN_IMPORTS += collect_submodules("pyvistaqt")
 datas = [
     (os.path.join(ROOT, "examples"), "examples"),
     (os.path.join(ROOT, "plugins_examples"), "plugins_examples"),
+    (os.path.join(ROOT, "robots"), "robots"),
 ]
 datas += collect_data_files("pyvista")
 datas += collect_data_files("pyqtgraph")

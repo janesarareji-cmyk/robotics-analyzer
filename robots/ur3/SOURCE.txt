@@ -1,0 +1,3 @@
+Universal Robots UR3
+Source: https://github.com/Gepetto/example-robot-data (ur_description, BSD)
+Converted for Robotics Analyzer: xacro expanded, mesh paths relative, .dae visuals converted to .stl, gazebo/transmission tags removed.

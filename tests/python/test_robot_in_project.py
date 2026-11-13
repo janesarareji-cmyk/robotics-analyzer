@@ -279,6 +279,9 @@ def test_dock_toggle_in_view_menu(qapp):
     try:
         window.show()
         assert window.dh_dock is not None
+        # U1: DH is a background tab behind Joints at start; bring it to the front first.
+        window.dh_dock.raise_()
+        qapp.processEvents()
         assert window.dh_dock.isVisible()
         assert window._action_view_dh.isChecked()
 

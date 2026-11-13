@@ -11,7 +11,8 @@ from typing import Any
 from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QLabel,
     QVBoxLayout, QMenuBar, QStatusBar, QToolBar,
-    QMessageBox, QFileDialog, QInputDialog
+    QMessageBox, QFileDialog, QInputDialog, QToolButton, QTabWidget, QMenu,
+    QScrollArea, QFrame
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QKeySequence, QIcon
@@ -38,11 +39,21 @@ from app.plugins.loader import PluginManager
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
-from app.settings import AppSettings
+from app.settings import AppSettings, LAYOUT_VERSION
+from app.sample_robots import list_sample_robots
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
 from app.project.project_data import ProjectData
 from app.viewport import ViewportWidget
+
+
+def _scrollable(widget: QWidget) -> QScrollArea:
+    """Put a panel in a scroll area so a wide panel does not force a wide dock (U1)."""
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setWidget(widget)
+    return area
 
 
 class MainWindow(QMainWindow):
@@ -53,6 +64,7 @@ class MainWindow(QMainWindow):
 
     APP_NAME = "Robotics Analyzer"
     APP_VERSION = "0.1.0"
+    LAYOUT_VERSION = LAYOUT_VERSION      # U1: bump (app/settings.py) to reset saved dock layouts
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,12 +74,17 @@ class MainWindow(QMainWindow):
             settings=self._settings, parent=self
         )
         self._connect_project_signals()
+        self._focus_mode = False
+        self._focus_state = None
+        self._default_state = None
         self._setup_window()
         self._setup_menu_bar()
         self._setup_toolbar()
         self._setup_status_bar()
         self._setup_central_widget()
         self._setup_dock_panels()
+        self._setup_side_bar()
+        self._default_state = self.saveState()     # U1: before user state is restored
         self._restore_layout()
 
     # ------------------------------------------------------------------
@@ -86,6 +103,11 @@ class MainWindow(QMainWindow):
             QMenu { background: #2a2a2a; color: #cccccc; border: 1px solid #444; }
             QMenu::item:selected { background: #3d6fcc; }
             QToolBar { background: #252525; border: none; spacing: 4px; }
+            QToolBar#tool_bar_side { spacing: 2px; padding: 2px; }
+            QToolBar#tool_bar_side QToolButton { color: #cccccc; font-size: 8pt;
+                padding: 4px 2px; border-radius: 3px; }
+            QToolBar#tool_bar_side QToolButton:hover { background: #3a3a3a; }
+            QToolBar#tool_bar_side QToolButton:checked { background: #3d6fcc; color: #ffffff; }
             QStatusBar { background: #1e1e1e; color: #aaaaaa; }
             QDockWidget { color: #cccccc; }
             QDockWidget::title { background: #2a2a2a; padding: 4px; }
@@ -109,6 +131,10 @@ class MainWindow(QMainWindow):
         self._action_open.setStatusTip("Open an existing robot project")
         self._action_open.triggered.connect(self._on_open_project)
         file_menu.addAction(self._action_open)
+
+        self._menu_samples = QMenu("Open &Sample Robot", self)
+        self._populate_sample_menu()
+        file_menu.addMenu(self._menu_samples)
 
         self._action_save = QAction("&Save Project", self)
         self._action_save.setShortcut(QKeySequence.StandardKey.Save)
@@ -181,6 +207,21 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("&View")
+
+        self._action_focus = QAction("&Focus 3D view", self)
+        self._action_focus.setCheckable(True)
+        self._action_focus.setShortcut(QKeySequence("F11"))
+        self._action_focus.setIconText("Focus 3D")
+        self._action_focus.setStatusTip("Hide all panels; the 3D view uses the whole window")
+        self._action_focus.toggled.connect(self.set_focus_mode)
+        view_menu.addAction(self._action_focus)
+
+        self._action_reset_layout = QAction("&Reset layout", self)
+        self._action_reset_layout.setIconText("Reset")
+        self._action_reset_layout.setStatusTip("Restore the default panel layout")
+        self._action_reset_layout.triggered.connect(self.reset_layout)
+        view_menu.addAction(self._action_reset_layout)
+        view_menu.addSeparator()
 
         self._action_view_model = QAction("Robot &Model Panel", self)
         self._action_view_model.setCheckable(True)
@@ -324,12 +365,20 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._action_open)
         toolbar.addAction(self._action_save)
 
+        self._sample_button = QToolButton()
+        self._sample_button.setText("Sample robot")
+        self._sample_button.setToolTip("Open a bundled sample robot")
+        self._sample_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._sample_button.setMenu(self._menu_samples)
+        toolbar.addWidget(self._sample_button)
+
         toolbar.addSeparator()
 
         self._action_reset_camera = QAction("Reset Camera", self)
         self._action_reset_camera.setToolTip("Reset camera to fit all objects")
         self._action_reset_camera.triggered.connect(self._on_reset_camera)
         toolbar.addAction(self._action_reset_camera)
+        toolbar.addAction(self._action_focus)
 
     def _setup_status_bar(self) -> None:
         """Configure the status bar."""
@@ -356,51 +405,49 @@ class MainWindow(QMainWindow):
 
     def _setup_dock_panels(self) -> None:
         """Create and place all dock panels."""
+        # U1: viewport-first layout. Bottom docks only span under the viewport.
+        self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        self.setDockOptions(
+            QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowTabbedDocks
+            | QMainWindow.DockOption.AllowNestedDocks | QMainWindow.DockOption.GroupedDragging)
+        self.setTabPosition(Qt.DockWidgetArea.LeftDockWidgetArea, QTabWidget.TabPosition.North)
+        self.setTabPosition(Qt.DockWidgetArea.RightDockWidgetArea, QTabWidget.TabPosition.North)
         # Robot model panel — left side
         self._model_panel = ModelPanel()
         model_dock = QDockWidget("Robot Model", self)
         model_dock.setObjectName("model_dock")
-        model_dock.setWidget(self._model_panel)
-        model_dock.setMinimumWidth(220)
+        model_dock.setWidget(_scrollable(self._model_panel))
+        model_dock.setMinimumWidth(200)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, model_dock)
-        self._action_view_model.triggered.connect(model_dock.setVisible)
-        model_dock.visibilityChanged.connect(self._action_view_model.setChecked)
 
         # Properties panel — right side
         self._props_panel = PropertiesPanel()
         props_dock = QDockWidget("Properties", self)
         props_dock.setObjectName("props_dock")
-        props_dock.setWidget(self._props_panel)
-        props_dock.setMinimumWidth(220)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, props_dock)
-        self._action_view_props.triggered.connect(props_dock.setVisible)
-        props_dock.visibilityChanged.connect(self._action_view_props.setChecked)
+        props_dock.setWidget(_scrollable(self._props_panel))
+        props_dock.setMinimumWidth(200)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, props_dock)
+        self.tabifyDockWidget(model_dock, props_dock)
+        model_dock.raise_()
 
         # DH Parameter Editor dock — right side
         self._dh_editor = DHEditorWidget()
         self._dh_dock = QDockWidget("DH Parameter Editor", self)
         self._dh_dock.setObjectName("dh_dock")
-        self._dh_dock.setWidget(self._dh_editor)
-        self._dh_dock.setMinimumWidth(320)
+        self._dh_dock.setWidget(_scrollable(self._dh_editor))
+        self._dh_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dh_dock)
-        self._action_view_dh.triggered.connect(
-            lambda: self._dh_dock.setVisible(self._action_view_dh.isChecked())
-        )
-        self._dh_dock.visibilityChanged.connect(self._action_view_dh.setChecked)
         self._dh_editor.model_changed.connect(self._on_dh_editor_changed)
 
         # Joint Control Panel dock — right side (tabbed with DH dock)
         self._joint_panel = JointPanel()
         self._joint_dock = QDockWidget("Joints", self)
         self._joint_dock.setObjectName("joint_dock")
-        self._joint_dock.setWidget(self._joint_panel)
-        self._joint_dock.setMinimumWidth(320)
+        self._joint_dock.setWidget(_scrollable(self._joint_panel))
+        self._joint_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._joint_dock)
         self.tabifyDockWidget(self._dh_dock, self._joint_dock)
-        self._action_view_joints.triggered.connect(
-            lambda: self._joint_dock.setVisible(self._action_view_joints.isChecked())
-        )
-        self._joint_dock.visibilityChanged.connect(self._action_view_joints.setChecked)
         self._joint_panel.q_changed.connect(self._on_joint_q_changed)
         self._joint_panel.log_requested.connect(self.log)
         self._model_panel.selection_changed.connect(self._on_tree_selection)
@@ -412,35 +459,27 @@ class MainWindow(QMainWindow):
         log_dock.setWidget(self._log_panel)
         log_dock.setMaximumHeight(200)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
-        self._action_view_log.triggered.connect(log_dock.setVisible)
-        log_dock.visibilityChanged.connect(self._action_view_log.setChecked)
 
         # Import report dock — bottom, tabbed with the log. Hidden until an import.
         self._import_report_panel = ImportReportPanel()
         self._import_report_dock = QDockWidget("Import Report", self)
         self._import_report_dock.setObjectName("import_report_dock")
-        self._import_report_dock.setWidget(self._import_report_panel)
+        self._import_report_dock.setWidget(_scrollable(self._import_report_panel))
         self._import_report_dock.setMinimumHeight(160)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._import_report_dock)
         self.tabifyDockWidget(log_dock, self._import_report_dock)
         self._import_report_dock.hide()
-        self._action_view_import_report.triggered.connect(self._import_report_dock.setVisible)
-        self._import_report_dock.visibilityChanged.connect(
-            self._action_view_import_report.setChecked
-        )
         self._import_report_panel.element_clicked.connect(self._on_report_element_clicked)
 
         # Physical properties dock — bottom, tabbed with the log. Hidden by default.
         self._physical_panel = PhysicalPropertiesPanel()
         self._physical_dock = QDockWidget("Physical", self)
         self._physical_dock.setObjectName("physical_dock")
-        self._physical_dock.setWidget(self._physical_panel)
+        self._physical_dock.setWidget(_scrollable(self._physical_panel))
         self._physical_dock.setMinimumHeight(160)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._physical_dock)
         self.tabifyDockWidget(log_dock, self._physical_dock)
         self._physical_dock.hide()
-        self._action_view_physical.toggled.connect(self._physical_dock.setVisible)
-        self._physical_dock.visibilityChanged.connect(self._action_view_physical.setChecked)
         self._physical_panel.edited.connect(self._on_physical_edited)
         self._physical_panel.log_requested.connect(self.log)
 
@@ -448,13 +487,11 @@ class MainWindow(QMainWindow):
         self._ik_panel = IKPanel(self._task_runner)
         self._ik_dock = QDockWidget("Inverse Kinematics", self)
         self._ik_dock.setObjectName("ik_dock")
-        self._ik_dock.setWidget(self._ik_panel)
-        self._ik_dock.setMinimumWidth(320)
+        self._ik_dock.setWidget(_scrollable(self._ik_panel))
+        self._ik_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._ik_dock)
         self.tabifyDockWidget(self._joint_dock, self._ik_dock)
         self._ik_dock.hide()
-        self._action_view_ik.toggled.connect(self._ik_dock.setVisible)
-        self._ik_dock.visibilityChanged.connect(self._action_view_ik.setChecked)
         self._ik_panel.target_changed.connect(self._viewport.robot_view.set_target_pose)
         self._ik_panel.preview_changed.connect(self._on_ik_preview)
         self._ik_panel.applied.connect(self._on_ik_applied)
@@ -464,25 +501,21 @@ class MainWindow(QMainWindow):
         self._analysis_panel = AnalysisPanel(gravity_fn=self._project_gravity)
         self._analysis_dock = QDockWidget("Analysis", self)
         self._analysis_dock.setObjectName("analysis_dock")
-        self._analysis_dock.setWidget(self._analysis_panel)
-        self._analysis_dock.setMinimumWidth(320)
+        self._analysis_dock.setWidget(_scrollable(self._analysis_panel))
+        self._analysis_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._analysis_dock)
         self.tabifyDockWidget(self._joint_dock, self._analysis_dock)
         self._analysis_dock.hide()
-        self._action_view_analysis.toggled.connect(self._analysis_dock.setVisible)
-        self._analysis_dock.visibilityChanged.connect(self._action_view_analysis.setChecked)
 
         # Workspace dock (R5.5) � right side, tabbed with Joints. Hidden by default.
         self._workspace_panel = WorkspacePanel(self._task_runner, self._settings)
         self._workspace_dock = QDockWidget("Workspace", self)
         self._workspace_dock.setObjectName("workspace_dock")
-        self._workspace_dock.setWidget(self._workspace_panel)
-        self._workspace_dock.setMinimumWidth(320)
+        self._workspace_dock.setWidget(_scrollable(self._workspace_panel))
+        self._workspace_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._workspace_dock)
         self.tabifyDockWidget(self._joint_dock, self._workspace_dock)
         self._workspace_dock.hide()
-        self._action_view_workspace.toggled.connect(self._workspace_dock.setVisible)
-        self._workspace_dock.visibilityChanged.connect(self._action_view_workspace.setChecked)
         self._workspace_panel.display_changed.connect(self._on_workspace_display)
         self._workspace_panel.log_requested.connect(self.log)
 
@@ -490,25 +523,21 @@ class MainWindow(QMainWindow):
         self._performance_panel = PerformancePanel(self._task_runner, self._settings)
         self._performance_dock = QDockWidget("Performance", self)
         self._performance_dock.setObjectName("performance_dock")
-        self._performance_dock.setWidget(self._performance_panel)
-        self._performance_dock.setMinimumWidth(320)
+        self._performance_dock.setWidget(_scrollable(self._performance_panel))
+        self._performance_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._performance_dock)
         self.tabifyDockWidget(self._joint_dock, self._performance_dock)
         self._performance_dock.hide()
-        self._action_view_performance.toggled.connect(self._performance_dock.setVisible)
-        self._performance_dock.visibilityChanged.connect(self._action_view_performance.setChecked)
 
         # Simulation dock (R6.3) - right side, tabbed with Joints. Hidden by default.
         self._sim_panel = SimPanel()
         self._sim_dock = QDockWidget("Simulation", self)
         self._sim_dock.setObjectName("simulation_dock")
-        self._sim_dock.setWidget(self._sim_panel)
-        self._sim_dock.setMinimumWidth(320)
+        self._sim_dock.setWidget(_scrollable(self._sim_panel))
+        self._sim_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._sim_dock)
         self.tabifyDockWidget(self._joint_dock, self._sim_dock)
         self._sim_dock.hide()
-        self._action_view_simulation.toggled.connect(self._sim_dock.setVisible)
-        self._sim_dock.visibilityChanged.connect(self._action_view_simulation.setChecked)
         self._sim_dock.visibilityChanged.connect(self._sim_panel.on_visibility_changed)
         self._action_view_simulation.toggled.connect(self._sim_panel.on_visibility_changed)
         self._sim_panel.state_updated.connect(self._on_sim_state)
@@ -519,16 +548,14 @@ class MainWindow(QMainWindow):
         self._graph_panel = GraphPanel()
         self._graph_dock = QDockWidget("Graphs", self)
         self._graph_dock.setObjectName("graphs_dock")
-        self._graph_dock.setWidget(self._graph_panel)
-        self._graph_dock.setMinimumWidth(360)
+        self._graph_dock.setWidget(_scrollable(self._graph_panel))
+        self._graph_dock.setMinimumWidth(260)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._graph_dock)
         self.tabifyDockWidget(self._joint_dock, self._graph_dock)
         self._graph_dock.hide()
         self._graph_panel.set_source(lambda: self._sim_panel.recorder,
                                      lambda: self._sim_panel.dof_names,
                                      lambda: self._sim_panel.dof_types)
-        self._action_view_graphs.toggled.connect(self._graph_dock.setVisible)
-        self._graph_dock.visibilityChanged.connect(self._action_view_graphs.setChecked)
         self._graph_dock.visibilityChanged.connect(self._graph_panel.on_visibility_changed)
         self._action_view_graphs.toggled.connect(self._graph_panel.on_visibility_changed)
         self._graph_panel.seek_requested.connect(self._sim_panel.seek_trajectory)
@@ -547,7 +574,7 @@ class MainWindow(QMainWindow):
 
         self._ghost_panel = GhostPanel()
         self._ghost_dock = self._add_tool_dock(
-            "Ghosts", "ghosts_dock", self._ghost_panel, self._action_view_ghosts, 360)
+            "Ghosts", "ghosts_dock", self._ghost_panel, self._action_view_ghosts, 260)
         self._ghost_panel.set_q_provider(self._current_q)
         self._ghost_panel.set_ik_source(lambda: [s["q"] for s in self._ik_panel.solutions])
         self._ghost_panel.log_requested.connect(self.log)
@@ -556,7 +583,7 @@ class MainWindow(QMainWindow):
 
         self._collision_panel = CollisionPanel()
         self._collision_dock = self._add_tool_dock(
-            "Collision", "collision_dock", self._collision_panel, self._action_view_collision, 360)
+            "Collision", "collision_dock", self._collision_panel, self._action_view_collision, 260)
         self._collision_panel.log_requested.connect(self.log)
         self._collision_panel.changed.connect(self._on_collision_changed)
 
@@ -569,13 +596,11 @@ class MainWindow(QMainWindow):
         self._script_panel.set_runner(self._script_runner)
         self._script_dock = QDockWidget("Script console", self)
         self._script_dock.setObjectName("script_dock")
-        self._script_dock.setWidget(self._script_panel)
+        self._script_dock.setWidget(_scrollable(self._script_panel))
         self._script_dock.setMinimumHeight(200)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._script_dock)
         self.tabifyDockWidget(log_dock, self._script_dock)
         self._script_dock.hide()
-        self._action_view_script.toggled.connect(self._script_dock.setVisible)
-        self._script_dock.visibilityChanged.connect(self._action_view_script.setChecked)
 
         # Plugins (R8.2): manager dock, importer menu entries, planner combo entries, analysis docks.
         self._plugin_import_actions: list = []
@@ -589,13 +614,177 @@ class MainWindow(QMainWindow):
         self._plugin_panel = PluginManagerPanel(self._plugin_manager)
         self._plugin_panel.log_requested.connect(self.log)
         self._plugin_dock = self._add_tool_dock(
-            "Plugins", "plugins_dock", self._plugin_panel, self._action_view_plugins, 420)
+            "Plugins", "plugins_dock", self._plugin_panel, self._action_view_plugins, 300)
         self._plugin_manager.changed.connect(self._on_plugins_changed)
         self._plugin_manager.scan()
+
+        self._joint_dock.raise_()
+        self._model_dock = model_dock
+        self._log_dock = log_dock
+        self._apply_default_sizes()
+        self._wire_dock_actions()
 
         # Note: Python logging wired to this panel after __init__ in app/main.py
         # Initial message via direct append (logger not yet wired at __init__ time)
         self._log_panel.append("[INFO] Robotics Analyzer started. Logging wires after init.")
+
+    # ------------------------------------------------------------------
+    # U1: layout helpers
+    # ------------------------------------------------------------------
+
+    def _apply_default_sizes(self) -> None:
+        """Default dock sizes: left 240, right 300, bottom 110 px."""
+        H, V = Qt.Orientation.Horizontal, Qt.Orientation.Vertical
+        self.resizeDocks([self._model_dock], [240], H)
+        self.resizeDocks([self._joint_dock], [300], H)
+        self.resizeDocks([self._log_dock], [110], V)
+
+    def _view_action_docks(self) -> list:
+        """(checkable view action, dock) pairs of the fixed docks."""
+        return [
+            (self._action_view_model, self._model_dock),
+            (self._action_view_props, self.findChild(QDockWidget, "props_dock")),
+            (self._action_view_dh, self._dh_dock),
+            (self._action_view_joints, self._joint_dock),
+            (self._action_view_log, self._log_dock),
+            (self._action_view_import_report, self._import_report_dock),
+            (self._action_view_physical, self._physical_dock),
+            (self._action_view_ik, self._ik_dock),
+            (self._action_view_analysis, self._analysis_dock),
+            (self._action_view_workspace, self._workspace_dock),
+            (self._action_view_performance, self._performance_dock),
+            (self._action_view_simulation, self._sim_dock),
+            (self._action_view_graphs, self._graph_dock),
+            (self._action_view_planning, self._planning_dock),
+            (self._action_view_ghosts, self._ghost_dock),
+            (self._action_view_collision, self._collision_dock),
+            (self._action_view_script, self._script_dock),
+            (self._action_view_plugins, self._plugin_dock),
+        ]
+
+    def _wire_dock_actions(self) -> None:
+        """Bind every view action to its dock (one place; U1)."""
+        self._dock_sync = False        # True while an action is set from a dock signal
+        self._dock_opening = False     # True while a click opens a dock
+        for action, dock in self._view_action_docks():
+            action.toggled.connect(lambda on, d=dock: self._on_view_toggled(on, d))
+            dock.visibilityChanged.connect(
+                lambda vis, a=action, d=dock: self._on_dock_visibility(vis, a, d))
+
+    def _on_view_toggled(self, on: bool, dock: QDockWidget) -> None:
+        """View action toggled by the user (menu, side bar) or by code."""
+        if self._dock_sync:
+            return
+        if not on:
+            dock.hide()
+            return
+        self._dock_opening = True
+        try:
+            if self._focus_mode:
+                self.set_focus_mode(False)
+            dock.show()
+            dock.raise_()
+        finally:
+            self._dock_opening = False
+        # Showing a tabbed dock reports "hidden" once before it is the current tab;
+        # the action must say checked now that the dock is open and raised.
+        self._sync_action(self._action_for_dock(dock), not dock.isHidden())
+
+    def _on_dock_visibility(self, visible: bool, action: QAction, dock: QDockWidget) -> None:
+        """Dock shown or hidden (or covered by another tab): mirror it in its action."""
+        if self._dock_opening:
+            return
+        self._sync_action(action, visible)
+
+    def _sync_action(self, action: QAction | None, checked: bool) -> None:
+        if action is None or action.isChecked() == checked:
+            return
+        self._dock_sync = True
+        try:
+            action.setChecked(checked)
+        finally:
+            self._dock_sync = False
+
+    def _action_for_dock(self, dock: QDockWidget) -> QAction | None:
+        for action, d in self._view_action_docks():
+            if d is dock:
+                return action
+        return None
+
+    def _setup_side_bar(self) -> None:
+        """Vertical tool bar (activity bar) with one button per panel."""
+        bar = QToolBar("Panels")
+        bar.setObjectName("tool_bar_side")
+        bar.setMovable(False)
+        bar.setFloatable(False)
+        bar.setMaximumWidth(72)     # narrow strip; labels are short
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, bar)
+        items = [
+            (self._action_view_model, "Model"), (self._action_view_joints, "Joints"),
+            (self._action_view_dh, "DH"), (self._action_view_ik, "IK"),
+            (self._action_view_analysis, "Analysis"), (self._action_view_workspace, "Workspace"),
+            (self._action_view_simulation, "Sim"), (self._action_view_graphs, "Graphs"),
+            (self._action_view_planning, "Planning"), (self._action_view_ghosts, "Ghosts"),
+            (self._action_view_collision, "Collision"), (self._action_view_physical, "Physical"),
+            (self._action_view_script, "Script"), (self._action_view_log, "Log"),
+        ]
+        for action, label in items:
+            action.setIconText(label)
+            bar.addAction(action)
+        bar.addSeparator()
+        bar.addAction(self._action_focus)
+        bar.addAction(self._action_reset_layout)
+        self._side_bar = bar
+
+    @property
+    def focus_mode(self) -> bool:
+        """True while all docks are hidden (Focus 3D)."""
+        return self._focus_mode
+
+    def set_focus_mode(self, on: bool) -> None:
+        """Hide every dock (remembering the layout) or restore the remembered layout."""
+        on = bool(on)
+        if on == self._focus_mode:
+            return
+        if on:
+            self._focus_state = self.saveState()
+            self._focus_mode = True
+            for dock in self.findChildren(QDockWidget):
+                dock.hide()
+        else:
+            self._focus_mode = False
+            if self._focus_state is not None:
+                self.restoreState(self._focus_state)
+            self._focus_state = None
+        if self._action_focus.isChecked() != on:
+            self._action_focus.blockSignals(True)
+            self._action_focus.setChecked(on)
+            self._action_focus.blockSignals(False)
+
+    def reset_layout(self) -> None:
+        """Leave focus mode and restore the default dock layout."""
+        self._focus_mode = False
+        self._focus_state = None
+        if self._action_focus.isChecked():
+            self._action_focus.blockSignals(True)
+            self._action_focus.setChecked(False)
+            self._action_focus.blockSignals(False)
+        if self._default_state is not None:
+            self.restoreState(self._default_state)
+        self._apply_default_sizes()
+
+    def _populate_sample_menu(self) -> None:
+        """Fill File > Open Sample Robot from robots/*/<name>.urdf."""
+        self._menu_samples.clear()
+        robots = list_sample_robots()
+        if not robots:
+            a = self._menu_samples.addAction("No sample robots found")
+            a.setEnabled(False)
+            return
+        for title, path in robots:
+            a = self._menu_samples.addAction(title)
+            a.triggered.connect(lambda checked=False, p=str(path): self.import_urdf_file(p))
 
     def _restore_layout(self) -> None:
         """Restore saved window geometry and dock layout from AppSettings."""
@@ -702,17 +891,15 @@ class MainWindow(QMainWindow):
         self._sim_panel.notify_q_edited()
 
     def _add_tool_dock(self, title: str, name: str, widget: QWidget, action: QAction,
-                       min_width: int = 320) -> QDockWidget:
+                       min_width: int = 260) -> QDockWidget:
         """Right-side dock, tabbed with Joints, hidden at start, toggled by a View action."""
         dock = QDockWidget(title, self)
         dock.setObjectName(name)
-        dock.setWidget(widget)
+        dock.setWidget(_scrollable(widget))
         dock.setMinimumWidth(min_width)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self.tabifyDockWidget(self._joint_dock, dock)
         dock.hide()
-        action.toggled.connect(dock.setVisible)
-        dock.visibilityChanged.connect(action.setChecked)
         return dock
 
     def _current_q(self) -> list[float]:
@@ -1263,6 +1450,8 @@ class MainWindow(QMainWindow):
         self._sim_panel.shutdown()
         self._plugin_manager.permissions.shutdown()   # release workers in the permission dialog
         self._task_runner.shutdown()
+        if self._focus_mode:                 # U1: never save the all-hidden Focus 3D layout
+            self.set_focus_mode(False)
         self._settings.save_window(self)
         self._settings.sync()
         super().closeEvent(event)
