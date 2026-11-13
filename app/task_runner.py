@@ -12,6 +12,7 @@ Design:
 
 from __future__ import annotations
 
+import logging
 import traceback
 import threading
 from typing import Any, Callable
@@ -176,10 +177,19 @@ class TaskRunner(QObject):
         """
         return self._pool.waitForDone(timeout_ms)
 
-    def shutdown(self) -> None:
-        """Wait for all tasks and release thread pool resources."""
-        self._pool.waitForDone()
+    def shutdown(self, timeout_ms: int = 5000) -> bool:
+        """
+        Wait for all tasks (at most ``timeout_ms``; -1 = forever) and release the pool.
+        After the timeout a warning is logged and False is returned: the GUI thread is
+        never blocked for ever by a task that does not end.
+        """
         self._pool.clear()
+        done = self._pool.waitForDone(timeout_ms)
+        if not done:
+            logging.getLogger("robotics_analyzer.tasks").warning(
+                "Shutdown: %d task(s) still running after %d ms; not waiting any longer",
+                self._pool.activeThreadCount(), timeout_ms)
+        return done
 
     @property
     def active_count(self) -> int:

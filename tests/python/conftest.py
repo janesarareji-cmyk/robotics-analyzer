@@ -17,3 +17,20 @@ if str(bindings_dir) not in sys.path:
 repo_root = Path(__file__).parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _no_modal_unsaved_prompt(monkeypatch):
+    """A1.1: MainWindow.closeEvent now asks about unsaved changes. A test window that is
+    closed while modified must not block on a real modal box (offscreen: hangs). Tests
+    that care patch QMessageBox.question themselves (their patch wins)."""
+    try:
+        from PySide6.QtWidgets import QMessageBox
+    except Exception:
+        return
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Discard))

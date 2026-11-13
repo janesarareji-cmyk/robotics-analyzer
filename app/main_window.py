@@ -1247,11 +1247,15 @@ class MainWindow(QMainWindow):
         return self._project_controller
 
     def closeEvent(self, event) -> None:
-        """Save settings and shut down task runner before closing."""
+        """Ask about unsaved changes (A1.1), then stop work, shut down, save settings."""
+        if not self._project_controller.close_project(self):
+            event.ignore()
+            return
         self._script_runner.cancel()
         self._workspace_panel.cancel()
         self._planning_panel.shutdown()
         self._sim_panel.shutdown()
+        self._plugin_manager.permissions.shutdown()   # release workers in the permission dialog
         self._task_runner.shutdown()
         self._settings.save_window(self)
         self._settings.sync()

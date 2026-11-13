@@ -39,9 +39,26 @@ class _GuiAsker(QObject):
     def __init__(self):
         super().__init__()
         self.request.connect(self._run)
+        self._lock = threading.Lock()
+        self._pending: list = []
+        self._closing = False
+
+    def shutdown(self) -> None:
+        """Release every worker waiting for an answer (A1.1, audit M3). The answer is
+        ``None`` = denied for this call only (not remembered)."""
+        with self._lock:
+            self._closing = True
+            pending, self._pending = self._pending, []
+        for box in pending:
+            box["answer"] = None
+            box["event"].set()
 
     @Slot(object)
     def _run(self, box):
+        if self._closing:
+            box["answer"] = None
+            box["event"].set()
+            return
         try:
             yes = QMessageBox.StandardButton.Yes
             r = QMessageBox.question(None, "Plugin permission", box["text"],
@@ -52,16 +69,24 @@ class _GuiAsker(QObject):
             box["answer"] = False
         box["event"].set()
 
-    def ask(self, text: str) -> bool:
+    def ask(self, text: str):
+        """True / False, or ``None`` when the application is closing (do not remember)."""
         box = {"text": text, "event": threading.Event()}
         app = QCoreApplication.instance()
         if app is None or QThread.currentThread() == app.thread():
             self._run(box)
-            return bool(box["answer"])
+            return box["answer"]
+        with self._lock:
+            if self._closing:
+                return None
+            self._pending.append(box)
         self.request.emit(box)
         if not box["event"].wait(120):
+            with self._lock:
+                if box in self._pending:
+                    self._pending.remove(box)
             return False
-        return bool(box.get("answer"))
+        return box.get("answer")
 
 
 class PermissionManager:
@@ -72,7 +97,12 @@ class PermissionManager:
         self._ask = ask
         self._asker = _GuiAsker() if ask is None else None   # lives in the creating (GUI) thread
 
-    def _ask_user(self, plugin: str, perm: str) -> bool:
+    def shutdown(self) -> None:
+        """Release workers waiting in the dialog (answer: denied, not saved)."""
+        if self._asker is not None:
+            self._asker.shutdown()
+
+    def _ask_user(self, plugin: str, perm: str):
         text = permission_text(plugin, perm)
         if self._ask is not None:
             return bool(self._ask(plugin, perm, text))
@@ -94,7 +124,10 @@ class PermissionManager:
             return
         if st == "denied":
             raise PermissionError(f"permission '{perm}' was denied for plugin '{plugin}'")
-        if self._ask_user(plugin, perm):
+        answer = self._ask_user(plugin, perm)
+        if answer is None:        # closing: denied for this call only
+            raise PermissionError(f"permission '{perm}' was not granted (application closing)")
+        if answer:
             self._settings.set(_key(plugin, perm), "granted")
         else:
             self._settings.set(_key(plugin, perm), "denied")

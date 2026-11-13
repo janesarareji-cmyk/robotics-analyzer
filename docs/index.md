@@ -56,6 +56,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 ## Decisions and audits
 
 -   [Hardware audit](hardware-audit.md): GPU, CUDA, compiler and tool versions.
+-   [Code audit 2026-11-13](audit-2026-11-13.md): full code audit, findings H1-H3, M1-M9.
 -   [Master plan](MASTER_PLAN.md): stages R3 to R8, workflow, stage gate.
 -   [Collision library decision](collision-decision.md): python-fcl choice (R7.2).
 -   [Planner decision](planner-decision.md): own planners instead of OMPL (R7.3).
@@ -74,3 +75,5 @@ Specs in `docs/specs/` are the work orders for each stage. They are kept for the
 -   [R6 spec](specs/R6-spec.md)
 -   [R7 spec](specs/R7-spec.md)
 -   [R8 spec](specs/R8-spec.md)
+-   [A1 spec](specs/A1-spec.md)
+-   [F1 spec](specs/F1-spec.md)

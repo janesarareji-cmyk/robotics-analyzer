@@ -374,8 +374,13 @@ class ProjectController(QObject):
 
     def _set_project(self, project: ProjectData, modified: bool) -> None:
         """Set the active project and emit project_opened."""
-        if self._project is not None and self._project is not project:
-            self._project.cleanup_assets()
+        old = self._project
+        if old is not None and old is not project:
+            # A1.1: the replaced project is gone (saved or discarded): drop its leftovers
+            if old.file_path and (not project.file_path
+                                  or Path(old.file_path) != Path(project.file_path)):
+                remove_autosave(old.file_path)
+            old.cleanup_assets()
         self._project = project
         self._is_modified = modified
         self._autosave_timer.start(self.autosave_interval_ms)
@@ -390,15 +395,18 @@ class ProjectController(QObject):
         if not self._is_modified or self._project is None:
             return True
 
+        SB = QMessageBox.StandardButton
         answer = QMessageBox.question(
             parent_widget,
             "Unsaved Changes",
             f"Project '{self._project.name}' has unsaved changes.\n"
-            "Discard changes and continue?",
-            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
+            "Save, discard the changes, or cancel?",
+            SB.Save | SB.Discard | SB.Cancel,
+            SB.Cancel,
         )
-        return answer == QMessageBox.StandardButton.Discard
+        if answer == SB.Save:
+            return self.save_project(parent_widget)   # False if failed or cancelled
+        return answer == SB.Discard
 
 
 def _peek_old_version(path: str) -> str | None:
