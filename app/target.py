@@ -71,8 +71,11 @@ def rotate_pose(T: Any, axis: str, deg: float, local: bool = True) -> np.ndarray
     return T
 
 
-def pose_on_surface(point: Any, normal: Any, ref_rot: Any = None) -> np.ndarray:
-    """Target on a surface: origin at ``point``, tool z axis = ``-normal`` (tool points in).
+def pose_on_surface(point: Any, normal: Any, ref_rot: Any = None, standoff: float = 0.0) -> np.ndarray:
+    """Target on a surface: origin at ``point`` + ``standoff`` * normal, tool z axis = ``-normal``.
+
+    ``standoff`` (m) lifts the target off the surface so a tool with a body (fingers) does not
+    start in contact.
 
     The x axis keeps the direction of ``ref_rot``'s x axis as far as the new z allows.
     """
@@ -91,7 +94,7 @@ def pose_on_surface(point: Any, normal: Any, ref_rot: Any = None) -> np.ndarray:
     y = np.cross(z, x)
     T = np.eye(4)
     T[:3, :3] = np.column_stack([x, y, z])
-    T[:3, 3] = np.asarray(point, float).reshape(3)
+    T[:3, 3] = np.asarray(point, float).reshape(3) + float(standoff) * (-z)
     return T
 
 

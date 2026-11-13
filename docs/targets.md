@@ -14,7 +14,9 @@ only written when there is a target. Roll, pitch, yaw: `R = Rz(yaw) Ry(pitch) Rx
 Rotating in 3D: step buttons in the panel (5 degrees about the target's own axis) and typed
 roll / pitch / yaw. Ring handles were not built (heavy in PyVista); the sphere handle drags the position.
 "Place on surface" uses the VTK cell picker on a click (not a camera drag): position = hit point,
-tool z axis = minus surface normal, x axis keeps the previous x direction.
+tool z axis = minus surface normal, x axis keeps the previous x direction. The target is lifted 10 mm
+off the surface by default ("Lift off surface" field): a gripper whose fingers reach past the TCP
+(panda) would otherwise start in contact and every solution would be invalid.
 
 ## Ranking
 

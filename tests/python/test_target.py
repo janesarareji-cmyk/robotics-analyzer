@@ -74,6 +74,10 @@ def test_pose_on_surface_z_is_minus_normal():
         assert np.allclose(T[:3, 3], [0.4, 0.1, 0.2])
     with pytest.raises(ValueError):
         pose_on_surface([0, 0, 0], [0, 0, 0])
+    T = pose_on_surface([0.4, 0.1, 0.2], [0, 0, 1], standoff=0.005)     # lifted along the normal
+    assert np.allclose(T[:3, 3], [0.4, 0.1, 0.205])
+    T = pose_on_surface([0.4, 0.1, 0.2], [1, 0, 0], standoff=0.01)
+    assert np.allclose(T[:3, 3], [0.41, 0.1, 0.2])
 
 
 def test_store_names_and_dict_round_trip():

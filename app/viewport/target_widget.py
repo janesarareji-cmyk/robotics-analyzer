@@ -46,6 +46,7 @@ class TargetController(QObject):
         self._cone_actor: Any = None
         self._pick_mode = False
         self._dragging = False
+        self.standoff = 0.0                 # m: lift off the surface in place_at / click mode
 
     # ------------------------------------------------------------------ state
 
@@ -111,7 +112,7 @@ class TargetController(QObject):
             ref = self._pose[:3, :3]
         elif self._get_ref_rot is not None:
             ref = self._get_ref_rot()
-        p = pose_on_surface(point, normal, ref)
+        p = pose_on_surface(point, normal, ref, self.standoff)
         self.set_pose(p)
         self.committed.emit(p.copy())
         return p

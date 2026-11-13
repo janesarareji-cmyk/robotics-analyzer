@@ -346,10 +346,14 @@ def test_place_on_surface_then_fields(win):
     _load(win, "ur5")
     tp = _open_target(win)
     tp.auto_solve = False
+    tp.set_standoff(0)
     tp.place_on_surface([0.4, 0.1, 0.2], [0, 0, 1])
     T = tp.current_pose()
     assert np.allclose(T[:3, 2], [0, 0, -1]) and np.allclose(T[:3, 3], [0.4, 0.1, 0.2])
     assert np.allclose([b.value() for b in tp._xyz], [400, 100, 200], atol=0.06)
+    tp.set_standoff(10)                                 # default: 10 mm above the surface
+    tp.place_on_surface([0.4, 0.1, 0.2], [0, 0, 1])
+    assert np.allclose(tp.current_pose()[:3, 3], [0.4, 0.1, 0.21])
 
 
 def test_model_change_clears_results(win):

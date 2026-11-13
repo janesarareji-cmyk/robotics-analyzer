@@ -120,6 +120,7 @@ class TargetPanel(QWidget):
         self.last_rank_ms = 0.0
         self.last_motion: Any = None
         self.auto_solve = True
+        self._disposed = False
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
@@ -148,6 +149,16 @@ class TargetPanel(QWidget):
         self._btn_click.toggled.connect(self._on_pick_toggled)
         row.addWidget(self._btn_add)
         row.addWidget(self._btn_click)
+        l1.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Lift off surface"))
+        self._standoff = _spin(0.0, 500.0, 0, " mm", 5.0)
+        self._standoff.setValue(10.0)
+        self._standoff.setToolTip("Pick on surface puts the target this far above the surface, so a "
+                                  "gripper does not start in contact")
+        self._standoff.valueChanged.connect(self._on_standoff)
+        row.addWidget(self._standoff)
+        row.addStretch(1)
         l1.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(QLabel("Name"))
@@ -273,6 +284,7 @@ class TargetPanel(QWidget):
         from app.viewport.target_widget import TargetController
         self._viewport = viewport
         self.controller = TargetController(viewport, get_ref_rot=self._tcp_rot, parent=self)
+        self.controller.standoff = self._standoff.value() / 1000.0
         self.controller.pose_changed.connect(self._on_controller_pose)
         self.controller.committed.connect(self._on_controller_committed)
         self.preview = TargetPreview(lambda: getattr(viewport, "robot_view", None),
@@ -332,7 +344,7 @@ class TargetPanel(QWidget):
     def set_active(self, on: bool) -> None:
         """Dock visible: show the 3D target frame; hidden: remove it (and the ghosts)."""
         self._active = bool(on)
-        if self.controller is None:
+        if self.controller is None or self._disposed:
             return
         if on and self._model is not None and self._current_index() >= 0:
             self.controller.show(True)
@@ -351,9 +363,13 @@ class TargetPanel(QWidget):
 
     def hideEvent(self, e) -> None:
         super().hideEvent(e)
-        self.set_active(False)
+        try:
+            self.set_active(False)
+        except RuntimeError:            # widgets already deleted at interpreter exit
+            pass
 
     def dispose(self) -> None:
+        self._disposed = True
         self._cancel_work()
         if self.preview is not None:
             self.preview.clear()
@@ -600,6 +616,13 @@ class TargetPanel(QWidget):
         self._store.set_pose(i, T)
         self._set_fields(T)
         self._after_pose_edit(solve=True)
+
+    def _on_standoff(self, v: float) -> None:
+        if self.controller is not None:
+            self.controller.standoff = float(v) / 1000.0
+
+    def set_standoff(self, mm: float) -> None:
+        self._standoff.setValue(float(mm))
 
     def _on_pick_toggled(self, on: bool) -> None:
         if self.controller is None:

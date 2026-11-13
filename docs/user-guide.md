@@ -369,7 +369,8 @@ not against the gripper itself. Planning ignores grasped objects.
 Open the Target dock (side bar "Target", View -> Target).
 
 1. Make a target: "New at TCP" (starts at the current tool pose), or "Pick on surface" and click the
-   floor, an object or a robot surface in the 3D view (the tool z axis points into the surface). Drag
+   floor, an object or a robot surface in the 3D view (the tool z axis points into the surface; the target is lifted 10 mm off it,
+   see "Lift off surface"). Drag
    the small sphere to move the target; use the X Y Z (mm) and Roll Pitch Yaw (deg) fields, or the
    Rotate buttons (5 degrees about the target's own axis).
 2. The target is drawn as an RGB triad with a cone (the tool). Cone colour: blue = not solved, green =
