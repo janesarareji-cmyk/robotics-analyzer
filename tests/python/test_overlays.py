@@ -181,3 +181,28 @@ def test_panel_card_and_menu_follow_manager(win):
         m.set_enabled(key, False)
         assert not act.isChecked()
     card.deleteLater()
+
+
+def test_controls_follow_options_set_from_code(win):
+    load(win, "ur5")
+    m = win.overlays
+    card = win.overlay_panel.cards["singularity"].extra
+    m.set_option("singularity", "stat", "any")
+    m.set_option("singularity", "cut", False)
+    m.set_option("singularity", "kinds", ("elbow",))
+    assert card.stat_combo.currentData() == "any" and not card.cut_check.isChecked()
+    assert [k for k, c in card.kind_boxes.items() if c.isChecked()] == ["elbow"]
+    rc = win.overlay_panel.cards["reach"].extra
+    m.set_option("reach", "slice", True)
+    assert rc.slice_check.isChecked() and rc.slice_slider.isEnabled()
+
+
+def test_dock_titles_hidden_only_when_a_tab_shows_the_name(win):
+    from PySide6.QtWidgets import QTabBar
+    win.set_mode("Move")
+    assert pump_until(lambda: win._joint_dock.titleBarWidget() is not None, 5)   # Joints | Collision | Matrices tabs
+    assert win._log_dock.titleBarWidget() is None or win._log_dock.titleBarWidget().objectName() == "blank_dock_title"
+    win.set_mode("Model")
+    pump_until(lambda: True, 0.2)
+    # the lone DH editor keeps its title bar
+    assert win._dh_dock.titleBarWidget() is None

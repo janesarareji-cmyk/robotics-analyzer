@@ -25,6 +25,7 @@ MODES: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 MODE_NAMES = list(MODES)
 LEFT_DOCKS = ("model", "props", "physical")
+MODEL_DOCK_WIDTH = 340            # px: the robot tree of an arm with 10 joints needs about this
 
 BAR_STYLE = """
 QToolBar#mode_bar { background: #202020; border: none; border-bottom: 1px solid #333333;
@@ -137,6 +138,10 @@ class ModeController:
 
     def _on_applied(self, mode: str) -> None:
         win = self.win
+        if hasattr(win, "_schedule_dock_titles"):
+            win._schedule_dock_titles()
+        if mode == "Model" and hasattr(win, "_model_dock"):
+            win.resizeDocks([win._model_dock], [MODEL_DOCK_WIDTH], Qt.Orientation.Horizontal)   # deep trees
         if mode == "Target" and win.project_controller.robot is not None:
             tp = win.target_panel
             if tp.current_index < 0:

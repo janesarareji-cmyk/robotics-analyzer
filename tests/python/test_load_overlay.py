@@ -130,3 +130,36 @@ def test_playback_gives_speed_from_trajectory(win):
     assert ov.last is not None
     assert ov.last["sratio"].max() > 0.0                  # qd comes from the trajectory
     m.set_enabled("load", False)
+
+
+def test_plates_do_not_overlap_and_stay_inside():
+    from app.viewport.load_bars import PLATE_H, PLATE_W, layout_plates
+    anchors = [(400.0, 300.0), (410.0, 310.0), (405.0, 305.0), (395.0, 296.0), (700.0, 20.0), (float("nan"), 5.0)]
+    rects = layout_plates(anchors, 800, 600)
+    real = [r for r in rects if r is not None]
+    assert len(real) == 5 and rects[5] is None
+    for i, a in enumerate(real):
+        assert a.width() == PLATE_W and a.height() == PLATE_H
+        assert a.left() >= 0 and a.right() <= 800 and a.top() >= -PLATE_H and a.bottom() <= 600
+        for b in real[i + 1:]:
+            assert not a.intersects(b)
+
+
+def test_bars_follow_a_resize_and_grab_shows_current_state(win):
+    load(win, "ur5")
+    put_q(win, UR5_Q)
+    m = win.overlays
+    m.set_enabled("load", True)
+    ov = m.overlay("load")
+    before = ov.bars.items[0][:2]
+    win.resize(win.width() + 200, win.height() + 100)
+    assert pump_until(lambda: ov.bars.items[0][:2] != before, 5)
+    # a grab flushes the latest state first
+    put_q(win, [0.9, -0.3, 0.4, -0.5, 0.8, 0.2])
+    t_before = ov.updates
+    win.grab_view()
+    assert ov.last is not None and np.allclose(ov.last["tau"], load_ratios(
+        win.project_controller.robot, ov._dyn(win.project_controller.robot),
+        [0.9, -0.3, 0.4, -0.5, 0.8, 0.2])["tau"])
+    assert ov.updates >= t_before
+    m.set_enabled("load", False)

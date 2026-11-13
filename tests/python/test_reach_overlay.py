@@ -106,8 +106,11 @@ def test_overlay_in_window_slice_and_probe(win):
     m.set_enabled("reach", True)
     assert pump_until(lambda: rv.overlay_actor("reach") is not None, 120)
     data = m.data("reach")
+    cut_n = rv.overlay_voxel_count("reach")                 # cut open is the default: the front half is hidden
+    m.set_option("reach", "cut", False)
     full = rv.overlay_voxel_count("reach")
     assert full == min(data["filled"], rv.MAX_OVERLAY_VOXELS)
+    assert 0.3 * full < cut_n < 0.7 * full
     assert "voxels" in m.status("reach")
     # slice: one layer only
     m.set_option("reach", "slice", True)

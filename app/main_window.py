@@ -795,7 +795,7 @@ class MainWindow(QMainWindow):
             self._overlays.register(ov)
         self._overlays.set_extra_hash(self._collision_hash)
         self._overlays.set_live_source(self._live_state)
-        self._live_dyn: Any = None            # (qd, qdd) of the simulation state being shown, else None
+        self._live_dyn: Any = None            # (qd, qdd, q) of the last simulation / playback state
         if "load" in self._overlays.keys:
             self._overlays.overlay("load").gravity_fn = self._project_gravity
         self._overlay_panel = OverlayPanel(self._overlays)
@@ -934,6 +934,38 @@ class MainWindow(QMainWindow):
             action.toggled.connect(lambda on, d=dock: self._on_view_toggled(on, d))
             dock.visibilityChanged.connect(
                 lambda vis, a=action, d=dock: self._on_dock_visibility(vis, a, d))
+            dock.visibilityChanged.connect(lambda _v: self._schedule_dock_titles())
+        self._schedule_dock_titles()
+
+    def _schedule_dock_titles(self) -> None:
+        """Update the dock title bars once, after the current event (docks show and hide in bursts)."""
+        timer = self.__dict__.get("_titles_timer")
+        if timer is None:
+            timer = QTimer(self)                 # owned by the window: dies with it, no late call
+            timer.setSingleShot(True)
+            timer.setInterval(0)
+            timer.timeout.connect(self._update_dock_titles)
+            self._titles_timer = timer
+        timer.start()
+
+    def _update_dock_titles(self) -> None:
+        """A dock whose tab is shown does not repeat its name in a title bar (U6-fix)."""
+        blanks = self.__dict__.setdefault("_blank_titles", {})
+        for _action, dock in self._view_action_docks():
+            if dock is None:
+                continue
+            group = [dock] + list(self.tabifiedDockWidgets(dock))
+            tabbed = (not dock.isFloating()) and sum(1 for d in group if not d.isHidden()) >= 2
+            blank = blanks.get(dock)
+            if tabbed and blank is None:
+                blank = QWidget(dock)
+                blank.setObjectName("blank_dock_title")
+                blanks[dock] = blank
+                dock.setTitleBarWidget(blank)
+            elif not tabbed and blank is not None:
+                dock.setTitleBarWidget(None)
+                blank.deleteLater()
+                del blanks[dock]
 
     def _on_view_toggled(self, on: bool, dock: QDockWidget) -> None:
         """View action toggled by the user (menu, side bar) or by code."""
@@ -1176,6 +1208,7 @@ class MainWindow(QMainWindow):
             self.restoreState(self._default_state)
         self._apply_default_sizes()
         self._modes.set_current(DEFAULT_MODE)
+        self._schedule_dock_titles()
 
     def _populate_sample_menu(self) -> None:
         """Fill File > Open Sample Robot from robots/*/<name>.urdf."""
@@ -1581,11 +1614,8 @@ class MainWindow(QMainWindow):
         self._joint_panel.set_model(model, save_baseline=False)
         if self._dh_editor.get_model() is not None:
             self._dh_editor.refresh_q()
-        self._live_dyn = (state.qd, state.qdd)
-        try:
-            self._update_robot_view(reset_camera=False)
-        finally:
-            self._live_dyn = None
+        self._live_dyn = (np.array(state.qd, float), np.array(state.qdd, float), np.array(state.q, float))
+        self._update_robot_view(reset_camera=False)
 
     def _project_gravity(self) -> Any:
         """Gravity vector of the open project (SimulationSettings.gravity)."""
@@ -2492,6 +2522,7 @@ class MainWindow(QMainWindow):
         """The 3D view as an (H, W, 3) uint8 array, overlays as shown. ``size`` (w, h) scales and crops."""
         from PySide6.QtCore import QCoreApplication, Qt as _Qt
         from app.sim.video_export import image_to_array
+        self._overlays.update_live(force=True)     # the joint load bars show the state being grabbed
         hide = [w for w in (self._view_buttons, self._playback_bar) if w.isVisible()]
         for w in hide:
             w.hide()
@@ -2578,8 +2609,8 @@ class MainWindow(QMainWindow):
     def _live_state(self) -> tuple:
         """(q, qd, qdd) for the live overlays: the simulation state while it is shown, else rest."""
         q = self._current_q()
-        dyn = self._live_dyn
-        if dyn is not None and len(dyn[0]) == len(q):
+        dyn = self._live_dyn           # speeds of the last simulation / playback state, valid for that pose only
+        if dyn is not None and len(dyn[2]) == len(q) and np.allclose(q, dyn[2], atol=1e-12):
             return q, list(dyn[0]), list(dyn[1])
         return q, None, None
 

@@ -17,7 +17,7 @@ SLIDER_STEPS = 1000
 BAR_STYLE = """
 QWidget#playback_bar { background: rgba(32, 32, 40, 215); border: 1px solid #3a3a55; border-radius: 6px; }
 QWidget#playback_bar QPushButton { color: #e8e8f0; background: transparent; border: none;
-                                   padding: 3px 9px; min-height: 22px; min-width: 22px; font-size: 10pt; }
+                                   padding: 3px 10px; min-height: 26px; min-width: 28px; font-size: 13pt; }
 QWidget#playback_bar QPushButton:hover { background: #3d6fcc; color: #ffffff; }
 QWidget#playback_bar QPushButton:focus { border: 2px solid #ffffff; }
 QWidget#playback_bar QPushButton:disabled { color: #7d7d7d; }

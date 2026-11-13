@@ -94,9 +94,13 @@ class OverlayCard(QFrame):
         blurb.setStyleSheet(f"color: {MUTED};")
         lay.addWidget(blurb)
 
+        self.body = QWidget()                       # everything below the toggle: shown only while on
+        blay = QVBoxLayout(self.body)
+        blay.setContentsMargins(0, 0, 0, 0)
+        blay.setSpacing(4)
         self.extra = ov.make_controls(manager)
         if self.extra is not None:
-            lay.addWidget(self.extra)
+            blay.addWidget(self.extra)
 
         row = QHBoxLayout()
         lab = QLabel("Opacity")
@@ -110,21 +114,21 @@ class OverlayCard(QFrame):
         self.opacity_label.setMinimumWidth(38)
         row.addWidget(self.opacity, 1)
         row.addWidget(self.opacity_label)
-        lay.addLayout(row)
+        blay.addLayout(row)
 
         self.bar = ColorBar()
-        lay.addWidget(self.bar)
+        blay.addWidget(self.bar)
 
-        self.status = QLabel("Off")
+        self.status = QLabel("")
         self.status.setWordWrap(True)
         self.status.setStyleSheet(f"color: {MUTED};")
-        lay.addWidget(self.status)
+        blay.addWidget(self.status)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setTextVisible(False)
         self.progress.setFixedHeight(8)
         self.progress.hide()
-        lay.addWidget(self.progress)
+        blay.addWidget(self.progress)
         brow = QHBoxLayout()
         self.recompute = QPushButton("Recompute")
         self.recompute.setToolTip("Throw away the stored result and compute it again")
@@ -135,8 +139,12 @@ class OverlayCard(QFrame):
         brow.addStretch(1)
         if ov.live:
             self.recompute.hide()
-        lay.addLayout(brow)
+        blay.addLayout(brow)
 
+        lay.addWidget(self.body)
+        self.body.setVisible(self.check.isChecked())
+
+        self.check.toggled.connect(self.body.setVisible)
         self.check.toggled.connect(lambda on: manager.set_enabled(key, on))
         self.opacity.valueChanged.connect(self._on_opacity)
         self.recompute.clicked.connect(lambda: manager.recompute(key))
@@ -158,8 +166,9 @@ class OverlayCard(QFrame):
                 self.check.blockSignals(True)
                 self.check.setChecked(on)
                 self.check.blockSignals(False)
+            self.body.setVisible(on)
             if not on:
-                self.status.setText("Off")
+                self.status.setText("")
 
     def _on_status(self, key: str, text: str) -> None:
         if key == self._key and self._m.enabled(key):

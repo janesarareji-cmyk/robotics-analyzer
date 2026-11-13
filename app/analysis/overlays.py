@@ -41,6 +41,14 @@ def robot_hash(model: Any, extra: str = "") -> str:
     return h.hexdigest()
 
 
+def cut_mask(centers_base: np.ndarray, on: bool) -> np.ndarray:
+    """Voxels kept when the 3D overlay is cut open: the half with base-frame y <= 0 stays, the half in
+    front of the default camera goes, so the robot inside is visible."""
+    if not on:
+        return np.ones(len(centers_base), dtype=bool)
+    return np.asarray(centers_base)[:, 1] <= 0.0
+
+
 class Overlay:
     """Base class. Subclasses set ``key``, ``title``, ``blurb`` and override the hooks."""
 

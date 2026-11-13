@@ -14,7 +14,7 @@ import numpy as np
 from app.analysis import workspace_analysis as wa
 from app.analysis.batch_jacobian import fast_sample_metrics
 from app.analysis.overlay_colors import colormap_rgb, colormap_stops
-from app.analysis.overlays import Overlay
+from app.analysis.overlays import Overlay, cut_mask
 from app.compute.backend import estimate_reach
 
 # quality -> (samples, grid cells across the reach)
@@ -36,7 +36,7 @@ class ReachOverlay(Overlay):
         self._base = np.eye(4)
 
     def default_options(self) -> dict:
-        return {"quality": "Normal", "seed": 42, "slice": False, "height": 0.5}
+        return {"quality": "Normal", "seed": 42, "slice": False, "height": 0.5, "cut": True}
 
     # ------------------------------------------------------------------ compute (worker)
     def compute(self, model, opts, cancel, progress) -> dict:
@@ -82,6 +82,9 @@ class ReachOverlay(Overlay):
         if opts.get("slice"):
             m = self.layer_mask(data, float(opts.get("height", 0.5)))
             centers, rgb = centers[m], rgb[m]
+        else:                                   # a slice is flat and shown whole; the 3D cloud is cut open
+            m = cut_mask(centers, bool(opts.get("cut", True)))
+            centers, rgb = centers[m], rgb[m]
         if len(centers) == 0:
             view.clear_overlay(self.key)
             return 0
@@ -122,8 +125,8 @@ class ReachOverlay(Overlay):
         v = wa.voxel_value(res, int(ijk[0]), int(ijk[1]), int(ijk[2]), "count")
         ok = bool(np.isfinite(v))
         centre = np.asarray(res["origin"]) + (ijk + 0.5) * h
-        view.set_overlay_outline(self.key + "_probe", centre, h * 1.02,
-                                 PROBE_OK if ok else PROBE_BAD, base)
+        view.set_overlay_outline(self.key + "_probe", centre, h * 1.15,
+                                 PROBE_OK if ok else PROBE_BAD, base, width=5.0)
         return ok
 
     # ------------------------------------------------------------------ extra controls
@@ -144,6 +147,11 @@ class ReachOverlay(Overlay):
         q.setAccessibleName("Reach map quality")
         row.addWidget(q, 1)
         lay.addLayout(row)
+        cut = QCheckBox("Cut open (hide the front half)")
+        cut.setChecked(bool(manager.options(self.key)["cut"]))
+        cut.setToolTip("Hide half of the cubes so the robot inside stays visible")
+        lay.addWidget(cut)
+        cut.toggled.connect(lambda on: manager.set_option(self.key, "cut", bool(on)))
         sl = QCheckBox("Slice at a height")
         sl.setToolTip("Show only one horizontal layer, a map for a table height")
         lay.addWidget(sl)
@@ -165,10 +173,18 @@ class ReachOverlay(Overlay):
         def refresh(key: str) -> None:
             if key != self.key:
                 return
+            o = manager.options(self.key)
+            for wdg, fn in ((cut, lambda: cut.setChecked(bool(o["cut"]))),
+                            (q, lambda: q.setCurrentText(o["quality"])),
+                            (sl, lambda: sl.setChecked(bool(o["slice"])))):
+                wdg.blockSignals(True)
+                fn()
+                wdg.blockSignals(False)
+            slider.setEnabled(sl.isChecked())
             d = manager.data(self.key)
             hlab.setText("z = -" if d is None or d["filled"] == 0 else
                          f"z = {self.slice_height(d, slider.value() / 100.0):.2f} m")
 
         manager.changed.connect(refresh)
-        w.slice_check, w.slice_slider, w.quality_combo = sl, slider, q
+        w.slice_check, w.slice_slider, w.quality_combo, w.cut_check = sl, slider, q, cut
         return w

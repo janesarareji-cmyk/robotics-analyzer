@@ -811,9 +811,10 @@ class RobotView:
         line_mesh.point_data["rgb"] = (col * 255).astype(np.uint8)
         tube = line_mesh.tube(radius=r, n_sides=10)
         self._tube_mesh = tube
-        self._tube_actor = self._plotter.add_mesh(
-            tube, scalars="rgb", rgb=True, reset_camera=False, pickable=False,
-            show_scalar_bar=False)
+        if tube.n_points > 0:        # a zero-length curve (target at the tool) has no tube, only the end marks
+            self._tube_actor = self._plotter.add_mesh(
+                tube, scalars="rgb", rgb=True, reset_camera=False, pickable=False,
+                show_scalar_bar=False)
         marks = []
         specs = [(pts[0], "#43a047", 1.9), (pts[-1], "#ffffff", 1.9)]
         for v in ([] if via_points is None else np.asarray(via_points, float).reshape(-1, 3)):

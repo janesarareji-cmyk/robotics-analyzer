@@ -37,10 +37,16 @@ threshold, orange = below twice the threshold. The threshold starts at `SINGULAR
 bars in the Joints and Matrices panels, the orange target ghost (Target mode) and the orange curve segments
 (Curve dock). The slider (0.005 to 0.3, log scale) changes only the overlay; "Reset" goes back to 0.05.
 
--   Per voxel the smallest sigma_min per kind is stored, so threshold and kind boxes redraw at once.
-    A voxel is red when ANY sample inside it is singular, so with every orientation counted nearly each
-    voxel is red when the wrist is included: the wrist kind (tool orientation) exists at almost every
-    position. It is therefore off at the start; tick "Wrist" to see it.
+-   Per voxel the smallest sigma_min per kind and the largest sigma_min (with its kind) are stored, so threshold, kind
+    boxes and the statistic redraw at once without a new compute.
+-   "Show": **Unavoidable (best tool orientation)** (default) paints a voxel when even its best sample is singular: the
+    zones no tool orientation can avoid (ur5: the outer shell at full stretch and the cylinder around the first axis,
+    about 5 % red and 11 % orange of the voxels). **Any tool orientation (worst)** paints a voxel when some sample in
+    it is singular; with the wrist included that is nearly every voxel (the wrist singularity exists at every
+    position), so it is only useful with the kind boxes (e.g. only Elbow).
+-   "Cut open" hides the half of the cubes with base y > 0 so the robot inside stays visible (reach map too).
+-   Samples per voxel matter: the "best" value is biased low with few samples. Normal uses reach/25 voxels and 1 million
+    samples (about 30 per voxel on ur5); Fast 300 000 and reach/18; Fine 3 million and reach/40.
 -   Kinds (robots with >= 6 DOF whose first and last three joints are revolute, otherwise all "general"):
     -   wrist: the last three axes are nearly dependent (sigma_min of the axes matrix < 0.2), e.g. q5 = 0 on a UR.
     -   elbow: shoulder to wrist-centre distance within 0.4 % of its maximum or minimum (arm stretched or folded).
@@ -49,7 +55,7 @@ bars in the Joints and Matrices panels, the orange target ghost (Target mode) an
     The wrist centre is the closest point of axis n-3 and axis n-2 (spherical wrist: the wrist point, e.g.
     kuka_iiwa; offset wrist: the crossing of the two forearm axes, e.g. ur5, xarm6). The label is a heuristic:
     the first match in the order wrist, elbow, shoulder.
--   Quality: Fast 200 000, Normal 600 000, Fine 2 million samples. 1e6 samples with classification: 4.4 s (ur5,
+-   1e6 samples with classification: 4.4 s (ur5,
     CPU, batch Jacobian). The GPU is not used: there is no GPU Jacobian kernel (GPU IK was NO-GO, see
     `docs/gpu-ik-decision.md`), and the batch Jacobian runs on all CPU threads.
 -   "Export CSV..." writes x, y, z (world, m), sigma_min and kind of the red and orange voxels shown.
@@ -89,3 +95,22 @@ red above; a bar is full at 100 %.
     -   PNG frames: a folder `frame_0001.png`, ...
 -   Size: "Viewport size" is a grab of the view including the joint load bars; "1280 x 720" and "1920 x 1080" scale the
     view up (and crop to the aspect), so make the 3D view large for a sharp result.
+
+## Milestone and review numbers (U6)
+
+-   `tests/python/test_milestone_u6.py` (ur5): the stretched pose (q3 = 0) is red in both statistics and sigma_min is
+    below 1e-6; a target there has the warn status with every valid IK solution near singular (orange ghost); a line
+    curve from the start pose to it: 52 samples, 1 under the threshold (flagged by the curve check, in a red or orange
+    overlay voxel), 23 bad (the straight line leaves the reachable set); a 2 s playback exports 30 frames at 15 fps;
+    the CSV (1390 voxel rows in Fast quality) holds the voxel of the target. GIF stores identical frames once, so a
+    blank offscreen test video has one image with the full duration.
+-   Screenshots in `docs/screens/u6/` (real window, `tools/u6_shots.py`), all read. GUI skills: UI Design Review and
+    Accessibility Review. Fixed from them: red-everywhere singularity picture (statistic "unavoidable", coarser voxels),
+    reach map hid the robot (cut open), joint load plates overlapped and leader lines crossed the dots (three-pass
+    drawing, offset), bars stale after a resize or a video seek (redraw on resize, flush before a grab), speeds lost on
+    a seek (kept per pose), controls not following options (sync), long overlay cards (controls only while the
+    overlay is on), a zero-length curve crashed the tube (end marks only), dock title repeated by the tab (title bar
+    hidden while a tab shows the name), model tree clipped (dock 340 px in Model mode), small playback glyphs.
+    Text alternative: the load bars carry an accessible description with the percentages.
+-   Not done: colour is the only difference between red and orange voxels (the legend names both, the CSV has the
+    value); NVDA test; 200 % scaling pass; MP4 on this machine (no ffmpeg).

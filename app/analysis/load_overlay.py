@@ -105,6 +105,7 @@ class LoadOverlay(Overlay):
             from app.viewport.load_bars import LoadBars
             parent = view.widget.parentWidget() or view.widget
             self.bars = LoadBars(parent)
+            self.bars.resized.connect(lambda: self.redraw_bars(view))
         self.bars.show()
         self.bars.raise_()
         if not self._observing:

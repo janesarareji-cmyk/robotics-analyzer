@@ -24,6 +24,7 @@ class VideoExportDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Export playback video")
         self.setObjectName("video_dialog")
+        self.setMinimumWidth(480)
         self._exporter = exporter
         self._duration = float(duration)
         self._make_grab = make_grab

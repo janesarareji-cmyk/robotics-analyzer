@@ -32,7 +32,7 @@ import core_bridge as cb
 from app.analysis import workspace_analysis as wa
 from app.analysis.batch_jacobian import batch_pose_jacobian, sigma_min_batch
 from app.analysis.overlay_colors import ORANGE, RED
-from app.analysis.overlays import Overlay
+from app.analysis.overlays import Overlay, cut_mask
 from app.compute.backend import estimate_reach
 from app.kin_utils import SINGULAR_WARN, dof_joint_types, dof_limits
 
@@ -40,10 +40,8 @@ KINDS = ("wrist", "elbow", "shoulder", "general")
 WRIST_TOL = 0.2          # sigma_min of the wrist axes matrix
 ELBOW_TOL = 0.004        # of the largest shoulder-wrist distance (about 9 deg of the elbow angle)
 SHOULDER_TOL = 0.04      # of the reach
-QUALITY = {"Fast": (200_000, 25), "Normal": (600_000, 40), "Fine": (2_000_000, 60)}
-# the wrist kind exists at almost every position (any tool orientation can be a wrist singularity),
-# so it is off at the start: the picture then shows the position dependent zones (elbow, shoulder)
-DEFAULT_KINDS = ("elbow", "shoulder", "general")
+QUALITY = {"Fast": (300_000, 18), "Normal": (1_000_000, 25), "Fine": (3_000_000, 40)}
+STATS = {"best": "Unavoidable (best tool orientation)", "any": "Any tool orientation (worst)"}
 THRESHOLD_MIN, THRESHOLD_MAX = 0.005, 0.3
 CHUNK = 100_000
 
@@ -195,60 +193,79 @@ def study(model: Any, quality: str = "Normal", seed: int = 42, metric: str = "fu
             u, inv = np.unique(lin, return_inverse=True)
             inv = inv.reshape(-1)
             arr = np.full((len(u), len(KINDS)), np.inf)
+            smax = np.full(len(u), -1.0)
+            np.maximum.at(smax, inv, smin_o)
+            kbest = np.full(len(u), 3, dtype=np.int8)
+            best = smin_o >= smax[inv]
+            kbest[inv[best]] = kind_o[best]
             for k in range(len(KINDS)):
                 sel = kind_o == k
                 if sel.any():
                     np.minimum.at(arr[:, k], inv[sel], smin_o[sel])
             cnt = np.bincount(inv).astype(np.int64)
-            state = _merge(state, u, arr, cnt)
+            state = _merge(state, u, arr, cnt, smax, kbest)
         done += m
         if progress is not None:
             progress(done, samples)
     seconds = time.perf_counter() - t0
     if state is None:
-        state = dict(keys=np.zeros(0, np.int64), smin=np.zeros((0, len(KINDS))), count=np.zeros(0, np.int64))
+        state = dict(keys=np.zeros(0, np.int64), smin=np.zeros((0, len(KINDS))), count=np.zeros(0, np.int64),
+                     smax=np.zeros(0), kbest=np.zeros(0, np.int8))
     return dict(keys=state["keys"], smin_kind=state["smin"], count=state["count"], origin=blo,
+                smax=state["smax"], kind_best=state["kbest"],
                 voxel_size=h, dims=dims, n_samples=samples, n_samples_done=done, cancelled=cancelled,
                 seconds=seconds, metric=mode, wrist=info.wrist, has_kinds=info.has_kinds,
                 filled=int(len(state["keys"])), message="" if len(state["keys"]) or cancelled
                 else "No samples reached the grid.")
 
 
-def _merge(state, keys, arr, cnt):
+def _merge(state, keys, arr, cnt, smax, kbest):
     if state is None:
-        return dict(keys=keys, smin=arr, count=cnt)
+        return dict(keys=keys, smin=arr, count=cnt, smax=smax, kbest=kbest)
     allk = np.union1d(state["keys"], keys)
     out = dict(keys=allk, smin=np.full((len(allk), arr.shape[1]), np.inf),
-               count=np.zeros(len(allk), np.int64))
-    for ks, a, c in ((state["keys"], state["smin"], state["count"]), (keys, arr, cnt)):
+               count=np.zeros(len(allk), np.int64), smax=np.full(len(allk), -1.0),
+               kbest=np.full(len(allk), 3, dtype=np.int8))
+    for ks, a, c, mx, kb in ((state["keys"], state["smin"], state["count"], state["smax"], state["kbest"]),
+                             (keys, arr, cnt, smax, kbest)):
         ix = np.searchsorted(allk, ks)
         out["smin"][ix] = np.minimum(out["smin"][ix], a)
         out["count"][ix] += c
+        better = mx > out["smax"][ix]
+        out["smax"][ix[better]] = mx[better]
+        out["kbest"][ix[better]] = kb[better]
     return out
 
 
-def zones(data: dict, threshold: float, kinds=KINDS) -> dict:
+def zones(data: dict, threshold: float, kinds=KINDS, stat: str = "any") -> dict:
     """Which voxels are red / orange for ``threshold`` and the enabled ``kinds``.
 
-    Returns dict(red, orange, sigma (min over the enabled kinds), kind (index of the kind with the
-    smallest sigma)); the masks are aligned with ``data['keys']``.
+    ``stat`` "any": a voxel counts when ANY sample in it is singular (smallest sigma_min per kind,
+    worst tool orientation). "best": it counts when even its best sample is singular (the largest
+    sigma_min of the voxel, "unavoidable"; the kind is the kind of that best sample).
+    Returns dict(red, orange, sigma, kind); the masks are aligned with ``data['keys']``.
     """
     enabled = [i for i, k in enumerate(KINDS) if k in kinds]
     sk = data["smin_kind"]
     if not enabled or len(sk) == 0:
         z = np.zeros(len(sk), bool)
         return dict(red=z, orange=z.copy(), sigma=np.full(len(sk), np.inf), kind=np.zeros(len(sk), int))
-    sub = sk[:, enabled]
-    sigma = sub.min(axis=1)
-    kind = np.asarray(enabled)[np.argmin(sub, axis=1)]
+    if stat == "best":
+        kind = np.asarray(data["kind_best"], dtype=int)
+        sigma = np.where(np.isin(kind, enabled), data["smax"], np.inf)
+    else:
+        sub = sk[:, enabled]
+        sigma = sub.min(axis=1)
+        kind = np.asarray(enabled)[np.argmin(sub, axis=1)]
     red = sigma < threshold
     orange = (sigma < 2.0 * threshold) & ~red
     return dict(red=red, orange=orange, sigma=sigma, kind=kind)
 
 
-def export_csv(path: str, data: dict, threshold: float, kinds=KINDS, base: np.ndarray | None = None) -> int:
+def export_csv(path: str, data: dict, threshold: float, kinds=KINDS, base: np.ndarray | None = None,
+               stat: str = "any") -> int:
     """Write x, y, z (world, m), sigma_min, kind of every red or orange voxel. Returns the row count."""
-    z = zones(data, threshold, kinds)
+    z = zones(data, threshold, kinds, stat)
     sel = z["red"] | z["orange"]
     centers = wa.voxel_centers(data)[sel]
     if base is not None:
@@ -277,7 +294,7 @@ class SingularityOverlay(Overlay):
 
     def default_options(self) -> dict:
         return {"quality": "Normal", "seed": 42, "metric": "full", "threshold": SINGULAR_WARN,
-                "kinds": DEFAULT_KINDS}
+                "kinds": KINDS, "stat": "best", "cut": True}
 
     def compute(self, model, opts, cancel, progress) -> dict:
         return study(model, opts.get("quality", "Normal"), int(opts.get("seed", 42)),
@@ -292,12 +309,14 @@ class SingularityOverlay(Overlay):
         if data is None or data["filled"] == 0:
             view.clear_overlay(self.key)
             return 0
-        z = zones(data, float(opts.get("threshold", SINGULAR_WARN)), tuple(opts.get("kinds", KINDS)))
-        sel = z["red"] | z["orange"]
+        z = zones(data, float(opts.get("threshold", SINGULAR_WARN)), tuple(opts.get("kinds", KINDS)),
+                  opts.get("stat", "best"))
+        centers_all = wa.voxel_centers(data)
+        sel = (z["red"] | z["orange"]) & cut_mask(centers_all, bool(opts.get("cut", True)))
         if not sel.any():
             view.clear_overlay(self.key)
             return 0
-        centers = wa.voxel_centers(data)[sel]
+        centers = centers_all[sel]
         rgb = np.where(z["red"][sel][:, None], np.array(RED, np.uint8), np.array(ORANGE, np.uint8))
         return view.set_overlay_voxels(self.key, centers, data["voxel_size"], rgb, opacity, base)
 
@@ -313,10 +332,11 @@ class SingularityOverlay(Overlay):
             return ""
         if data.get("message"):
             return data["message"]
-        z = zones(data, float(opts.get("threshold", SINGULAR_WARN)), tuple(opts.get("kinds", KINDS)))
-        kinds = "wrist, elbow, shoulder, general" if data["has_kinds"] else "general only"
-        return (f"{int(z['red'].sum())} red, {int(z['orange'].sum())} orange of {data['filled']} voxels "
-                f"({kinds}), {data['seconds']:.1f} s")
+        z = zones(data, float(opts.get("threshold", SINGULAR_WARN)), tuple(opts.get("kinds", KINDS)),
+                  opts.get("stat", "best"))
+        kinds = "" if data["has_kinds"] else ", this robot: general kind only"
+        return (f"{int(z['red'].sum())} red and {int(z['orange'].sum())} orange voxels of "
+                f"{data['filled']}{kinds} ({data['seconds']:.1f} s)")
 
     # ------------------------------------------------------------------ controls
     def export(self, path: str) -> int:
@@ -324,7 +344,7 @@ class SingularityOverlay(Overlay):
         if self._data is None:
             raise ValueError("No singularity result yet: switch the overlay on first.")
         return export_csv(path, self._data, float(self._opts.get("threshold", SINGULAR_WARN)),
-                          tuple(self._opts.get("kinds", KINDS)), self._base)
+                          tuple(self._opts.get("kinds", KINDS)), self._base, self._opts.get("stat", "best"))
 
     def make_controls(self, manager) -> Any:
         from PySide6.QtCore import Qt
@@ -340,9 +360,26 @@ class SingularityOverlay(Overlay):
         q.addItems(list(QUALITY))
         q.setCurrentText(manager.options(self.key)["quality"])
         q.setAccessibleName("Singularity quality")
-        q.setToolTip("Fast = 200 000 samples, Normal = 600 000, Fine = 2 million")
+        q.setToolTip("Fast = 300 000 samples, Normal = 1 million, Fine = 3 million")
         row.addWidget(q, 1)
         lay.addLayout(row)
+
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel("Show"))
+        stat = QComboBox()
+        for key, label in STATS.items():
+            stat.addItem(label, key)
+        stat.setAccessibleName("Singularity zone statistic")
+        stat.setToolTip("Unavoidable: no tool orientation avoids the singularity here. "
+                        "Any: some tool orientation is singular here (nearly everywhere).")
+        srow.addWidget(stat, 1)
+        lay.addLayout(srow)
+        cut = QCheckBox("Cut open (hide the front half)")
+        cut.setChecked(bool(manager.options(self.key)["cut"]))
+        cut.setToolTip("Hide half of the cubes so the robot inside stays visible")
+        lay.addWidget(cut)
+        stat.currentIndexChanged.connect(lambda _i: manager.set_option(self.key, "stat", stat.currentData()))
+        cut.toggled.connect(lambda on: manager.set_option(self.key, "cut", bool(on)))
 
         trow = QHBoxLayout()
         trow.addWidget(QLabel("Threshold"))
@@ -382,7 +419,7 @@ class SingularityOverlay(Overlay):
         for k in KINDS:
             cb_ = QCheckBox(k.capitalize())
             cb_.setChecked(k in manager.options(self.key)["kinds"])
-            cb_.setToolTip({"wrist": "Last three joint axes nearly dependent (exists at almost every position)",
+            cb_.setToolTip({"wrist": "Last three joint axes nearly dependent",
                             "elbow": "Arm fully stretched or folded",
                             "shoulder": "Wrist centre close to the first joint axis",
                             "general": "Singular for another reason"}[k])
@@ -417,6 +454,17 @@ class SingularityOverlay(Overlay):
 
         def refresh(key: str) -> None:
             if key == self.key:
+                o = manager.options(self.key)
+                for wdg, fn in ((stat, lambda: stat.setCurrentIndex(max(0, stat.findData(o["stat"])))),
+                                (cut, lambda: cut.setChecked(bool(o["cut"]))),
+                                (q, lambda: q.setCurrentText(o["quality"]))):
+                    wdg.blockSignals(True)
+                    fn()
+                    wdg.blockSignals(False)
+                for k, c in boxes.items():
+                    c.blockSignals(True)
+                    c.setChecked(k in o["kinds"])
+                    c.blockSignals(False)
                 has = self._data is not None and self._data["has_kinds"]
                 for k, c in boxes.items():
                     if k != "general":
@@ -425,5 +473,6 @@ class SingularityOverlay(Overlay):
 
         manager.changed.connect(refresh)
         w.threshold_slider, w.kind_boxes, w.export_button, w.quality_combo = slider, boxes, exp, q
+        w.stat_combo, w.cut_check = stat, cut
         refresh(self.key)
         return w

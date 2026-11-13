@@ -12,7 +12,7 @@ pytest.importorskip("fcl")
 import core_bridge as cb
 from app.analysis import workspace_analysis as wa
 from app.analysis.batch_jacobian import batch_pose_jacobian, sigma_min_batch
-from app.analysis.singularity_overlay import (DEFAULT_KINDS, KINDS, SingularityOverlay, arm_info,
+from app.analysis.singularity_overlay import (KINDS, SingularityOverlay, arm_info,
                                               classify, export_csv, study, zones)
 from app.importers.urdf import import_urdf
 from app.kin_utils import SINGULAR_WARN, dof_limits
@@ -145,14 +145,30 @@ def test_zones_threshold_kinds_and_csv(tmp_path):
     path = tmp_path / "s.csv"
     base = np.eye(4)
     base[:3, 3] = [1.0, 2.0, 3.0]
-    n = export_csv(str(path), d, 0.05, DEFAULT_KINDS, base)
-    z = zones(d, 0.05, DEFAULT_KINDS)
+    n = export_csv(str(path), d, 0.05, KINDS, base)
+    z = zones(d, 0.05, KINDS)
     assert n == int((z["red"] | z["orange"]).sum()) > 0
     rows = list(csv.reader(open(path, encoding="utf-8")))
     assert rows[0] == ["x", "y", "z", "sigma_min", "kind"] and len(rows) == n + 1
     assert all(r[4] in KINDS and float(r[3]) < 0.1 for r in rows[1:])
     c0 = wa.voxel_centers(d)[(z["red"] | z["orange"])][0]
     assert np.allclose([float(v) for v in rows[1][:3]], c0 + [1.0, 2.0, 3.0], atol=1e-5)
+
+
+def test_best_orientation_statistic_is_a_subset_and_smaller():
+    m = _model("ur5")
+    d = study(m, "Fast")
+    any_ = zones(d, SINGULAR_WARN, KINDS, "any")
+    best = zones(d, SINGULAR_WARN, KINDS, "best")
+    assert best["red"].sum() > 0
+    assert np.all(any_["red"][best["red"]])                  # unavoidable zones are singular for some orientation too
+    assert best["red"].sum() < 0.4 * any_["red"].sum()      # and much smaller: the wrist hides almost nowhere
+    # voxels of q5 = 0 poses: the best sample of such a voxel is mostly not singular
+    assert "smax" in d and np.all(d["smax"] >= -1.0) and np.all(d["smax"] >= d["smin_kind"].min(axis=1))
+    # kind filter on the best statistic: wrist zones are rare there
+    w = zones(d, SINGULAR_WARN, ("wrist",), "best")["red"].sum()
+    e = zones(d, SINGULAR_WARN, ("elbow",), "best")["red"].sum()
+    assert e > w
 
 
 def test_study_1e6_speed_print():
@@ -185,7 +201,7 @@ def test_overlay_in_window(win, tmp_path):
     assert rv.overlay_voxel_count("singularity") >= n_default
     m.set_option("singularity", "kinds", ())
     assert rv.overlay_actor("singularity") is None
-    m.set_option("singularity", "kinds", DEFAULT_KINDS)
+    m.set_option("singularity", "kinds", KINDS)
     # export
     path = tmp_path / "win.csv"
     assert ov.export(str(path)) > 0 and path.exists()
