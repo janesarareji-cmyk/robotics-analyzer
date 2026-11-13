@@ -48,13 +48,16 @@ Each step is a 2-variable LP solved exactly by vertex enumeration (`_lp2d`, no s
     limit or 1, and 2); torque = `limits["effort"]` or the URM joint efforts (none = unlimited).
 -   Friction is excluded: it is not linear in `x`. The result is re-checked with
     `check_trajectory` (the app friction model is not used in the check either, as in R7).
--   Residual error: limits hold at grid points only and the cubic spline in time rings at the
-    acceleration jumps of a time-optimal profile (a few percent). If `check_trajectory` still shows
-    a violation the time is scaled up by `max(1.02, 1.001 sqrt(worst ratio))`, at most 20 times; the
-    final scale is in `TimedPath.time_scale` and `TimedPath.notes` (the solver duration is there too).
-    The cost is up to about 13 % on a pure bang-bang profile (ringing is about 0.27 of an
-    acceleration jump); a smoother interpolation class would remove it. (The spec text gives a fixed
-    1.02 step; the adaptive step is never smaller.)
+-   U2.9: every knot carries the exact velocity `dq/ds * sqrt(x_i)`, so the output `Trajectory`
+    is a piecewise cubic Hermite in time (exact for constant `sddot` on a straight segment, no
+    ringing at acceleration jumps). Each stage LP also enforces the limits at the END of the
+    stage (rows of grid point i+1 written in `(u_i, x_i)`), so a constant `sddot` cannot overshoot
+    at the next grid point. Benchmarks (check dt 1e-3, no violations): double integrator 1.5 s
+    (solver 1.5 s, was 1.597 s); planar heavy 2R 0.8765 s vs solver 0.8736 s (+0.3 %, was 1.019 s
+    = +17 %); six_dof 40 N m 2.5002 s vs solver 2.5 s (was 2.561 s). Residual: limits are
+    still exact only at grid points; if `check_trajectory` shows a violation the time is scaled up
+    by `max(1.002, 1.001 sqrt(worst ratio))`, at most 20 times (final scale in
+    `TimedPath.time_scale`, solver duration in `TimedPath.notes`).
 -   Cubic geometry is used only when a dense sample stays inside the position limits and is
     collision free; else the polyline is used and every segment is solved rest-to-rest.
 -   Infeasible: `PlanningError("torque limits cannot be met on this path at rest-to-rest ...")`

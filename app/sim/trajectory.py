@@ -7,6 +7,9 @@ clamped to ``[0, duration]``. The first waypoint must have ``t == 0``.
   left segment at the last knot), qdd = 0.
 * "cubic": per-DOF cubic spline, C2 inside. ``clamped=True`` gives zero velocity
   at both ends; ``clamped=False`` gives the natural spline (zero qdd at the ends).
+  When EVERY waypoint carries a velocity ``qd`` (U2.9, from TOPP), "cubic" is a piecewise cubic
+  Hermite through (q, qd) at the knots instead (C1, ``clamped`` unused). The optional ``qd``
+  member is written to trajectory.json only then; older readers ignore it.
 """
 from __future__ import annotations
 
@@ -25,10 +28,13 @@ DEFAULT_KD = 20.0
 class Waypoint:
     t: float
     q: tuple
+    qd: tuple | None = None
 
     def __post_init__(self) -> None:
         self.t = float(self.t)
         self.q = tuple(float(x) for x in self.q)
+        if self.qd is not None:
+            self.qd = tuple(float(x) for x in self.qd)
 
 
 def waypoint_problems(ts, qs, n_dof=None) -> dict[int, str]:
@@ -69,7 +75,13 @@ class Trajectory:
         self.clamped = bool(clamped)
         self._t = np.array([w.t for w in wps])
         self._y = np.array([w.q for w in wps])          # (n_wp, n_dof)
-        self._M = self._second_derivs() if interpolation == "cubic" else None
+        self._V = None
+        if interpolation == "cubic" and all(w.qd is not None for w in wps):
+            self._V = np.array([w.qd for w in wps])
+            if self._V.shape != self._y.shape or not np.all(np.isfinite(self._V)):
+                raise ValueError("waypoint velocities need the same size as q and be finite")
+        self._M = (self._second_derivs() if interpolation == "cubic" and self._V is None
+                   else None)
 
     # ---------------------------------------------------------------- facts
     @property
@@ -120,6 +132,11 @@ class Trajectory:
                 return self._y[k].copy()
         t0, t1 = self._t[i], self._t[i + 1]
         y0, y1, h = self._y[i], self._y[i + 1], t1 - t0
+        if self._V is not None:
+            u = (t - t0) / h
+            v0, v1 = self._V[i], self._V[i + 1]
+            return ((2 * u**3 - 3 * u**2 + 1) * y0 + (u**3 - 2 * u**2 + u) * h * v0
+                    + (-2 * u**3 + 3 * u**2) * y1 + (u**3 - u**2) * h * v1)
         if self._M is None:
             return y0 + (y1 - y0) * ((t - t0) / h)
         m0, m1 = self._M[i], self._M[i + 1]
@@ -130,6 +147,11 @@ class Trajectory:
         t, i = self._locate(t)
         t0, t1 = self._t[i], self._t[i + 1]
         y0, y1, h = self._y[i], self._y[i + 1], t1 - t0
+        if self._V is not None:
+            u = (t - t0) / h
+            v0, v1 = self._V[i], self._V[i + 1]
+            return ((6 * u**2 - 6 * u) * (y0 - y1) / h + (3 * u**2 - 4 * u + 1) * v0
+                    + (3 * u**2 - 2 * u) * v1)
         if self._M is None:
             return (y1 - y0) / h
         m0, m1 = self._M[i], self._M[i + 1]
@@ -138,6 +160,12 @@ class Trajectory:
 
     def qdd(self, t: float) -> np.ndarray:
         t, i = self._locate(t)
+        if self._V is not None:
+            t0, t1 = self._t[i], self._t[i + 1]
+            h = t1 - t0
+            u = (t - t0) / h
+            y0, y1, v0, v1 = self._y[i], self._y[i + 1], self._V[i], self._V[i + 1]
+            return ((12 * u - 6) * (y0 - y1) / h**2 + (6 * u - 4) * v0 / h + (6 * u - 2) * v1 / h)
         if self._M is None:
             return np.zeros(self.n_dof)
         t0, t1 = self._t[i], self._t[i + 1]
@@ -149,12 +177,13 @@ class Trajectory:
         return {
             "interpolation": self.interpolation,
             "clamped": self.clamped,
-            "waypoints": [{"t": w.t, "q": list(w.q)} for w in self.waypoints],
+            "waypoints": [{"t": w.t, "q": list(w.q), **({"qd": list(w.qd)} if w.qd is not None else {})}
+                          for w in self.waypoints],
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trajectory:
-        return cls([Waypoint(w["t"], w["q"]) for w in d["waypoints"]],
+        return cls([Waypoint(w["t"], w["q"], w.get("qd")) for w in d["waypoints"]],
                    d.get("interpolation", "linear"), d.get("clamped", True))
 
     def __eq__(self, other) -> bool:

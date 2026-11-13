@@ -86,6 +86,7 @@ class ToppSolution:
     t: np.ndarray               # time at grid points
     active: list = field(default_factory=list)     # per stage: names of binding constraints
     segments: list = field(default_factory=list)   # (i0, i1) index ranges, rest at their ends
+    dq: np.ndarray | None = None  # (N+1, n) dq/ds at the grid points (U2.9: qd = dq * sqrt(x))
 
     @property
     def duration(self) -> float:
@@ -104,14 +105,12 @@ def _solve_segment(dm, s, Q, dQ, ddQ, vmax, amax, eff, gravity, margin):
     ds = np.diff(s)
     g = tuple(float(v) for v in gravity)
     f = 1.0 - margin
-    rows: list[list[tuple]] = []          # stage -> [(alpha, gamma, beta, name)]
+    raw: list[list[tuple]] = []           # point -> [(alpha, gamma, beta, name)] unnormalised
     cs = []
     for i in range(N + 1):
         q, d1, d2 = list(Q[i]), dQ[i], ddQ[i]
         c = np.asarray(cb.inverse_dynamics(dm, q, [0.0] * n, [0.0] * n, g), float)
         cs.append(c)
-        if i == N:
-            break
         a = np.asarray(cb.inverse_dynamics(dm, q, [0.0] * n, list(d1), g), float) - c
         b = np.asarray(cb.inverse_dynamics(dm, q, list(d1), list(d2), g), float) - c
         r = []
@@ -124,10 +123,18 @@ def _solve_segment(dm, s, Q, dQ, ddQ, vmax, amax, eff, gravity, margin):
             if math.isfinite(eff[j]):
                 r.append((a[j], b[j], f * eff[j] - c[j], f"tau+:{j}"))
                 r.append((-a[j], -b[j], f * eff[j] + c[j], f"tau-:{j}"))
-        r.append((0.0, -1.0, 0.0, "x>=0"))
-        r.append((0.0, 1.0, X_BIG, "x<=big"))
+        raw.append(r)
+    rows: list[list[tuple]] = []          # stage -> [(alpha, gamma, beta, name)] normalised
+    for i in range(N):
+        # limits hold at BOTH ends of a stage (U2.9): the rows of point i+1 are written in
+        # (u_i, x_i) with x_{i+1} = x_i + 2 ds_i u_i, so sddot constant on a stage cannot
+        # overshoot a limit at the next grid point
+        kk = 2.0 * ds[i]
+        cand = list(raw[i]) + [(al + ga * kk, ga, be, nm) for al, ga, be, nm in raw[i + 1]]
+        cand.append((0.0, -1.0, 0.0, "x>=0"))
+        cand.append((0.0, 1.0, X_BIG, "x<=big"))
         out = []
-        for al, ga, be, nm in r:
+        for al, ga, be, nm in cand:
             nr = _norm_row(al, ga, be)
             if nr is None:
                 if be < -_TOL:
@@ -265,13 +272,14 @@ def solve_topp(model, path, vmax, amax, effort, gravity=GRAVITY, n_grid: int = 1
             s = np.linspace(0.0, 1.0, per + 1)
             Q = a[None, :] + s[:, None] * (b - a)[None, :]
             geo.append((s, Q, np.tile(b - a, (per + 1, 1)), np.zeros((per + 1, n))))
-    S, QQ, X, U, T, ACT, segs = [], [], [], [], [], [], []
+    S, QQ, DQ, X, U, T, ACT, segs = [], [], [], [], [], [], [], []
     t_off, i_off = 0.0, 0
     for (s, Q, dQ, ddQ) in geo:
         x, u, t, act = _solve_segment(dm, s, Q, dQ, ddQ, vmax, amax, eff, gravity, margin)
         first = 0 if not S else 1               # junction point shared with the previous segment
         S.append(s[first:])
         QQ.append(Q[first:])
+        DQ.append(dQ[first:])
         X.append(x[first:])
         T.append(t[first:] + t_off)
         U.append(u)
@@ -280,11 +288,20 @@ def solve_topp(model, path, vmax, amax, effort, gravity=GRAVITY, n_grid: int = 1
         i_off += len(s) - 1
         t_off += t[-1]
     sol = ToppSolution(np.concatenate(S), np.vstack(QQ), np.concatenate(X), np.concatenate(U),
-                       np.concatenate(T), ACT, segs)
+                       np.concatenate(T), ACT, segs, np.vstack(DQ))
     return sol, kind, notes
 
 
-def solution_trajectory(sol: ToppSolution, scale: float = 1.0) -> Trajectory:
-    """Cubic ``Trajectory`` through ``(q(s_i), t_i * scale)``, zero velocity at both ends."""
-    return Trajectory([Waypoint(float(t * scale), tuple(q)) for t, q in zip(sol.t, sol.q)],
+def solution_trajectory(sol: ToppSolution, scale: float = 1.0, hermite: bool = True) -> Trajectory:
+    """Cubic ``Trajectory`` through ``(q(s_i), t_i * scale)``, zero velocity at both ends.
+
+    U2.9: with ``hermite=True`` (default) each knot also carries the exact velocity
+    ``dq/ds * sqrt(x_i) / scale`` of the solution, so the trajectory is a piecewise cubic Hermite
+    (exact for constant ``sddot`` on a straight segment) and does not ring at acceleration jumps.
+    ``hermite=False`` (or a solution without ``dq``) gives the old spline without velocities.
+    """
+    use = hermite and sol.dq is not None
+    vel = sol.dq * np.sqrt(np.maximum(sol.x, 0.0))[:, None] / scale if use else None
+    return Trajectory([Waypoint(float(t * scale), tuple(q), tuple(vel[i]) if use else None)
+                       for i, (t, q) in enumerate(zip(sol.t, sol.q))],
                       "cubic", clamped=True)

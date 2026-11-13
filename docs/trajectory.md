@@ -8,6 +8,7 @@ Code: `app/sim/trajectory.py`, `app/sim/playback.py`, `app/panels/timeline_panel
 ## Interpolation
 - `linear`: piecewise linear q, qd piecewise constant, qdd = 0.
 - `cubic`: per-DOF cubic spline, C2 inside. `clamped=True`: zero velocity at both ends (default). `clamped=False`: natural spline (zero qdd at the ends).
+- `cubic` with a velocity on EVERY waypoint (`Waypoint(t, q, qd)`, U2.9, produced by TOPP): piecewise cubic Hermite through `(q, qd)` at the knots (C1; `clamped` unused). `trajectory.json` then has an optional `"qd": [..]` per waypoint; it is written only in that case, older readers ignore it, so the project format stays 1.4.0. Editing the waypoint table (timeline panel) drops the velocities and gives the normal spline.
 `q(t), qd(t), qdd(t)` clamp `t` to `[0, duration]`; q is exact at the knots.
 
 ## Playback (`TrajectoryPlayer`)

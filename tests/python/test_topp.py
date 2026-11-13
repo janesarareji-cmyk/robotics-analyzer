@@ -124,9 +124,8 @@ def test_double_integrator_matches_trapezoid(D, v, a):
     assert abs(sol.duration - ref) / ref < 0.01
     tp = time_parametrize([[0.0], [D]], m, vmax=v, amax=a, method="topp")
     assert tp.report.ok, tp.report.summary()
-    # cubic spline in time rings at the acceleration jumps (about 0.27 of the jump): the rescale
-    # loop costs up to ~13 % on a pure bang-bang profile; the solver duration itself is exact
-    assert ref * 0.99 < tp.trajectory.duration < ref * 1.15
+    # U2.9: per-waypoint velocity (Hermite) removes the ringing at the acceleration jumps
+    assert ref * 0.99 < tp.trajectory.duration < ref * 1.03
 
 
 # --------------------------------------------------------------------- planar 2R, torque
@@ -228,3 +227,53 @@ def test_planning_panel_has_time_optimal_entry(qapp):
     assert panel.time_method() == "topp"
     assert "time_method" not in panel.options()
     panel.shutdown()
+
+
+# ------------------------------------------------------------------------- U2.9 Hermite
+def test_hermite_trajectory_exact_and_roundtrip():
+    from app.sim.trajectory import Trajectory, Waypoint
+    # constant acceleration 2: q = t^2, qd = 2t -> cubic Hermite is exact
+    tr = Trajectory([Waypoint(t, (t * t,), (2 * t,)) for t in (0.0, 0.5, 1.5)], "cubic")
+    for t in (0.0, 0.2, 0.5, 1.0, 1.5):
+        assert tr.q(t)[0] == pytest.approx(t * t, abs=1e-12)
+        assert tr.qd(t)[0] == pytest.approx(2 * t, abs=1e-12)
+        assert tr.qdd(t)[0] == pytest.approx(2.0, abs=1e-9)
+    d = tr.to_dict()
+    assert d["waypoints"][1]["qd"] == [1.0]
+    tr2 = Trajectory.from_dict(d)
+    assert tr2 == tr and tr2.q(0.7) == pytest.approx(tr.q(0.7))
+    # without velocities: old file format, no "qd" key, spline unchanged
+    plain = Trajectory([Waypoint(0.0, (0.0,)), Waypoint(1.0, (1.0,))], "cubic")
+    assert "qd" not in plain.to_dict()["waypoints"][0]
+    # old reader style (ignores qd): the dict still has t and q
+    assert set(d["waypoints"][0]) == {"t", "q", "qd"}
+    with pytest.raises(ValueError):
+        Trajectory([Waypoint(0.0, (0.0,), (0.0, 1.0)), Waypoint(1.0, (1.0,), (0.0, 1.0))], "cubic")
+
+
+def test_hermite_solution_matches_solver_and_no_dense_violations():
+    from app.planning.checks import check_trajectory
+    m = _heavy_2r(effort=1e4, vel=10.0)
+    path = np.array([[0.0, 0.0], [1.0, 0.5], [1.5, -0.8]])
+    lim = {"effort": [200.0, 200.0], "vel": [10.0, 10.0], "accel": [50.0, 50.0]}
+    sol, _, _ = solve_topp(m, path, [10, 10], [50, 50], [200.0, 200.0], gravity=GY, n_grid=100)
+    tp = time_parametrize(path, m, limits=lim, vmax=10.0, amax=50.0, gravity=GY, method="topp",
+                          dt=1e-3)
+    assert tp.trajectory.duration <= sol.duration * 1.03
+    assert tp.trajectory.waypoints[1].qd is not None
+    rep = check_trajectory(tp.trajectory, m, {**lim, "effort": np.array([200.0, 200.0])}, dt=1e-3,
+                           check_torque=True, gravity=GY)
+    assert not rep.violations, rep.summary()
+    # old spline form (no velocities) is still available and slower after the rescale loop
+    old = solution_trajectory(sol, hermite=False)
+    assert old.waypoints[1].qd is None
+
+
+def test_six_dof_duration_close_to_solver():
+    m = six_dof()
+    path = np.array([START6, MID6, GOAL6])
+    tp = time_parametrize(path, m, limits={"effort": 40.0}, method="topp", dt=1e-3)
+    assert tp.report.ok, tp.report.summary()
+    note = [n for n in tp.notes if "solver duration" in n][0]
+    solver = float(note.split("solver duration ")[1].split(" s")[0])
+    assert tp.trajectory.duration <= solver * 1.03

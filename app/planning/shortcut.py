@@ -162,7 +162,7 @@ def _time_parametrize_topp(p, model, lim, v, a, check_lim, interpolation, collis
 
     The grid solve enforces the limits only at grid points and the cubic spline through
     ``(q(s_i), t_i)`` rings at acceleration jumps, so the checked trajectory can exceed a limit
-    by a few percent. Time is then scaled up by ``max(1.02, 1.001 * sqrt(worst ratio))``
+    by a few percent. Time is then scaled up by ``max(1.002, 1.001 * sqrt(worst ratio))``
     (acceleration and dynamic torque scale with 1/scale^2, velocity with 1/scale), at most
     ``TOPP_MAX_RESCALE`` times.
     """
@@ -184,7 +184,7 @@ def _time_parametrize_topp(p, model, lim, v, a, check_lim, interpolation, collis
             break
         worst_v = max([x.value / x.limit for x in bad if x.kind == "velocity"] or [1.0])
         worst_d = max([x.value / x.limit for x in bad if x.kind != "velocity"] or [1.0])
-        scale *= max(1.02, 1.001 * math.sqrt(worst_d), 1.001 * worst_v)
+        scale *= max(1.002, 1.001 * math.sqrt(worst_d), 1.001 * worst_v)
         traj = solution_trajectory(sol, scale)
         rep = check_trajectory(traj, model, check_lim, dt=dt, check_torque=True, gravity=gravity)
     notes.append(f"topp: {kind} path geometry, {len(sol.q) - 1} stages, solver duration {sol.duration:.4g} s, "
