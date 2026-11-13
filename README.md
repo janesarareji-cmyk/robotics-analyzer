@@ -3,8 +3,9 @@
 A Windows desktop application for robotic manipulator modelling, engineering
 simulation, motion planning and analysis, with optional GPU acceleration.
 
-It is an academic project. The release tag is `v1.0-academic`; the usability
-work after that (U1, U2) is listed under "Usability (U1, U2)" below.
+It is an academic project. The release tag `v1.0-academic` is the academic
+version; the usable version `v1.1-usable` adds real collision, 3D targets and
+curves, six work modes and analysis overlays (see "Usability (U1 to U6)" below).
 
 Stack: PySide6 and PyVista for the GUI and 3D view, a C++20 / Eigen core
 exposed to Python with pybind11, and an optional CUDA module for batch
@@ -43,7 +44,7 @@ documents is in the [documentation index](docs/index.md).
 -   **Projects:** `.robotproj` files with format versions and migration,
     atomic save, autosave and recovery (see [project recovery](docs/project-recovery.md)).
 
-## Usability (U1, U2)
+## Usability (U1 to U6)
 
 Work after the academic release, aimed at everyday use:
 
@@ -63,6 +64,18 @@ Work after the academic release, aimed at everyday use:
 -   **Dynamics validator:** `tools/validate_dynamics.py` checks the dynamics against
     MuJoCo (`mujoco==4.0.1`, in `requirements-dev.txt`). On the bundled robots the
     two agree to about 1e-15. Report: [docs/validation/dynamics-validation.md](docs/validation/dynamics-validation.md).
+
+-   **Collision (U3):** convex hull shapes, automatic allowed-collision matrix, floor
+    and scene objects, live blocking in every motion input, red highlight, grasp.
+-   **Targets and curves (U4):** 3D target with ranked IK solutions and ghost preview,
+    line / arc / spline curves with a reach, collision and singularity check, a
+    live matrix panel (tool pose, Jacobian, manipulability).
+-   **Work modes (U5):** Model, Move, Target, Plan, Simulate, Analyze (Ctrl+1..6),
+    start screen, joint limit bars, Cartesian jog, undo / redo, F1 help.
+-   **Analysis overlays (U6):** reach map, singularity zones (red / orange, by kind,
+    CSV export) and joint load bars in the 3D view; playback bar under the view,
+    screenshot button, playback video export (GIF, PNG frames, MP4 when ffmpeg exists).
+    See [overlays](docs/overlays.md).
 
 ## Sample robots
 
@@ -111,7 +124,7 @@ python -m pytest tests/python -q             # Python tests only
 ctest --test-dir build -C Release            # C++ tests only
 ```
 
-Latest full suite: 1368 passed, 5 skipped.
+Latest full suite: 1625 passed, 6 skipped (run in five foreground chunks of test files).
 
 ## Documentation
 
