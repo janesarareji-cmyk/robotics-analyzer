@@ -210,6 +210,8 @@ def test_docks_exist_hidden_and_toggle(qapp, monkeypatch):
     monkeypatch.setattr(AppSettings, "_ORGANIZATION", TEST_ORG)
     monkeypatch.setattr(AppSettings, "_APPLICATION", TEST_ORG)
     win = MainWindow()                       # not shown: dock visibility signals are immediate
+    assert win.tabifiedDockWidgets(win.joint_dock)      # Move mode at start: Joints, Matrices, Collision
+    win.set_mode("Model")                    # U5.4: Move mode shows the Collision dock; Model mode shows none of these
     for dock, act in ((win.planning_dock, win._action_view_planning),
                       (win.ghost_dock, win._action_view_ghosts),
                       (win.collision_dock, win._action_view_collision)):
@@ -218,7 +220,6 @@ def test_docks_exist_hidden_and_toggle(qapp, monkeypatch):
         assert not dock.isHidden()
         act.setChecked(False)
         assert dock.isHidden()
-    assert win.tabifiedDockWidgets(win.joint_dock)
     win.close()
 
 
