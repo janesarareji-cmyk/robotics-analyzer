@@ -15,6 +15,8 @@ HIDDEN_IMPORTS = [
     "pyvista", "pyvistaqt", "pyqtgraph", "vtk",
     "matplotlib", "matplotlib.backends.backend_agg", "matplotlib.backends.backend_pdf",
     "numpy",
+    "PIL",                  # GIF export (Pillow, installed with PyVista)
+    "imageio_ffmpeg",       # optional: MP4 export when installed
     "xml.etree.ElementTree", "zipfile", "importlib.util",
 ]
 HIDDEN_IMPORTS += collect_submodules("app")
