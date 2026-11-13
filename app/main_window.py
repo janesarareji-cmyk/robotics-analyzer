@@ -44,6 +44,8 @@ from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
 from app import __version__
+from app.cartesian_jog import CartesianJog
+from app.panels.jog_panel import JogPanel
 from app.panels.start_screen import StartScreen, attach as _attach_start
 from app.modes import DEFAULT_MODE, ModeController, mode_for_dock as _mode_for_dock
 from app.settings import AppSettings, LAYOUT_VERSION
@@ -541,6 +543,12 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self._dh_dock, self._joint_dock)
         self._joint_panel.q_changed.connect(self._on_joint_q_changed)
         self._joint_panel.log_requested.connect(self.log)
+        # U5.7: Cartesian jog in the Joints dock
+        self._jog = CartesianJog(lambda: self._project_controller.robot, parent=self)
+        self._jog_panel = JogPanel(self._jog)
+        self._joint_panel.add_section(self._jog_panel)
+        self._jog.q_changed.connect(self._on_jog_q)
+        self._jog_panel.status.connect(self.set_status)
         self._model_panel.selection_changed.connect(self._on_tree_selection)
 
         # Log panel — bottom
@@ -987,6 +995,7 @@ class MainWindow(QMainWindow):
             self._dh_editor.set_model(project.robot_model)
             self._joint_panel.set_model(project.robot_model, save_baseline=True)
             self._tcp_drag.invalidate()
+            self._jog.invalidate()
             self._ik_panel.set_model(project.robot_model)
             self._analysis_panel.set_model(project.robot_model)
             self._workspace_panel.set_model(project.robot_model)
@@ -1140,6 +1149,7 @@ class MainWindow(QMainWindow):
         self._grasp = GraspManager()
         self._joint_panel.gripper_moved.connect(self._on_gripper_moved)
         self._tcp_drag.set_guard(g.filter)
+        self._jog.set_guard(g.filter)
         self._tcp_drag.blocked_changed.connect(self._on_tcp_blocked)
         self._ik_panel.set_guard(g.reject_jump)
         self._ik_panel.blocked.connect(self.set_status)
@@ -1334,6 +1344,22 @@ class MainWindow(QMainWindow):
         self._update_robot_view(reset_camera=False)
         self._curve_panel.notify_q_changed()
 
+    def _on_jog_q(self) -> None:
+        """Cartesian jog moved the robot: refresh the joint rows, then like a slider edit."""
+        model = self._project_controller.robot
+        if model is None:
+            return
+        self._joint_panel.set_model(model, save_baseline=False)
+        self._on_joint_q_changed()
+
+    @property
+    def jog_panel(self) -> JogPanel:
+        return self._jog_panel
+
+    @property
+    def cartesian_jog(self) -> CartesianJog:
+        return self._jog
+
     def _on_tcp_drag_committed(self) -> None:
         """Drag TCP released: final q kept, project modified."""
         if not self._project_controller.has_project:
@@ -1383,6 +1409,7 @@ class MainWindow(QMainWindow):
         self._joint_panel.set_model(model, save_baseline=False)
         self._physical_panel.set_model(model)
         self._tcp_drag.invalidate()
+        self._jog.invalidate()
         self._ik_panel.set_model(model)
         self._analysis_panel.set_model(model)
         self._workspace_panel.set_model(model)

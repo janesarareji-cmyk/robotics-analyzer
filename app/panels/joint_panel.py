@@ -350,7 +350,12 @@ class JointPanel(QWidget):
         tcp_layout.addWidget(self._btn_copy)
 
         main_layout.addWidget(tcp_group, stretch=0)
+        self._main_layout = main_layout
         main_layout.addStretch(1)
+
+    def add_section(self, widget: QWidget) -> None:
+        """Insert another group box above the bottom stretch (the Cartesian jog, U5.7)."""
+        self._main_layout.insertWidget(self._main_layout.count() - 1, widget)
 
     # ------------------------------------------------------------------
     # Public API
