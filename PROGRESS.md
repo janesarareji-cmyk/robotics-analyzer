@@ -196,7 +196,13 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | U2.8 | MuJoCo dynamics validator | test_dynamics_validation.py | committed |
 | U2.9 | TOPP Hermite | test_topp.py | committed |
 | U2-fix | UI fixes from U2 screenshots | test_u2_fix.py | committed |
-| U3 | Real collision | docs/specs/U3-spec.md | planned |
+| U3.1-U3.4 | Hull shapes, auto ACM, floor + CollisionService, live blocking | test_hull.py, test_auto_acm.py, test_collision_service.py, test_live_blocking.py | committed |
+| U3.4b | Collision-free start pose (auto-ACM worker finds nearest free pose) | test_start_pose.py | committed |
+| U3.5 | Red highlight of colliding links | test_live_blocking.py | committed |
+| U3.6 | Objects in the scene (add, drag, edit, save) | test_scene_objects.py | committed |
+| U3.7 | Grasp (attach on close, release on open) | test_grasp.py | committed |
+| U3.8 | Second robot | test_second_robot.py | deferred (U3.8 deferred: needs second model in CollisionService, RobotView, JointPanel tab and format 1.5.0 + migration; more than the stage budget) |
+| U3.9 | Stage end (milestone, gate, tag) | test_milestone_u3.py | planned |
 | U4a | Target + ranked IK | docs/specs/U4a-spec.md | planned |
 | U4b | Curve + live matrix | docs/specs/U4b-spec.md | planned |
 | U5 | Usability redesign | docs/specs/U5-spec.md | planned |
