@@ -30,7 +30,7 @@ from app.target_preview import TargetPreview, target_status
 from app.task_runner import FunctionTask
 
 ROTATE_STEP_DEG = 5.0
-COLUMNS = ("#", "Score", "Motion", "Limits", "Manip.", "Clear.", "Status")
+COLUMNS = ("#", "Score", "Motion", "Limits", "Manip.", "Clear.", "State")
 _STATUS_TEXT = {"neutral": "Not solved yet.", "ok": "Reachable.", "bad": "No valid solution.",
                 "warn": "Reachable, near a singularity."}
 
@@ -110,6 +110,7 @@ class TargetPanel(QWidget):
         self._solutions: list = []
         self._rank_note = ""
         self._generation = 0
+        self._motion_gen = 0
         self._solving = False
         self._planning = False
         self._cancel_evt: threading.Event | None = None
@@ -228,11 +229,14 @@ class TargetPanel(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.verticalHeader().setVisible(False)
         self._table.setMinimumHeight(150)
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         hh = self._table.horizontalHeader()
         hh.setStretchLastSection(True)
-        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for c, w in ((0, 26), (2, 50), (3, 46), (4, 50), (5, 46)):
+        for c, w in ((0, 22), (1, 58), (2, 44), (3, 40), (4, 44), (5, 38)):
             self._table.setColumnWidth(c, w)
+        for c, tip in ((2, "Short joint travel from the current pose"), (3, "Distance to the joint limits"),
+                       (4, "Manipulability (far from singularities)"), (5, "Collision clearance")):
+            self._table.horizontalHeaderItem(c).setToolTip(tip)
         self._table.itemSelectionChanged.connect(self._on_row_selected)
         l3.addWidget(self._table)
         self._chk_all = QCheckBox("Show all solutions as ghosts")
@@ -652,6 +656,12 @@ class TargetPanel(QWidget):
         self._solutions = []
         self._rank_note = ""
         self._table.setRowCount(0)
+        if self._planning:                    # the target changed: the plan is for the old one
+            self._motion_gen += 1
+            if self._cancel_evt is not None:
+                self._cancel_evt.set()
+            self._planning = False
+        self._motion_status.setText("")
         if self.preview is not None:
             self.preview.clear()
         if self.controller is not None and not keep_status:
@@ -739,6 +749,9 @@ class TargetPanel(QWidget):
             bar.setTextVisible(True)
             bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
             bar.setMaximumHeight(16)
+            bar.setStyleSheet("QProgressBar{border:1px solid #666;border-radius:2px;background:#222;"
+                              "color:#fff;text-align:center}QProgressBar::chunk{background:"
+                              + ("#4caf50" if s.valid else "#b04040") + "}")
             t.setCellWidget(r, 1, bar)
             for c, key in enumerate(PART_NAMES, start=2):
                 t.setItem(r, c, QTableWidgetItem(f"{100 * s.parts[key]:.0f}"))
@@ -801,8 +814,8 @@ class TargetPanel(QWidget):
         retreat = self._chk_approach.isChecked() and self._chk_retreat.isChecked()
         evt = threading.Event()
         self._cancel_evt = evt
-        self._generation += 1
-        gen = self._generation
+        self._motion_gen += 1
+        gen = self._motion_gen
         self._planning = True
         self._motion_status.setText("Planning the motion...")
         self._update_buttons()
@@ -820,7 +833,7 @@ class TargetPanel(QWidget):
         self._runner.submit(task)
 
     def _failed_motion(self, gen: int, message: str) -> None:
-        if gen != self._generation:
+        if gen != self._motion_gen:
             return
         self._planning = False
         last = message.strip().splitlines()[-1] if message.strip() else "error"
@@ -829,7 +842,7 @@ class TargetPanel(QWidget):
         self._update_buttons()
 
     def _on_planned(self, gen: int, res: Any) -> None:
-        if gen != self._generation:
+        if gen != self._motion_gen:
             return
         self._planning = False
         self._cancel_evt = None
@@ -859,6 +872,7 @@ class TargetPanel(QWidget):
 
     def _cancel_work(self) -> None:
         self._generation += 1
+        self._motion_gen += 1
         if self._cancel_evt is not None:
             self._cancel_evt.set()
         self._solving = False

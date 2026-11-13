@@ -240,7 +240,7 @@ class TargetController(QObject):
             try:
                 self._widget = plotter.add_sphere_widget(
                     self._widget_moved, center=tuple(float(v) for v in self._pose[:3, 3]),
-                    radius=max(0.012, 0.35 * self._size()), color=COLOR_NEUTRAL,
+                    radius=max(0.008, 0.12 * self._size()), color=COLOR_NEUTRAL,
                     selected_color=COLOR_SELECTED, interaction_event="always",
                     test_callback=False)
                 self._widget.AddObserver("EndInteractionEvent", lambda *_: self._on_release())
