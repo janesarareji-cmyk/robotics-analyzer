@@ -34,3 +34,37 @@ def _no_modal_unsaved_prompt(monkeypatch):
     monkeypatch.setattr(
         QMessageBox, "question",
         staticmethod(lambda *a, **k: QMessageBox.StandardButton.Discard))
+
+
+def _delete_leftover_widgets():
+    """Delete parentless top-level widgets (windows, panels a test left behind) through the
+    Qt event loop. Widgets with a Python-side lambda cycle otherwise die inside the cyclic
+    GC / at interpreter exit, where PySide6 destruction order is random (access violation
+    or abort at process exit, A1.8). pyqtgraph-owned popups stay with their owners."""
+    import gc
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in list(app.topLevelWidgets()):
+        try:
+            if w.parent() is not None or type(w).__module__.startswith("pyqtgraph"):
+                continue
+            if type(w).__name__ in ("QMenu", "QFrame", "QWidget") and type(w).__module__ == "PySide6.QtWidgets":
+                continue   # popups / helper windows owned by other objects
+            w.close()
+            w.deleteLater()
+        except RuntimeError:
+            pass
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
+    gc.collect()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _qt_session_cleanup():
+    """A1.8: delete leftover widgets before interpreter exit."""
+    yield
+    _delete_leftover_widgets()

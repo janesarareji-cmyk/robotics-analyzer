@@ -289,6 +289,10 @@ class WorkspacePanel(QWidget):
         self._runner.submit(task)
         self._update_buttons()
 
+    def dispose(self) -> None:
+        """Release plot items before native destruction (A1.8)."""
+        self._slice.dispose()
+
     def cancel(self) -> None:
         if self._token is not None and (self._running or self._a_running):
             self._token.cancel()

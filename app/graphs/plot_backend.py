@@ -87,14 +87,17 @@ class SliceView(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.widget = pg.PlotWidget()
-        self._plot = self.widget.getPlotItem()
+        # The colour bar lives beside the plot in the widget layout, NOT inside the
+        # PlotItem layout (insert_in aborts the process on native delete).
+        self.widget = pg.GraphicsLayoutWidget()
+        self._plot = self.widget.addPlot(row=0, col=0)
         self._plot.setAspectLocked(True)
         self._img = pg.ImageItem()
         self._plot.addItem(self._img)
         self._bar = pg.ColorBarItem(values=(0.0, 1.0), colorMap=pg.colormap.get("viridis"),
                                     interactive=False)
-        self._bar.setImageItem(self._img, insert_in=self._plot)
+        self._bar.setImageItem(self._img)
+        self.widget.addItem(self._bar, row=0, col=1)
         self.image: np.ndarray | None = None
 
     def set_image(self, image, extent, xlabel="", ylabel="", title=""):
@@ -120,3 +123,15 @@ class SliceView(QObject):
 
     def levels(self):
         return tuple(self._bar.levels())
+
+    def dispose(self):
+        """Detach colour bar and image before native destruction (A1.8)."""
+        try:
+            self.widget.ci.removeItem(self._bar)
+        except Exception:
+            pass
+        try:
+            self._bar.setParentItem(None)
+            self._img.clear()
+        except Exception:
+            pass

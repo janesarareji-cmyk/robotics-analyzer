@@ -1258,6 +1258,7 @@ class MainWindow(QMainWindow):
             return
         self._script_runner.cancel()
         self._workspace_panel.cancel()
+        self._workspace_panel.dispose()
         self._planning_panel.shutdown()
         self._sim_panel.shutdown()
         self._plugin_manager.permissions.shutdown()   # release workers in the permission dialog
