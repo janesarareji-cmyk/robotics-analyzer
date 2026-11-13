@@ -6,6 +6,7 @@ Cooperative guard: it stops honest plugins from overstepping, it does NOT stop h
 from __future__ import annotations
 
 import threading
+import time
 from typing import Callable
 
 from PySide6.QtCore import QCoreApplication, QObject, QThread, Signal, Slot
@@ -21,6 +22,34 @@ _MEANING = {
     "network": "access the network",
     "gpu": "query the GPU / compute backend",
 }
+
+
+ASK_TIMEOUT = 120.0          # seconds an unanswered dialog is waited for (A1.3, audit M9)
+
+# Time spent inside permission dialogs per asking thread (A1.3, audit M9). ``guarded_call``
+# subtracts it from the call timeout.
+_dialog_acc: dict = {}
+_dialog_open: dict = {}
+_dialog_lock = threading.Lock()
+
+
+def clock() -> float:
+    return time.monotonic()
+
+
+def dialog_time(ident) -> float:
+    """Seconds thread ``ident`` has spent (so far) waiting in permission dialogs."""
+    with _dialog_lock:
+        total = _dialog_acc.get(ident, 0.0)
+        if ident in _dialog_open:
+            total += clock() - _dialog_open[ident]
+        return total
+
+
+def forget_dialog_time(ident) -> None:
+    with _dialog_lock:
+        _dialog_acc.pop(ident, None)
+        _dialog_open.pop(ident, None)
 
 
 def permission_text(plugin: str, perm: str) -> str:
@@ -81,11 +110,12 @@ class _GuiAsker(QObject):
                 return None
             self._pending.append(box)
         self.request.emit(box)
-        if not box["event"].wait(120):
+        if not box["event"].wait(ASK_TIMEOUT):
             with self._lock:
                 if box in self._pending:
                     self._pending.remove(box)
-            return False
+            box["answer"] = None          # unanswered: denied for this call only, not remembered
+            return None
         return box.get("answer")
 
 
@@ -104,9 +134,18 @@ class PermissionManager:
 
     def _ask_user(self, plugin: str, perm: str):
         text = permission_text(plugin, perm)
-        if self._ask is not None:
-            return bool(self._ask(plugin, perm, text))
-        return self._asker.ask(text)
+        ident = threading.get_ident()
+        with _dialog_lock:
+            _dialog_open[ident] = clock()
+        try:
+            if self._ask is not None:
+                return bool(self._ask(plugin, perm, text))
+            return self._asker.ask(text)
+        finally:
+            with _dialog_lock:
+                t0 = _dialog_open.pop(ident, None)
+                if t0 is not None:
+                    _dialog_acc[ident] = _dialog_acc.get(ident, 0.0) + (clock() - t0)
 
     def state(self, plugin: str, perm: str) -> str:
         """``granted`` | ``denied`` | ``ask`` (nothing remembered)."""
@@ -126,7 +165,7 @@ class PermissionManager:
             raise PermissionError(f"permission '{perm}' was denied for plugin '{plugin}'")
         answer = self._ask_user(plugin, perm)
         if answer is None:        # closing: denied for this call only
-            raise PermissionError(f"permission '{perm}' was not granted (application closing)")
+            raise PermissionError(f"permission '{perm}' was not granted (no answer or application closing)")
         if answer:
             self._settings.set(_key(plugin, perm), "granted")
         else:

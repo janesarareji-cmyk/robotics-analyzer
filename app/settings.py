@@ -81,7 +81,11 @@ class AppSettings:
 
     def recent_max(self) -> int:
         """Return the maximum number of recent project entries to keep."""
-        return int(self._settings.value(self.KEY_RECENT_MAX, 10))
+        try:
+            n = int(self._settings.value(self.KEY_RECENT_MAX, 10))
+        except (TypeError, ValueError):
+            return 10
+        return n if n > 0 else 10
 
     def last_project_dir(self) -> str:
         """Return the last directory used for opening/saving projects."""
@@ -204,7 +208,8 @@ class AppSettings:
         import os
         default = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"),
                                self._APPLICATION, "plugins")
-        return str(self._settings.value("plugins/folder", default))
+        v = str(self._settings.value("plugins/folder", default) or "").strip()
+        return v or default
 
     def set_plugins_folder(self, path: str) -> None:
         self._settings.setValue("plugins/folder", path)

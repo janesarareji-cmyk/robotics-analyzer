@@ -667,3 +667,71 @@ def test_settings_default_folder(monkeypatch):
     assert s.plugins_folder() == "D:/x/plugins"
     qs.clear()
     qs.sync()
+
+
+# --------------------------------------------------------------------------- A1.3 (audit M9)
+def test_slow_permission_dialog_does_not_time_out_register(tmp_path, monkeypatch):
+    """Audit M9: time inside a permission dialog does not count against the load timeout."""
+    import app.plugins.permissions as pm
+    offset = [0.0]
+    fake = lambda: time.monotonic() + offset[0]  # noqa: E731
+    monkeypatch.setattr(pm, "clock", fake, raising=False)
+    import app.plugins.host as ph
+    monkeypatch.setattr(ph, "time", SimpleNamespace(monotonic=fake, sleep=time.sleep))
+
+    def slow_ask(plugin, perm, text):
+        offset[0] += 15.0                    # simulated 15 s user think time
+        return True
+
+    code = ("def register(host):\n    host.read_text(__file__)\n"
+            "    host.register_planner('P', lambda *a, **k: None)\n")
+    mk(tmp_path / "pl", "p", code, perms=["file_read"])
+    m = mgr(tmp_path / "pl", ask=slow_ask, load_timeout=2.0)
+    m.scan()
+    assert status(m, "p") == "ok", m.result("p").message
+
+
+def test_unanswered_ask_is_not_saved_as_denied(tmp_path, qapp, monkeypatch):
+    """Audit M9: an unanswered dialog denies this call only; nothing is stored."""
+    import app.plugins.permissions as pm
+    monkeypatch.setattr(pm, "ASK_TIMEOUT", 0.2, raising=False)
+    s = DictSettings()
+    mgr_ = pm.PermissionManager(s)
+    out = {}
+
+    def work():
+        try:
+            mgr_.check("p", ["file_read"], "file_read")
+        except PermissionError as exc:
+            out["e"] = exc
+
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(3)                                  # GUI thread never answers
+    assert "e" in out
+    assert s.d == {} and mgr_.state("p", "file_read") == "ask"
+    mgr_.shutdown()
+
+
+def test_empty_plugins_folder_setting_uses_default(tmp_path, monkeypatch):
+    """Audit M9 / plugins_folder: empty stored value -> default folder, not the cwd."""
+    from PySide6.QtCore import QSettings
+    from app.settings import AppSettings
+    monkeypatch.setattr(AppSettings, "_ORGANIZATION", "RoboticsAnalyzer_test")
+    monkeypatch.setattr(AppSettings, "_APPLICATION", "RoboticsAnalyzer_test")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    raw = QSettings("RoboticsAnalyzer_test", "RoboticsAnalyzer_test")
+    raw.clear()
+    try:
+        s = AppSettings()
+        default = s.plugins_folder()
+        for bad in ("", "   "):
+            s.set_plugins_folder(bad)
+            assert s.plugins_folder() == default and default.startswith(str(tmp_path))
+        s.set(AppSettings.KEY_RECENT_MAX, "abc")
+        assert s.recent_max() == 10
+        m = PluginManager(s)
+        assert m.folder == default
+    finally:
+        raw.clear()
+        raw.sync()

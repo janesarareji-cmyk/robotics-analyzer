@@ -13,6 +13,7 @@ from typing import Callable
 
 from PySide6.QtCore import QCoreApplication, QThread
 
+from . import permissions as _perm
 from .permissions import PermissionManager
 
 
@@ -49,20 +50,22 @@ def guarded_call(fn: Callable, args=(), kwargs=None, timeout: float = 30.0, canc
 
     t = threading.Thread(target=run, daemon=True, name="plugin-call")
     t.start()
-    t0 = time.monotonic()
+    t0 = _perm.clock()
     cancel_at = None
     gui = _on_gui_thread()
     while t.is_alive():
         t.join(0.02)
         if gui:
             QCoreApplication.processEvents()
-        now = time.monotonic()
+        now = _perm.clock()
         if cancel is not None and cancel.is_set() and cancel_at is None:
             cancel_at = now
         if cancel_at is not None and now - cancel_at > grace:
             raise PluginCallError("timeout", f"did not stop {grace:g} s after cancel")
-        if now - t0 > timeout:
+        if now - t0 - _perm.dialog_time(t.ident) > timeout:
+            _perm.forget_dialog_time(t.ident)
             raise PluginCallError("timeout", f"no answer after {timeout:g} s (thread abandoned)")
+    _perm.forget_dialog_time(t.ident)
     if "e" in box:
         exc = box["e"]
         if isinstance(exc, PermissionError):
