@@ -227,7 +227,7 @@ def _cfg():
 
 
 def test_project_roundtrip_acm_and_environment(tmp_path):
-    assert PROJECT_FORMAT_VERSION == "1.3.0"
+    assert PROJECT_FORMAT_VERSION == "1.4.0"
     p = ProjectData.new("c")
     p.collision = _cfg()
     out = tmp_path / "c.robotproj"
@@ -254,7 +254,7 @@ def test_project_without_collision_has_no_file_and_old_file_loads(tmp_path):
                 continue
             data = zin.read(n)
             if n == "project_metadata.json":
-                data = data.replace(b'"1.3.0"', b'"1.2.0"')
+                data = data.replace(b'"1.4.0"', b'"1.2.0"')
             zout.writestr(n, data)
     q = load(old)
     assert q.collision is None and q.metadata.format_version == "1.2.0"

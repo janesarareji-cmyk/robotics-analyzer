@@ -4,7 +4,7 @@ R8.4: generator of the stored project fixtures (run once, the files are committe
     python tests/python/fixtures/projects/make_fixtures.py
 
 Writes, next to this file, one REAL archive per project format version
-(v1.0.0 ... v1.3.0, each with exactly the members that version wrote) and a
+(v1.0.0 ... v1.4.0, each with exactly the members that version wrote) and a
 set of corrupt samples. The tests import ``reference_project`` and compare the
 opened fixtures with it, so the reference model is built in code, not stored.
 
@@ -13,6 +13,7 @@ Layouts:
   1.1.0  + visuals.json, assets/
   1.2.0  + trajectory.json
   1.3.0  + collision.json, configs.json
+  1.4.0  (no new member: configs.json may hold "shown")
 """
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ import numpy as np  # noqa: E402
 MESH = HERE.parent / "meshes" / "cube.stl"
 STAMP = (2026, 11, 12, 0, 0, 0)
 
-VERSIONS = ("1.0.0", "1.1.0", "1.2.0", "1.3.0")
+VERSIONS = ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0")
 # archive members present per version (assets/ handled by prefix)
 MEMBERS = {
     "1.0.0": {"project_metadata.json", "robot_model.json", "physical_properties.json",
@@ -40,6 +41,7 @@ MEMBERS = {
     "1.1.0": {"visuals.json", "assets/"},
     "1.2.0": {"trajectory.json"},
     "1.3.0": {"collision.json", "configs.json"},
+    "1.4.0": set(),
 }
 
 
@@ -53,7 +55,7 @@ def members_of(version: str) -> set[str]:
 
 
 def reference_project(mesh_path: str | None = None):
-    """The full (1.3.0) reference project, built in code and deterministic."""
+    """The full (current) reference project, built in code and deterministic."""
     import core_bridge as cb  # noqa: F401
     from app.configs.store import ConfigStore
     from app.importers.visuals import LinkVisual

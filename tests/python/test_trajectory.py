@@ -269,7 +269,7 @@ def test_project_roundtrip_equal(tmp_path):
     out = tmp_path / "a.robotproj"
     save(_project(tr), out)
     q = load(out)
-    assert q.metadata.format_version == "1.3.0"
+    assert q.metadata.format_version == "1.4.0"
     assert q.trajectory == tr and q.trajectory.to_dict() == tr.to_dict()
     assert np.array_equal(q.trajectory.q(1.234), tr.q(1.234))
 
@@ -291,7 +291,7 @@ def test_old_1_1_0_project_loads_without_trajectory(tmp_path):
                 continue
             data = zin.read(n)
             if n == "project_metadata.json":
-                data = data.replace(b'"1.3.0"', b'"1.1.0"')
+                data = data.replace(b'"1.4.0"', b'"1.1.0"')
             zout.writestr(n, data)
     q = load(old)
     assert q.trajectory is None and q.metadata.format_version == "1.1.0"

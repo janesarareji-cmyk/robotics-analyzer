@@ -35,3 +35,6 @@ The project zip gets an optional `trajectory.json`:
 -   `configs.json`: named joint poses `{name: [q...]}` (ghost panel); poses whose length differs from the robot DOF are dropped with a log line on open and when the robot changes.
 `trajectory.json` is unchanged. A planned path sent to the editor is stored like any trajectory.
 Milestone R7 (`tests/python/test_milestone_r7.py`): trajectory, collision settings and configs are identical after save, close, open.
+
+## Project format 1.4.0 (F1.4)
+`PROJECT_FORMAT_VERSION` = 1.4.0. No new member. `configs.json` gets an optional list `"shown"`: `[{"name": str, "color": "#rrggbb"}]`, the ghosts shown in the Ghosts dock, in show order (max 8). Entries with an unknown name, a bad colour or a duplicate are skipped with a log warning. Files 1.0.0-1.3.0 load with no ghost shown; the 1.3.0 to 1.4.0 migration step is a no-op (backup rule as for every older file). On open the saved set is drawn again; show, hide, delete and rename mark the project modified. Replacing the robot hides the ghosts (and clears the saved set).

@@ -50,6 +50,7 @@ class GhostPanel(QWidget):
         self._ik_source: Callable[[], list] | None = None
         self._rows: list[dict] = []
         self._loading = False
+        self._restore_pending = False             # set_store done, set_model not yet (F1.4)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -135,11 +136,25 @@ class GhostPanel(QWidget):
         self._ik_source = fn
 
     def set_store(self, store: ConfigStore | None) -> None:
-        """Use the configurations of a project (None on close). Ghosts are hidden."""
+        """Use the configurations of a project (None on close). The shown set saved in the
+        store is restored; the next ``set_model`` keeps it (project open order)."""
+        new = store is None or store is not self._store
         self._store = store if store is not None else ConfigStore()
-        self._shown.clear()
+        self._restore_pending = new                # same store again = robot replaced: hide
+        if new:
+            self._restore_shown()
+        else:
+            self._shown.clear()
         self._refresh_table()
-        self.ghosts_changed.emit([])
+        self._emit_ghosts()
+
+    def _restore_shown(self) -> None:
+        self._shown = {n: c for n, c in self._store.shown if n in self._store}
+
+    def _store_shown(self) -> None:
+        """Write the shown set to the store and mark the project modified."""
+        self._store.set_shown(list(self._shown.items()))
+        self.configs_changed.emit()
 
     def set_model(self, model: Any) -> None:
         """Robot opened / replaced / edited (None on close): drop wrong-DOF configurations,
@@ -161,13 +176,18 @@ class GhostPanel(QWidget):
                    f"{self._n_dof} DOF: {', '.join(dropped)}")
             self.log_requested.emit(msg)
             self.configs_changed.emit()
-        self._shown.clear()
+        if self._restore_pending:                  # project just opened: keep the saved set
+            self._restore_shown()
+        else:                                      # robot replaced: ghosts are for the old one
+            self._shown.clear()
+            self._store.set_shown([])
+        self._restore_pending = False
         self._rows = []
         self._cmp.setRowCount(0)
         self._cmp.setColumnCount(0)
         self._status.setText("")
         self._refresh_table()
-        self.ghosts_changed.emit([])
+        self._emit_ghosts()
 
     # ------------------------------------------------------------------ store edit
     def _current_q(self) -> list[float] | None:
@@ -259,6 +279,7 @@ class GhostPanel(QWidget):
                 return True
             del self._shown[name]
         self._sync_checks()
+        self._store_shown()
         self._emit_ghosts()
         return True
 
@@ -266,6 +287,7 @@ class GhostPanel(QWidget):
         if self._shown:
             self._shown.clear()
             self._sync_checks()
+            self._store_shown()
             self._emit_ghosts()
 
     def _emit_ghosts(self) -> None:

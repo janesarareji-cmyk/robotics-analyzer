@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from typing import Any, Iterable, Sequence
 
 import numpy as np
@@ -15,6 +16,8 @@ import numpy as np
 log = logging.getLogger("robotics_analyzer.configs")
 
 CONFIGS_FORMAT = 1
+MAX_SHOWN = 8
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 class ConfigStore:
@@ -22,6 +25,7 @@ class ConfigStore:
 
     def __init__(self, configs: dict | None = None):
         self._d: dict[str, list[float]] = {}
+        self._shown: list[tuple[str, str]] = []       # (name, "#rrggbb"), order kept (F1.4)
         for k, v in (configs or {}).items():
             self.set(k, v)
 
@@ -33,7 +37,8 @@ class ConfigStore:
         return name in self._d
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, ConfigStore) and self._d == other._d
+        return (isinstance(other, ConfigStore) and self._d == other._d
+                and self._shown == other._shown)
 
     @property
     def names(self) -> list[str]:
@@ -57,6 +62,7 @@ class ConfigStore:
 
     def remove(self, name: str) -> None:
         self._d.pop(name, None)
+        self._shown = [(n, c) for n, c in self._shown if n != name]
 
     def rename(self, old: str, new: str) -> None:
         new = str(new).strip()
@@ -67,9 +73,32 @@ class ConfigStore:
         if new != old and new in self._d:
             raise ValueError(f"name {new!r} already used")
         self._d = {(new if k == old else k): v for k, v in self._d.items()}
+        self._shown = [(new if n == old else n, c) for n, c in self._shown]
 
     def clear(self) -> None:
         self._d.clear()
+        self._shown = []
+
+    # -- shown ghosts (F1.4) -------------------------------------------------
+    @property
+    def shown(self) -> list[tuple[str, str]]:
+        """Shown ghosts as ``(name, colour)``, in show order."""
+        return list(self._shown)
+
+    def set_shown(self, entries: Iterable[tuple[str, str]]) -> None:
+        """Replace the shown set. Unknown names, bad colours, duplicates and entries beyond
+        ``MAX_SHOWN`` are skipped (log warning)."""
+        out: list[tuple[str, str]] = []
+        for name, color in entries:
+            if name not in self._d or not isinstance(color, str) or not _COLOR_RE.match(color):
+                log.warning("Shown ghost %r skipped: unknown name or bad colour %r", name, color)
+            elif any(n == name for n, _ in out):
+                log.warning("Shown ghost %r skipped: duplicate", name)
+            elif len(out) >= MAX_SHOWN:
+                log.warning("Shown ghost %r skipped: more than %d", name, MAX_SHOWN)
+            else:
+                out.append((name, color))
+        self._shown = out
 
     def unique_name(self, base: str = "config") -> str:
         if base not in self._d:
@@ -85,6 +114,7 @@ class ConfigStore:
         bad = [k for k, v in self._d.items() if len(v) != int(n_dof)]
         for k in bad:
             del self._d[k]
+        self._shown = [(n, c) for n, c in self._shown if n in self._d]
         if bad:
             log.warning("%d configuration(s) dropped: the robot has %d DOF (%s)",
                         len(bad), n_dof, ", ".join(bad))
@@ -92,8 +122,11 @@ class ConfigStore:
 
     # -- file ---------------------------------------------------------------
     def to_dict(self) -> dict:
-        return {"format": CONFIGS_FORMAT,
-                "configs": [{"name": k, "q": list(v)} for k, v in self._d.items()]}
+        d = {"format": CONFIGS_FORMAT,
+             "configs": [{"name": k, "q": list(v)} for k, v in self._d.items()]}
+        if self._shown:
+            d["shown"] = [{"name": n, "color": c} for n, c in self._shown]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "ConfigStore":
@@ -103,6 +136,17 @@ class ConfigStore:
                 s.set(item["name"], item["q"])
             except (KeyError, TypeError, ValueError, AttributeError) as exc:
                 log.warning("Configuration entry %d skipped: %s", i, exc)
+        raw = d.get("shown", [])
+        entries = []
+        if isinstance(raw, list):
+            for i, item in enumerate(raw):
+                try:
+                    entries.append((item["name"], item["color"]))
+                except (KeyError, TypeError) as exc:
+                    log.warning("Shown ghost entry %d skipped: %s", i, exc)
+        else:
+            log.warning("Shown ghost list ignored: not a list")
+        s.set_shown(entries)
         return s
 
 

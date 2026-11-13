@@ -23,7 +23,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [URM schema v2](urm-schema-v2.md): the robot model as JSON.
 -   [Compiled model layout](compiled-model-layout.md): frozen flat layout (`layout_version` 1).
 -   [Compiled kinematic model](compiled-model.md): data structures and compile rules.
--   [Trajectory and playback](trajectory.md): trajectory model, interpolation, project format 1.2.0 and 1.3.0.
+-   [Trajectory and playback](trajectory.md): trajectory model, interpolation, project format 1.2.0, 1.3.0 and 1.4.0.
 -   [Collision](collision.md): shapes, allowed collision matrix, project format 1.3.0.
 
 ## Import

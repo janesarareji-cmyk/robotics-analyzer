@@ -319,3 +319,62 @@ def test_planning_wiring_plan_and_send(win):
     assert np.allclose(traj.waypoints[0].q, [0.0, 0.0]) and np.allclose(traj.waypoints[-1].q, [2.2, 0.3])
     assert win.project_controller.current_project.trajectory is traj       # stored in the project
     assert win.project_controller.is_modified
+
+
+# ------------------------------------------------------------------ shown set saved (F1.4)
+def _reopen(win, path):
+    _clean(win)
+    win.project_controller.close_project(win)
+    with mock.patch("app.main_window.QMessageBox.warning"):
+        assert win.project_controller.open_project(win, str(path))
+
+
+def test_shown_set_round_trip_in_main_window(win, tmp_path):
+    _load(win)
+    gp, rv, pc = win.ghost_panel, win.robot_view, win.project_controller
+    for k, q in (("a", [0.1, 0.2]), ("b", [0.3, -0.2]), ("c", [-0.5, 0.4]), ("d", [1.0, 1.0])):
+        gp.add_configuration(k, q)
+    pc._is_modified = False
+    for k in ("c", "a", "b"):
+        gp.set_shown(k, True)
+    assert pc.is_modified                                  # show/hide marks the project
+    colours = [gp.ghost_color(k) for k in ("c", "a", "b")]
+    assert len(set(colours)) == 3
+    path = tmp_path / "shown.robotproj"
+
+    save(pc.current_project, path)
+    assert load(path).configs.shown == list(zip(("c", "a", "b"), colours))
+    _reopen(win, path)
+    assert gp.shown_names == ["c", "a", "b"]
+    assert [gp.ghost_color(k) for k in ("c", "a", "b")] == colours
+    assert rv.ghost_count == 3 and sorted(rv.ghost_keys) == ["a", "b", "c"]
+    assert not pc.is_modified
+    # delete a shown config: gone from shown after save
+    gp.delete("a")
+    assert gp.shown_names == ["c", "b"] and rv.ghost_count == 2
+    save(pc.current_project, path)
+    assert [n for n, _ in load(path).configs.shown] == ["c", "b"]
+    # rename (store level) keeps the entry
+    gp.store.rename("b", "b2")
+    save(pc.current_project, path)
+    assert [n for n, _ in load(path).configs.shown] == ["c", "b2"]
+    _reopen(win, path)
+    assert gp.shown_names == ["c", "b2"] and rv.ghost_count == 2
+    gp.hide_all()
+    save(pc.current_project, path)
+    _reopen(win, path)
+    assert gp.shown_names == [] and rv.ghost_count == 0
+
+
+def test_panel_set_store_restores_and_emits(qapp):
+    st = ConfigStore({"x": [0.0, 0.0], "y": [0.1, 0.1]})
+    st.set_shown([("y", "#123456"), ("x", "#654321")])
+    p = GhostPanel()
+    seen = []
+    p.ghosts_changed.connect(lambda e: seen.append([(n, c) for n, _, c in e]))
+    p.set_store(st)
+    assert p.shown_names == ["y", "x"] and seen[-1] == [("y", "#123456"), ("x", "#654321")]
+    p.set_model(planar_2r())                               # project open order: kept
+    assert p.shown_names == ["y", "x"] and seen[-1] == [("y", "#123456"), ("x", "#654321")]
+    p.set_model(planar_2r())                               # robot replaced later: hidden
+    assert p.shown_names == [] and seen[-1] == [] and st.shown == []

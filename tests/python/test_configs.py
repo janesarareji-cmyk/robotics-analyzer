@@ -73,7 +73,7 @@ def test_project_round_trip(tmp_path):
     with zipfile.ZipFile(path) as zf:
         assert "configs.json" in zf.namelist()
     q = load(path)
-    assert PROJECT_FORMAT_VERSION == "1.3.0"
+    assert PROJECT_FORMAT_VERSION == "1.4.0"
     assert q.configs.as_dict() == p.configs.as_dict()
     assert q.configs.names == ["start", "goal"]
 
@@ -211,3 +211,56 @@ def test_export_meta_and_series_units(tmp_path):
     sx.export_csv(arr, path2, meta={"units": units})
     header2 = sx.load_csv(path2)[1]["columns"]
     assert [h.split("[")[1] for h in header2[1:]] == ["rad/s]", "m/s]", "rad/s]"]
+
+
+# ------------------------------------------------------------------ shown set (F1.4)
+def test_shown_round_trip_order_colours_and_limits(tmp_path):
+    names = {f"c{i}": [float(i), 0.0] for i in range(10)}
+    st = ConfigStore(names)
+    entries = [("c3", "#112233"), ("c1", "#AABBCC"), ("c7", "#00ff00")]
+    st.set_shown(entries)
+    d = st.to_dict()
+    assert d["shown"] == [{"name": n, "color": c} for n, c in entries]
+    r = ConfigStore.from_dict(json.loads(json.dumps(d)))
+    assert r.shown == entries and r == st
+    assert "shown" not in ConfigStore({"a": [0.0]}).to_dict()
+    st.set_shown([(f"c{i}", "#000000") for i in range(10)])        # max 8
+    assert len(st.shown) == 8
+
+
+def test_shown_bad_entries_skipped_with_warning(caplog):
+    d = {"format": 1, "configs": [{"name": "a", "q": [0.0]}, {"name": "b", "q": [1.0]}],
+         "shown": [{"name": "a", "color": "#123456"}, {"name": "zzz", "color": "#123456"},
+                   {"name": "b", "color": "red"}, {"name": "b"}, 5,
+                   {"name": "a", "color": "#654321"}, {"name": "b", "color": "#abcdef"}]}
+    with caplog.at_level("WARNING"):
+        s = ConfigStore.from_dict(d)
+    assert s.shown == [("a", "#123456"), ("b", "#abcdef")]
+    assert len(caplog.records) >= 4
+    assert ConfigStore.from_dict({"configs": [], "shown": "x"}).shown == []
+
+
+def test_shown_follows_remove_rename_clear():
+    s = ConfigStore({"a": [0.0], "b": [1.0], "c": [2.0]})
+    s.set_shown([("a", "#111111"), ("b", "#222222")])
+    s.rename("a", "a2")
+    assert s.shown == [("a2", "#111111"), ("b", "#222222")]
+    s.remove("b")
+    assert s.shown == [("a2", "#111111")]
+    s.validate_dof(2)
+    assert s.shown == []
+    s.set_shown([("a2", "#111111")] if "a2" in s else [])
+    s.clear()
+    assert s.shown == []
+
+
+def test_shown_saved_in_project_and_old_file_has_none(tmp_path):
+    path = tmp_path / "s.robotproj"
+    p = _project({"start": [0.0, 0.0], "goal": [2.2, 0.3]})
+    p.configs.set_shown([("goal", "#ff0000"), ("start", "#00ff00")])
+    save(p, path)
+    q = load(path)
+    assert q.configs.shown == [("goal", "#ff0000"), ("start", "#00ff00")]
+    p.configs.set_shown([])
+    save(p, path)
+    assert load(path).configs.shown == []

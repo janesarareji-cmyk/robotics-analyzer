@@ -16,7 +16,7 @@ from app.project.serializer import ProjectFormatError, load, save
 from app.settings import AppSettings
 
 FIX = Path(__file__).parent / "fixtures" / "projects"
-VERSIONS = ("1.0.0", "1.1.0", "1.2.0", "1.3.0")
+VERSIONS = ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0")
 
 _spec = importlib.util.spec_from_file_location("make_fixtures", FIX / "make_fixtures.py")
 make_fixtures = importlib.util.module_from_spec(_spec)
@@ -89,16 +89,17 @@ def assert_matches(proj, ref, version):
 
 # ------------------------------------------------------------------ registry
 def test_every_format_step_has_a_migration():
-    assert PROJECT_FORMAT_VERSION == "1.3.0"
+    assert PROJECT_FORMAT_VERSION == "1.4.0"
     assert mig.VERSIONS[-1] == PROJECT_FORMAT_VERSION
     assert set(mig.MIGRATIONS) == set(mig.VERSIONS[:-1])
     assert all(callable(f) for f in mig.MIGRATIONS.values())
 
 
 def test_chain_runs_from_each_version():
-    assert mig.migrate({}, "1.3.0") == []
-    assert mig.migrate({}, "1.2.0") == ["1.2.0"]
-    assert mig.migrate({}, "1.0.0") == ["1.0.0", "1.1.0", "1.2.0"]
+    assert mig.migrate({}, "1.4.0") == []
+    assert mig.migrate({}, "1.3.0") == ["1.3.0"]
+    assert mig.migrate({}, "1.2.0") == ["1.2.0", "1.3.0"]
+    assert mig.migrate({}, "1.0.0") == ["1.0.0", "1.1.0", "1.2.0", "1.3.0"]
     with pytest.raises(KeyError):
         mig.migrate({}, "0.9.0")
 
@@ -106,8 +107,8 @@ def test_chain_runs_from_each_version():
 def test_version_helpers():
     assert mig.parse_version("1.2.0") == (1, 2, 0)
     assert mig.parse_version("x") is None and mig.parse_version(3) is None
-    assert mig.is_newer("1.4.0") and mig.is_newer("2.0.0") and not mig.is_newer("1.3.0")
-    assert mig.is_older("1.2.0") and not mig.is_older("1.3.0")
+    assert mig.is_newer("1.5.0") and mig.is_newer("2.0.0") and not mig.is_newer("1.4.0")
+    assert mig.is_older("1.3.0") and not mig.is_older("1.4.0")
 
 
 # ------------------------------------------------------------------ fixtures
@@ -171,7 +172,7 @@ def test_backup_created_exactly_once_and_original_untouched(controller, monkeypa
 def test_current_format_file_gets_no_backup(controller, monkeypatch, tmp_path):
     _no_dialogs(monkeypatch)
     p = tmp_path / "cur.robotproj"
-    shutil.copy(FIX / "v1.3.0.robotproj", p)
+    shutil.copy(FIX / "v1.4.0.robotproj", p)
     assert controller.open_project(None, str(p))
     assert [f.name for f in tmp_path.iterdir()] == ["cur.robotproj"]
 
@@ -232,3 +233,19 @@ def test_unknown_version_refused(tmp_path):
             zout.writestr(n, data)
     with pytest.raises(ProjectFormatError, match="Unknown"):
         load(garbled)
+
+
+def test_v130_fixture_opens_migrates_one_backup_no_ghosts(controller, monkeypatch, tmp_path):
+    _no_dialogs(monkeypatch)
+    p = tmp_path / "old130.robotproj"
+    shutil.copy(FIX / "v1.3.0.robotproj", p)
+    original = p.read_bytes()
+    bak = tmp_path / "old130.v1.3.0.bak.robotproj"
+    assert controller.open_project(None, str(p))
+    assert controller.current_project.migrated_from == "1.3.0"
+    assert controller.current_project.configs.shown == []
+    assert bak.read_bytes() == original and p.read_bytes() == original
+    controller._is_modified = False
+    controller.close_project(None)
+    assert controller.open_project(None, str(p))           # second open: still one backup
+    assert sorted(f.name for f in tmp_path.iterdir()) == sorted([bak.name, p.name])

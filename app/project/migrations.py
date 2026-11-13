@@ -12,6 +12,7 @@ functions are no-ops that document the step):
   1.0.0 -> 1.1.0   + visuals.json, assets/
   1.1.0 -> 1.2.0   + trajectory.json
   1.2.0 -> 1.3.0   + collision.json, configs.json
+  1.3.0 -> 1.4.0   + optional "shown" list in configs.json
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ log = logging.getLogger("robotics_analyzer.project")
 Docs = dict[str, Any]
 
 # Ordered list of every format version ever written.
-VERSIONS = ("1.0.0", "1.1.0", "1.2.0", "1.3.0")
+VERSIONS = ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0")
 
 
 def parse_version(text: Any) -> tuple[int, int, int] | None:
@@ -64,13 +65,18 @@ def _m_1_2_to_1_3(docs: Docs) -> None:
     """Added collision.json and configs.json (optional). Nothing to convert."""
 
 
+def _m_1_3_to_1_4(docs: Docs) -> None:
+    """Added optional "shown" list in configs.json (shown ghosts). Nothing to convert."""
+
+
 MIGRATIONS: dict[str, Callable[[Docs], None]] = {
     "1.0.0": _m_1_0_to_1_1,
     "1.1.0": _m_1_1_to_1_2,
     "1.2.0": _m_1_2_to_1_3,
+    "1.3.0": _m_1_3_to_1_4,
 }
 
-_NEXT = {"1.0.0": "1.1.0", "1.1.0": "1.2.0", "1.2.0": "1.3.0"}
+_NEXT = {"1.0.0": "1.1.0", "1.1.0": "1.2.0", "1.2.0": "1.3.0", "1.3.0": "1.4.0"}
 
 
 def migrate(docs: Docs, from_version: str) -> list[str]:

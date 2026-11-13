@@ -323,7 +323,7 @@ def test_each_corrupt_fixture_gives_expected_diagnosis(name, code, text):
 
 
 def test_clean_fixtures_and_missing_file():
-    for v in ("1.0.0", "1.1.0", "1.2.0", "1.3.0"):
+    for v in ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"):
         assert dg.diagnose(FIX / f"v{v}.robotproj").ok
     rep = dg.diagnose(FIX / "does_not_exist.robotproj")
     assert rep.codes == [dg.NOT_FOUND]

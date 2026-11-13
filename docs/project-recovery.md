@@ -44,6 +44,7 @@ only added optional members, so they are no-ops):
 | 1.0.0 | 1.1.0 | `visuals.json`, `assets/` |
 | 1.1.0 | 1.2.0 | `trajectory.json` |
 | 1.2.0 | 1.3.0 | `collision.json`, `configs.json` |
+| 1.3.0 | 1.4.0 | optional `shown` list in `configs.json` |
 
 Opening an older file (via the app): backup `name.v<old>.bak.robotproj` first, then migrate IN MEMORY
 (chained). The file on disk changes only when the user saves (written in the current format).
@@ -61,5 +62,5 @@ and column), `wrong_schema`, `missing_asset`, `unknown_version`, `newer_version`
 ## Fixtures and tests
 
 `tests/python/fixtures/projects/make_fixtures.py` writes one real archive per format version
-(`v1.0.0` ... `v1.3.0`) and the corrupt samples (`corrupt_*.robotproj`); the files are committed.
+(`v1.0.0` ... `v1.4.0`) and the corrupt samples (`corrupt_*.robotproj`); the files are committed.
 Tests: `test_migration.py`, `test_recovery.py` (includes the kill-during-save subprocess test).

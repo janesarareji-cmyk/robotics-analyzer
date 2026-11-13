@@ -18,7 +18,7 @@ structure, origin/axis or DH kinematics, limits, mimic, physical properties, too
 ## Project file (`.robotproj`)
 
 A `.robotproj` file is a zip archive with JSON members. `metadata.format_version` names the format.
-Current version: `1.3.0` (`PROJECT_FORMAT_VERSION` in `app/project/project_data.py`).
+Current version: `1.4.0` (`PROJECT_FORMAT_VERSION` in `app/project/project_data.py`).
 
 | Version | Added (optional members) | Reference |
 |---|---|---|
@@ -26,6 +26,7 @@ Current version: `1.3.0` (`PROJECT_FORMAT_VERSION` in `app/project/project_data.
 | 1.1.0 | `visuals.json`, `assets/` (meshes) | [importers](../importers.md) |
 | 1.2.0 | `trajectory.json` | [trajectory](../trajectory.md) |
 | 1.3.0 | `collision.json`, `configs.json` | [collision](../collision.md), [trajectory](../trajectory.md) (format 1.3.0 section) |
+| 1.4.0 | none (`configs.json` may hold `shown`, the shown ghosts) | [trajectory](../trajectory.md) (format 1.4.0 section) |
 
 Rules that hold for every version:
 

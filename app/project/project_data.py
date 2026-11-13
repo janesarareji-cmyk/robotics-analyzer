@@ -24,7 +24,7 @@ from app.configs.store import ConfigStore
 
 
 # Current file format version. Increment on breaking schema changes.
-PROJECT_FORMAT_VERSION = "1.3.0"
+PROJECT_FORMAT_VERSION = "1.4.0"
 
 
 @dataclass
