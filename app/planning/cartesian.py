@@ -161,3 +161,101 @@ def arc(model, T0, via, T1, q_seed, n: int = 50, duration: float = 1.0, profile:
     res = _solve(model, cm, targets, u * duration, q_seed, ik_options, max_joint_step)
     res.extra.update(center=c, radius=r, sweep=sweep)
     return res
+
+
+# ---------------------------------------------------------------------------- spline (U4b.1)
+
+def _cr_segment(P, T, u):
+    """Barry-Goldman point of the centripetal Catmull-Rom piece P1..P2 (knots ``T``) at ``u`` in
+    [0, 1]. ``P`` is a (4, 3) array, ``T`` the 4 knots."""
+    t = T[1] + (T[2] - T[1]) * u
+    A1 = (T[1] - t) / (T[1] - T[0]) * P[0] + (t - T[0]) / (T[1] - T[0]) * P[1]
+    A2 = (T[2] - t) / (T[2] - T[1]) * P[1] + (t - T[1]) / (T[2] - T[1]) * P[2]
+    A3 = (T[3] - t) / (T[3] - T[2]) * P[2] + (t - T[2]) / (T[3] - T[2]) * P[3]
+    B1 = (T[2] - t) / (T[2] - T[0]) * A1 + (t - T[0]) / (T[2] - T[0]) * A2
+    B2 = (T[3] - t) / (T[3] - T[1]) * A2 + (t - T[1]) / (T[3] - T[1]) * A3
+    return (T[2] - t) / (T[2] - T[1]) * B1 + (t - T[1]) / (T[2] - T[1]) * B2
+
+
+def spline_positions(points, n_per_seg: int = 30):
+    """Centripetal Catmull-Rom curve through ``points`` (m >= 2, positions).
+
+    Returns ``(pos (K, 3), key_idx)``: every point is an exact sample (``pos[key_idx[i]]``),
+    ``n_per_seg`` samples per segment (end points included once). Two points give a straight line;
+    collinear points stay on their line. Position is C1 across the via points.
+    """
+    P = np.asarray(points, float).reshape(-1, 3)
+    m = len(P)
+    if m < 2:
+        raise ValueError("a spline needs at least 2 points")
+    if n_per_seg < 2:
+        raise ValueError("n_per_seg must be >= 2")
+    ext = np.vstack([2 * P[0] - P[1], P, 2 * P[-1] - P[-2]])
+    d = np.linalg.norm(np.diff(ext, axis=0), axis=1)
+    d = np.sqrt(np.maximum(d, 1e-9))                       # centripetal: knot step = |dP| ** 0.5
+    knots = np.concatenate([[0.0], np.cumsum(d)])
+    out, key = [], [0]
+    for i in range(m - 1):
+        Pq, Tq = ext[i:i + 4], knots[i:i + 4]
+        us = np.linspace(0.0, 1.0, n_per_seg)
+        seg = np.array([_cr_segment(Pq, Tq, u) for u in us])
+        seg[0], seg[-1] = P[i], P[i + 1]                  # exact at the key points
+        out.append(seg if i == 0 else seg[1:])
+        key.append(sum(len(s) for s in out) - 1)
+    return np.vstack(out), key
+
+
+def via_poses(T0, T1, positions):
+    """Poses for via ``positions``: orientation = slerp from ``T0`` to ``T1`` by arc fraction of the
+    polyline T0 -> via points -> T1 (the "orientation of the interpolation")."""
+    T0, T1 = np.asarray(T0, float), np.asarray(T1, float)
+    pts = np.vstack([T0[:3, 3], np.asarray(positions, float).reshape(-1, 3), T1[:3, 3]])
+    seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    frac = np.cumsum(seg)[:-1] / max(float(seg.sum()), 1e-12)
+    w = rot_log(T0[:3, :3].T @ T1[:3, :3])
+    out = []
+    for p, f in zip(pts[1:-1], frac):
+        T = np.eye(4)
+        T[:3, :3] = T0[:3, :3] @ rot_exp(f * w)
+        T[:3, 3] = p
+        out.append(T)
+    return out
+
+
+def spline(model, poses, q_seed, n_per_seg: int = 30, duration: float = 1.0,
+           profile: str = "linear", ik_options: dict | None = None, max_joint_step: float = 0.5,
+           cm=None) -> CartesianPath:
+    """TCP path through ``poses`` (list of 4x4: start, via ..., end).
+
+    Position: centripetal Catmull-Rom through all poses (``spline_positions``). Orientation: slerp
+    between consecutive key poses by the fraction of the segment. Times follow the arc length
+    (``profile="quintic"`` shapes them rest-to-rest). ``extra`` has ``key_idx`` (sample index of
+    each pose) and ``length`` (m).
+    """
+    Ts = [np.asarray(T, float) for T in poses]
+    if len(Ts) < 2:
+        raise ValueError("a spline needs at least 2 poses")
+    pos, key = spline_positions([T[:3, 3] for T in Ts], n_per_seg)
+    n = len(pos)
+    targets = np.tile(np.eye(4), (n, 1, 1))
+    for i in range(len(Ts) - 1):
+        a, b = key[i], key[i + 1]
+        w = rot_log(Ts[i][:3, :3].T @ Ts[i + 1][:3, :3])
+        for k in range(a, b + 1):
+            f = (k - a) / (b - a)
+            targets[k, :3, :3] = Ts[i][:3, :3] @ rot_exp(f * w)
+    targets[:, :3, 3] = pos
+    arc_len = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pos, axis=0), axis=1))])
+    length = float(arc_len[-1])
+    a = arc_len / length if length > 1e-12 else np.linspace(0.0, 1.0, n)
+    if profile == "linear":
+        ts = a * duration
+    elif profile == "quintic":
+        g = np.linspace(0.0, 1.0, 2001)
+        s = 10 * g ** 3 - 15 * g ** 4 + 6 * g ** 5
+        ts = np.interp(a, s, g) * duration
+    else:
+        raise ValueError("profile must be 'linear' or 'quintic'")
+    res = _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step)
+    res.extra.update(key_idx=key, length=length)
+    return res
