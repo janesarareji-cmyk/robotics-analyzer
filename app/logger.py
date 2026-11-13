@@ -16,6 +16,9 @@ from PySide6.QtCore import QObject, Signal
 # Module-level application logger
 log = logging.getLogger("robotics_analyzer")
 
+# Handlers added by AppLogger instances; removed again when a new AppLogger is set up (A1.7).
+_added_handlers: list = []
+
 
 class QtLogHandler(QObject, logging.Handler):
     """
@@ -68,29 +71,53 @@ class AppLogger:
 
         numeric_level = getattr(logging, level.upper(), logging.INFO)
 
-        # --- File handler ---
-        log_dir = self._get_log_dir()
-        log_dir.mkdir(parents=True, exist_ok=True)
-        self._log_path = log_dir / self.LOG_FILE_NAME
+        # A new AppLogger replaces the handlers of the previous one (no duplicates)
+        for h in _added_handlers:
+            self._logger.removeHandler(h)
+            try:
+                h.close()
+            except Exception:  # noqa: BLE001
+                pass
+        _added_handlers.clear()
 
-        self._file_handler = logging.handlers.RotatingFileHandler(
-            self._log_path,
-            maxBytes=self.MAX_BYTES,
-            backupCount=self.BACKUP_COUNT,
-            encoding="utf-8"
-        )
-        self._file_handler.setLevel(logging.DEBUG)
-        file_fmt = logging.Formatter(
-            "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        self._file_handler.setFormatter(file_fmt)
-        self._logger.addHandler(self._file_handler)
+        # --- File handler (fallback: %TEMP%, then console only) ---
+        import tempfile
+        candidates = [self._get_log_dir(),
+                      Path(tempfile.gettempdir()) / self.LOG_DIR_NAME / "logs"]
+        for log_dir in candidates:
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+                path = log_dir / self.LOG_FILE_NAME
+                self._file_handler = logging.handlers.RotatingFileHandler(
+                    path,
+                    maxBytes=self.MAX_BYTES,
+                    backupCount=self.BACKUP_COUNT,
+                    encoding="utf-8"
+                )
+                self._log_path = path
+                break
+            except OSError:
+                self._file_handler = None
+        if self._file_handler is not None:
+            self._file_handler.setLevel(logging.DEBUG)
+            file_fmt = logging.Formatter(
+                "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
+            )
+            self._file_handler.setFormatter(file_fmt)
+            self._logger.addHandler(self._file_handler)
+            _added_handlers.append(self._file_handler)
+        else:
+            console = logging.StreamHandler()
+            console.setLevel(logging.DEBUG)
+            self._logger.addHandler(console)
+            _added_handlers.append(console)
 
         # --- Qt handler (connects to LogPanel in wire_to_panel) ---
         self._qt_handler = QtLogHandler()
         self._qt_handler.setLevel(numeric_level)
         self._logger.addHandler(self._qt_handler)
+        _added_handlers.append(self._qt_handler)
 
         # Mark startup
         self._logger.info(

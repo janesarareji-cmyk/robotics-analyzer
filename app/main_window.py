@@ -912,12 +912,14 @@ class MainWindow(QMainWindow):
         writer = sx.export_csv if fmt == "csv" else (
             lambda a, p, m: sx.export_npz(a, p, m))
         self.set_status(f"Exporting {path} ...")
-        task = self._task_runner.submit_fn(lambda: writer(arrays, path, None, meta)
-                                           if fmt == "csv" else writer(arrays, path, meta))
+        from app.task_runner import FunctionTask
+        task = FunctionTask(lambda: writer(arrays, path, None, meta)
+                            if fmt == "csv" else writer(arrays, path, meta))
         task.signals.result.connect(lambda n: self.log(f"[INFO] Exported {n} rows to {path}"))
         task.signals.error.connect(lambda m: (self.log(f"[ERROR] Export failed: {m}"),
                                               QMessageBox.warning(self, "Export", f"Export failed.\n\n{m}")))
         self._export_task = task
+        self._task_runner.submit(task)
 
     # ------------------------------------------------------------------
     # File > Export > Report / URDF / Meshes (R8.3)
@@ -1131,9 +1133,12 @@ class MainWindow(QMainWindow):
         self.set_status(f"Importing {path} ...")
         roots = self._settings.mesh_search_roots()
         self._import_path = path
-        task = self._task_runner.submit_fn(lambda: import_urdf(path, roots))
+        from app.task_runner import FunctionTask
+        task = FunctionTask(lambda: import_urdf(path, roots))
         task.signals.result.connect(self._on_urdf_import_result)
         task.signals.error.connect(self._on_urdf_import_failed)
+        self._import_task = task
+        self._task_runner.submit(task)
 
     def _on_urdf_import_failed(self, message: str) -> None:
         self.log(f"[ERROR] URDF import failed: {message}")

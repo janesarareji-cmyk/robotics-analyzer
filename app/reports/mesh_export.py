@@ -48,9 +48,10 @@ def export_meshes(visuals, folder, fmt: str = "stl", model=None, q=None) -> list
         mesh.transform(T, inplace=True)
         if not isinstance(mesh, pv.PolyData):
             mesh = mesh.extract_surface()
-        k = counts.get(v.link_name, 0)
-        counts[v.link_name] = k + 1
-        p = out_dir / f"{_safe(v.link_name)}_{k}.{fmt}"
+        safe = _safe(v.link_name)
+        k = counts.get(safe, 0)
+        counts[safe] = k + 1
+        p = out_dir / f"{safe}_{k}.{fmt}"
         mesh.triangulate().save(str(p))
         paths.append(str(p))
     return paths

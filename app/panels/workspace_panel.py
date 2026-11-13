@@ -281,10 +281,12 @@ class WorkspacePanel(QWidget):
         def work():
             return backend.sample_workspace(model, opts, token, progress)
 
-        task = self._runner.submit_fn(work)
-        self._task = task
+        from app.task_runner import FunctionTask
+        task = FunctionTask(work)       # connect before submit: a fast task must not lose its result
         task.signals.result.connect(lambda r, g=gen, b=backend: self._on_result(g, b, r))
         task.signals.error.connect(lambda m, g=gen: self._on_error(g, m))
+        self._task = task
+        self._runner.submit(task)
         self._update_buttons()
 
     def cancel(self) -> None:
@@ -401,10 +403,12 @@ class WorkspacePanel(QWidget):
         def work():
             return wa.analyze_workspace(model, opts, token, progress)
 
-        task = self._runner.submit_fn(work)
-        self._task = task
+        from app.task_runner import FunctionTask
+        task = FunctionTask(work)
         task.signals.result.connect(lambda r, g=gen: self._on_analysis(g, r))
         task.signals.error.connect(lambda m, g=gen: self._on_analysis_error(g, m))
+        self._task = task
+        self._runner.submit(task)
         self._update_buttons()
 
     def _on_analysis_error(self, gen: int, message: str) -> None:

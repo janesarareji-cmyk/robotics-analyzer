@@ -27,6 +27,8 @@ def guard(error_cls):
 
 def vec(x: Any, n: int, name: str) -> np.ndarray:
     """1-D finite float array with exactly ``n`` entries, else ``InvalidArgument``."""
+    if isinstance(x, (str, bytes)) or (isinstance(x, np.ndarray) and x.dtype.kind in "OUSV"):
+        raise InvalidArgument(f"{name} must be a list of numbers")
     try:
         a = np.asarray(x, dtype=float)
     except (TypeError, ValueError) as exc:
@@ -49,6 +51,9 @@ def pose4(x: Any, name: str = "pose") -> np.ndarray:
         raise InvalidArgument(f"{name} must be a finite 4x4 matrix, got shape {a.shape}")
     if not np.allclose(a[3], [0, 0, 0, 1]):
         raise InvalidArgument(f"{name}: last row must be [0, 0, 0, 1]")
+    R = a[:3, :3]
+    if not np.allclose(R.T @ R, np.eye(3), atol=1e-6) or abs(np.linalg.det(R) - 1.0) > 1e-6:
+        raise InvalidArgument(f"{name}: the 3x3 rotation part is not a rotation matrix")
     return a
 
 
@@ -77,7 +82,10 @@ def xyz_rpy(pose: Any) -> tuple[list[float], list[float]]:
         xyz = vec(pose.get("xyz", (0, 0, 0)), 3, "pose xyz")
         rpy = vec(pose.get("rpy", (0, 0, 0)), 3, "pose rpy")
         return xyz.tolist(), rpy.tolist()
-    a = np.asarray(pose, dtype=float)
+    try:
+        a = np.asarray(pose, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise InvalidArgument("pose must be a 4x4 matrix, {'xyz','rpy'}, or 3 or 6 numbers") from exc
     if a.shape == (4, 4):
         T = pose4(a)
         return T[:3, 3].tolist(), rpy_from_matrix(T[:3, :3])

@@ -132,13 +132,49 @@ def generate_report(robot: Robot, path: str, result: dict | None = None,
         from app.reports.html_report import write_html
         write_html(data, path)
     else:
-        from PySide6.QtGui import QGuiApplication
-        if QGuiApplication.instance() is None:
-            global _QAPP
-            _QAPP = QGuiApplication([])
-        from app.reports.pdf_report import write_pdf
-        pages = write_pdf(data, path)
+        pages = _write_pdf_on_gui_thread(data, path)
     return {"path": str(path), "format": ext, "pages": pages, "missing": list(data.missing)}
 
 
 _QAPP = None
+_INVOKER = None
+
+
+def _write_pdf_on_gui_thread(data, path) -> int:
+    """Write the PDF on the GUI thread (QTextDocument / QPdfWriter are GUI-thread classes).
+
+    From a worker thread the call is blocking-queued onto the GUI thread (the GUI event loop
+    must be running, as it is while a script runs). With no QApplication: created only on the
+    main thread, else ``ExportError``.
+    """
+    import threading
+    from PySide6.QtCore import QCoreApplication, QMetaObject, QObject, Qt, QThread, Slot
+    from PySide6.QtGui import QGuiApplication
+    from app.reports.pdf_report import write_pdf
+    global _QAPP, _INVOKER
+    app = QGuiApplication.instance()
+    if app is None:
+        if threading.current_thread() is not threading.main_thread():
+            raise ExportError("PDF needs the GUI thread")
+        _QAPP = app = QGuiApplication([])
+    if QThread.currentThread() == app.thread():
+        return write_pdf(data, path)
+
+    box: dict = {}
+
+    class _Invoker(QObject):
+        @Slot()
+        def run(self):
+            try:
+                box["v"] = write_pdf(data, path)
+            except BaseException as exc:  # noqa: BLE001 - re-raised on the calling thread
+                box["e"] = exc
+
+    inv = _Invoker()
+    inv.moveToThread(app.thread())
+    _INVOKER = inv
+    QMetaObject.invokeMethod(inv, "run", Qt.ConnectionType.BlockingQueuedConnection)
+    _INVOKER = None
+    if "e" in box:
+        raise box["e"]
+    return box["v"]

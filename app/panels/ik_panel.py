@@ -263,10 +263,12 @@ class IKPanel(QWidget):
         def work():
             return cb.solve_ik_multi(cm, lo, hi, target, q_cur, options, n_starts)
 
-        task = self._runner.submit_fn(work)
-        self._task = task
+        from app.task_runner import FunctionTask
+        task = FunctionTask(work)       # connect before submit: a fast task must not lose its result
         task.signals.result.connect(lambda res, g=gen: self._on_result(res, g))
         task.signals.error.connect(lambda msg, g=gen: self._on_error(msg, g))
+        self._task = task
+        self._runner.submit(task)
 
     def apply(self) -> None:
         """Commit the previewed solution to the model q (project becomes dirty)."""

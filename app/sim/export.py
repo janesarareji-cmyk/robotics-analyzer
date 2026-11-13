@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import re
 import os
 import subprocess
 
@@ -96,7 +97,10 @@ def _fmt(v):
 
 def export_csv(recorder_arrays, path, names=None, meta=None):
     """Write one joined CSV. Returns the number of rows."""
-    meta = dict(meta or {})
+    def _one_line(v):
+        return v.replace(chr(13), " ").replace(chr(10), " ") if isinstance(v, str) else v
+
+    meta = {_one_line(str(k)): _one_line(v) for k, v in dict(meta or {}).items()}
     names = _check(recorder_arrays, names)
     ts = [np.asarray(recorder_arrays[n][0], float) for n in names]
     ds = [np.asarray(recorder_arrays[n][1], float).reshape(len(t), -1) for n, t in zip(names, ts)]
@@ -105,8 +109,24 @@ def export_csv(recorder_arrays, path, names=None, meta=None):
         tt = ts[0]
         idx = [None] * len(names)
     else:
-        tt = np.unique(np.concatenate(ts))
-        idx = [np.searchsorted(tt, t) for t in ts]
+        # one row per distinct time, but a time repeated inside one signal keeps its repeats
+        uniq = np.unique(np.concatenate(ts))
+        need = np.zeros(len(uniq), int)
+        occ = []
+        for t in ts:
+            o = np.argsort(t, kind="stable")
+            st = t[o]
+            g = np.searchsorted(uniq, st)
+            k = np.arange(len(st)) - np.searchsorted(st, st, side="left")
+            need = np.maximum(need, np.bincount(g, weights=None, minlength=len(uniq)))
+            occ.append((o, g, k))
+        start = np.concatenate([[0], np.cumsum(need)[:-1]]).astype(int)
+        tt = np.repeat(uniq, need)
+        idx = []
+        for t, (o, g, k) in zip(ts, occ):
+            ix = np.empty(len(t), int)
+            ix[o] = start[g] + k
+            idx.append(ix)
     widths = [d.shape[1] for d in ds]
     labels = ["t [s]"]
     for n, w in zip(names, widths):
