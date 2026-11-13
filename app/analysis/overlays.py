@@ -324,6 +324,18 @@ class OverlayManager(QObject):
             if ov.live and self._enabled[key] and self._model is not None:
                 ov.update_live(self._model, self._get_view(), q, qd, qdd, self._base)
 
+    # ------------------------------------------------------------------ probe
+    def probe(self, point_world: Any) -> dict:
+        """Tell the overlays that have a probe (reach map) where the target is. key -> result."""
+        out: dict = {}
+        view = self._get_view()
+        if view is None or self._model is None:
+            return out
+        for key, ov in self._overlays.items():
+            if self._enabled[key] and hasattr(ov, "probe"):
+                out[key] = ov.probe(view, point_world, self._base)
+        return out
+
     # ------------------------------------------------------------------ misc
     def dispose(self) -> None:
         for k in list(self._jobs):

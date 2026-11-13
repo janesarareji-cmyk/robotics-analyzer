@@ -29,6 +29,7 @@ from app.panels.performance_panel import PerformancePanel
 from app.panels.sim_panel import SimPanel
 from app.panels.graph_panel import GraphPanel
 from app.panels.workspace_panel import WorkspacePanel
+import numpy as np
 from app.analysis.overlays import OverlayManager, default_overlays
 from app.panels.overlay_panel import OverlayPanel
 from app.panels.planning_panel import PlanningPanel
@@ -766,6 +767,7 @@ class MainWindow(QMainWindow):
             self._overlays.register(ov)
         self._overlays.set_extra_hash(self._collision_hash)
         self._overlay_panel = OverlayPanel(self._overlays)
+        self._overlays.changed.connect(lambda _k: self._probe_target(None))
         self._overlay_dock = self._add_tool_dock(
             "Overlays", "overlays_dock", self._overlay_panel, self._action_view_overlays, 300)
         self._overlay_menu = self._menu_view.addMenu("Analysis o&verlays")
@@ -790,6 +792,8 @@ class MainWindow(QMainWindow):
         self._target_panel.status_message.connect(self.set_status)
         self._target_panel.targets_changed.connect(self._on_targets_changed)
         self._target_panel.trajectory_ready.connect(self._on_target_trajectory)
+        self._target_panel.targets_changed.connect(lambda: self._probe_target(None))
+        self._target_panel.controller.pose_changed.connect(self._probe_target)
 
         # Curve dock (U4b.3): line / arc / spline from the current pose to the target(s).
         self._curve_panel = CurvePanel(self._task_runner)
@@ -2424,6 +2428,16 @@ class MainWindow(QMainWindow):
     @property
     def overlay_dock(self) -> QDockWidget:
         return self._overlay_dock
+
+    def _probe_target(self, pose: Any = None) -> None:
+        """U6.2: the reach map outlines the voxel under the target (live while it is dragged)."""
+        try:
+            if pose is None:
+                pose = self._target_panel.current_pose()
+            point = None if pose is None else np.asarray(pose, float)[:3, 3]
+            self._overlays.probe(point)
+        except Exception:
+            pass
 
     def _collision_hash(self) -> str:
         """Hash of the collision matrix + fit mode (part of the overlay cache key)."""

@@ -116,11 +116,13 @@ def _boundary_count(keys: np.ndarray, dims) -> int:
 
 
 def analyze_workspace(model, options: dict | None = None, cancel=None,
-                      progress: Callable[[int, int], Any] | None = None) -> dict:
+                      progress: Callable[[int, int], Any] | None = None,
+                      metrics_fn: Callable[..., Any] | None = None) -> dict:
     """Run the study. ``cancel`` has ``is_cancelled()`` (cb.CancelToken); ``progress(done, total)``.
 
     ``message`` is non-empty when the workspace is empty; ``cancelled`` True when stopped
     early (partial result). Options: see ``DEFAULT_OPTIONS`` and docs/workspace-analysis.md.
+    ``metrics_fn(cm, q, mode) -> (sigma_min, w)`` replaces ``sample_metrics`` (U6.2: batch version).
     """
     o = _opts(options)
     cm = cb.compile(model)
@@ -171,7 +173,7 @@ def analyze_workspace(model, options: dict | None = None, cancel=None,
             lin = (idx[:, 0] * ny + idx[:, 1]) * nz + idx[:, 2]
             sm = wm = None
             if metrics:
-                sm, wm = sample_metrics(cm, q[ok], o["metric_mode"])
+                sm, wm = (metrics_fn or sample_metrics)(cm, q[ok], o["metric_mode"])
             state = _merge(state, *_chunk_stats(lin, sm, wm))
         n_done += m
         if progress is not None:
