@@ -29,3 +29,29 @@ size and seed.
 -   The numbers behind it (`app/analysis/batch_jacobian.py`): the Jacobian of a whole batch from
     `cb.fk_batch` by forward differences (step 1e-6), singular values by the eigenvalues of J J^T.
     Agrees with `cb.jacobian_tcp` to 1e-5; 1e6 samples in 3.4 s on the CPU.
+
+## Singularity zones
+
+Voxels where the arm is singular: red = sigma_min (smallest singular value of the 6 x n Jacobian) below the
+threshold, orange = below twice the threshold. The threshold starts at `SINGULAR_WARN` (0.05), the value of the
+bars in the Joints and Matrices panels, the orange target ghost (Target mode) and the orange curve segments
+(Curve dock). The slider (0.005 to 0.3, log scale) changes only the overlay; "Reset" goes back to 0.05.
+
+-   Per voxel the smallest sigma_min per kind is stored, so threshold and kind boxes redraw at once.
+    A voxel is red when ANY sample inside it is singular, so with every orientation counted nearly each
+    voxel is red when the wrist is included: the wrist kind (tool orientation) exists at almost every
+    position. It is therefore off at the start; tick "Wrist" to see it.
+-   Kinds (robots with >= 6 DOF whose first and last three joints are revolute, otherwise all "general"):
+    -   wrist: the last three axes are nearly dependent (sigma_min of the axes matrix < 0.2), e.g. q5 = 0 on a UR.
+    -   elbow: shoulder to wrist-centre distance within 0.4 % of its maximum or minimum (arm stretched or folded).
+    -   shoulder: the wrist centre is within 4 % of the reach of the smallest distance to the first axis.
+    -   general: singular for another reason.
+    The wrist centre is the closest point of axis n-3 and axis n-2 (spherical wrist: the wrist point, e.g.
+    kuka_iiwa; offset wrist: the crossing of the two forearm axes, e.g. ur5, xarm6). The label is a heuristic:
+    the first match in the order wrist, elbow, shoulder.
+-   Quality: Fast 200 000, Normal 600 000, Fine 2 million samples. 1e6 samples with classification: 4.4 s (ur5,
+    CPU, batch Jacobian). The GPU is not used: there is no GPU Jacobian kernel (GPU IK was NO-GO, see
+    `docs/gpu-ik-decision.md`), and the batch Jacobian runs on all CPU threads.
+-   "Export CSV..." writes x, y, z (world, m), sigma_min and kind of the red and orange voxels shown.
+-   Checked: ur5 poses with q5 = 0 are wrist zones, q3 = 0 poses are elbow zones, a planar 2R arm
+    (position metric) shows the singular circles at l1 + l2 and |l1 - l2| within one voxel.
