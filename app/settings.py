@@ -34,6 +34,7 @@ class AppSettings:
     KEY_VIEWPORT_BG_COLOR = "viewport/bg_color"
     KEY_SHOW_COORDINATE_FRAMES = "viewport/show_frames"
     KEY_SHOW_GRID = "viewport/show_grid"
+    KEY_SHOW_FLOOR = "viewport/show_floor"             # U2.3
     KEY_COMPUTE_BACKEND = "compute/backend"            # "auto" | "cpu" | "cuda"  (R5.5)
     KEY_VRAM_BUDGET_MB = "compute/vram_budget_mb"      # 256..7168, default 6144 (R5.5)
 
@@ -164,6 +165,17 @@ class AppSettings:
     def set_show_grid(self, visible: bool) -> None:
         """Set grid visibility in the viewport."""
         self._settings.setValue(self.KEY_SHOW_GRID, visible)
+
+    def show_floor(self) -> bool:
+        """Return True if the floor grid and world axes are shown (default True)."""
+        val = self._settings.value(self.KEY_SHOW_FLOOR, True)
+        if isinstance(val, str):
+            return val.lower() == "true"
+        return bool(val)
+
+    def set_show_floor(self, visible: bool) -> None:
+        """Set floor grid visibility."""
+        self._settings.setValue(self.KEY_SHOW_FLOOR, bool(visible))
 
     # ------------------------------------------------------------------
     # Compute (R5.5)

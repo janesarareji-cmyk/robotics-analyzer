@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
             settings=self._settings, parent=self
         )
         self._connect_project_signals()
+        self.setAcceptDrops(True)
         self._focus_mode = False
         self._focus_state = None
         self._default_state = None
@@ -323,6 +324,11 @@ class MainWindow(QMainWindow):
         self._action_show_frames.setChecked(True)
         self._menu_robot.addAction(self._action_show_frames)
 
+        self._action_show_floor = QAction("Show Floor &Grid", self)
+        self._action_show_floor.setCheckable(True)
+        self._action_show_floor.setChecked(self._settings.show_floor())
+        self._menu_robot.addAction(self._action_show_floor)
+
         self._action_show_links = QAction("Show &Links", self)
         self._action_show_links.setCheckable(True)
         self._action_show_links.setChecked(True)
@@ -399,6 +405,8 @@ class MainWindow(QMainWindow):
 
         # Wire View > Robot actions to RobotView toggles
         self._action_show_frames.toggled.connect(self._viewport.robot_view.set_show_frames)
+        self._viewport.robot_view.set_show_floor(self._action_show_floor.isChecked())
+        self._action_show_floor.toggled.connect(self._on_show_floor_toggled)
         self._action_show_links.toggled.connect(self._viewport.robot_view.set_show_links)
         self._action_show_tcp.toggled.connect(self._viewport.robot_view.set_show_tcp)
         self._action_show_visuals.toggled.connect(self._viewport.robot_view.set_show_visuals)
@@ -1336,6 +1344,46 @@ class MainWindow(QMainWindow):
         last = message.strip().splitlines()[-1] if message.strip() else "error"
         self.log(f"[ERROR] Plugin import failed: {last}")
         QMessageBox.warning(self, "Plugin import", f"Import failed.\n\n{last}")
+
+    def _on_show_floor_toggled(self, on: bool) -> None:
+        self._settings.set_show_floor(on)
+        self._viewport.robot_view.set_show_floor(on)
+
+    # U2.3 drag and drop --------------------------------------------------
+    @staticmethod
+    def _drop_paths(event: Any) -> list[str]:
+        md = event.mimeData()
+        if md is None or not md.hasUrls():
+            return []
+        return [u.toLocalFile() for u in md.urls() if u.isLocalFile()]
+
+    def dragEnterEvent(self, event) -> None:
+        if self._drop_paths(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = self._drop_paths(event)
+        if not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.handle_dropped_file(paths[0])
+
+    def handle_dropped_file(self, path: str) -> None:
+        """Open a dropped .urdf (import) or .robotproj (open project); others are ignored."""
+        import os as _os
+        ext = _os.path.splitext(path)[1].lower()
+        if ext == ".urdf":
+            self.import_urdf_file(path)
+        elif ext == ".robotproj":
+            self._project_controller.open_project(self, path)
+        else:
+            self.set_status(f"Dropped file ignored (need .urdf or .robotproj): {path}")
 
     def import_urdf_file(self, path: str) -> None:
         """Run the URDF import in a worker task; result handled on the GUI thread."""

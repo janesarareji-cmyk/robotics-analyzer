@@ -38,6 +38,9 @@ class RobotView:
         self._show_links = True
         self._show_tcp = True
         self._show_visuals = True
+        self._show_floor = True          # U2.3
+        self._floor_actors: list[Any] = []
+        self._floor_info: tuple[float, float] | None = None   # (z, half size)
 
         # R3.5 visuals: data survives actor rebuilds; actors are recreated.
         self._visuals: list[Any] = []
@@ -216,6 +219,82 @@ class RobotView:
                 actor.visibility = self._show_frames
         self._render()
 
+    # U2.3 floor grid + world axes ------------------------------------
+    @property
+    def show_floor(self) -> bool:
+        return self._show_floor
+
+    @property
+    def floor_actors(self) -> list[Any]:
+        """Floor grid and world axes actors (empty when none built)."""
+        return list(self._floor_actors)
+
+    @property
+    def floor_info(self) -> tuple[float, float] | None:
+        """(z of the floor, half side length in m), or None."""
+        return self._floor_info
+
+    def set_show_floor(self, show: bool) -> None:
+        """Toggle the floor grid and world axes."""
+        self._show_floor = bool(show)
+        for actor in self._floor_actors:
+            actor.visibility = self._show_floor
+        self._render()
+
+    @staticmethod
+    def floor_half_size(frames: list[np.ndarray], tcp: np.ndarray) -> float:
+        """Half side of the floor: horizontal reach of frame origins, >= 0.5 m, in 0.5 m steps."""
+        import math
+
+        base = np.asarray(frames[0], dtype=float)[:3, 3]
+        pts = [np.asarray(f, dtype=float)[:3, 3] for f in frames]
+        pts.append(np.asarray(tcp, dtype=float)[:3, 3])
+        reach = max(float(np.max(np.abs(p[:2] - base[:2]))) for p in pts)
+        return max(0.5, math.ceil(reach / 0.5 - 1e-9) * 0.5)
+
+    def _remove_floor(self) -> None:
+        for actor in self._floor_actors:
+            self._remove_ws_actor(actor)
+        self._floor_actors.clear()
+        self._floor_info = None
+
+    def _build_floor(self, frames: list[np.ndarray], tcp: np.ndarray) -> None:
+        """Grid (0.1 m cells) at base z minus 1 mm, plus short world axes at the origin."""
+        import pyvista as pv
+
+        self._remove_floor()
+        base = np.asarray(frames[0], dtype=float)[:3, 3]
+        half = self.floor_half_size(frames, tcp)
+        z = float(base[2]) - 0.001
+        n = int(round(half / 0.1))
+        ticks = np.arange(-n, n + 1) * 0.1
+        pts = []
+        lines = []
+        for t in ticks:
+            for a, b in (((-half, t), (half, t)), ((t, -half), (t, half))):
+                i = len(pts)
+                pts.append((a[0], a[1], z))
+                pts.append((b[0], b[1], z))
+                lines.extend([2, i, i + 1])
+        grid = pv.PolyData(np.asarray(pts, dtype=float), lines=np.asarray(lines, dtype=np.int64))
+        actor = self._plotter.add_mesh(
+            grid, color="#3a4a66", line_width=1.0, opacity=0.6, pickable=False,
+            reset_camera=False)
+        self._floor_actors.append(actor)
+
+        ln = min(0.2, half)
+        axp = np.array([[0, 0, 0], [ln, 0, 0], [0, 0, 0], [0, ln, 0], [0, 0, 0], [0, 0, ln]],
+                       dtype=float)
+        axes = pv.PolyData(axp, lines=np.array([2, 0, 1, 2, 2, 3, 2, 4, 5], dtype=np.int64))
+        axes.cell_data["rgb"] = np.array([[255, 60, 60], [60, 255, 60], [80, 120, 255]],
+                                         dtype=np.uint8)
+        actor = self._plotter.add_mesh(
+            axes, scalars="rgb", rgb=True, line_width=3.0, pickable=False, reset_camera=False)
+        self._floor_actors.append(actor)
+        for a in self._floor_actors:
+            a.visibility = self._show_floor
+        self._floor_info = (z, half)
+
     def set_show_links(self, show: bool) -> None:
         """Toggle visibility of link polyline and joint markers."""
         self._show_links = bool(show)
@@ -308,6 +387,7 @@ class RobotView:
         self.clear_workspace()
         self.set_tcp_path(None)
         self.clear_ghosts()
+        self._remove_floor()
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -579,6 +659,10 @@ class RobotView:
 
         if needs_rebuild:
             self._rebuild_actors(model, frames, tcp, fk_result)
+            try:
+                self._build_floor(frames, tcp)
+            except Exception:
+                self._floor_actors.clear()
         else:
             self._update_in_place(model, frames, tcp, fk_result)
 

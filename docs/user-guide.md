@@ -283,5 +283,11 @@ Details: [project-recovery.md](project-recovery.md). Format history: [schema/REA
   limits, else at the middle of its range. Saved projects keep their saved pose.
 - Models with visual meshes start with View > Robot > Show Frames off (the TCP
   triad stays). Models without visuals start with frames on.
+- Floor grid: a grid (0.1 m cells) at the base height with short world axes
+  (X red, Y green, Z blue) at the origin. Toggle with View > Robot > Show Floor
+  Grid (default on, remembered). Size follows the robot reach.
+- Drag and drop: drop a `.urdf` file on the window to import it, or a
+  `.robotproj` file to open it (asks about unsaved changes). Other files are
+  ignored with a status bar message.
 - Project name after an import: the sample title for a sample robot; the file
   name when the URDF robot name is generic (`UF_ROBOT`, `robot`, empty).
