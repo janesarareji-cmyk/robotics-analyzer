@@ -23,6 +23,7 @@ Menu names are as shown in the application. For the scripting interface see
 11. [Plugins](#11-plugins)
 12. [Projects, autosave and recovery](#12-projects-autosave-and-recovery)
 13. [Troubleshooting](#13-troubleshooting)
+14. [Collision while moving (U3)](#14-collision-while-moving-u3)
 
 ## 1. Install
 
@@ -323,3 +324,9 @@ Details: [project-recovery.md](project-recovery.md). Format history: [schema/REA
   ignored with a status bar message.
 - Project name after an import: the sample title for a sample robot; the file
   name when the URDF robot name is generic (`UF_ROBOT`, `robot`, empty).
+
+## 14. Collision while moving (U3)
+
+Link collision shapes follow the real link meshes: each mesh becomes a convex hull of at most 64
+vertices (Collision dock > Mesh fit: Convex hull, the default; Box, Sphere and Capsule stay
+available). Projects saved earlier keep their saved fit. Hulls are cached per mesh file.

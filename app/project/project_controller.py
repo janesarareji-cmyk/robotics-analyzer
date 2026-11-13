@@ -386,6 +386,8 @@ class ProjectController(QObject):
                 remove_autosave(old.file_path)
             old.cleanup_assets()
         self._project = project
+        from app.planning.hull import clear_hull_cache
+        clear_hull_cache()                  # U3.1: hulls belong to the old robot
         self._is_modified = modified
         self._autosave_timer.start(self.autosave_interval_ms)
         self.project_opened.emit(project)

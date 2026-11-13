@@ -18,9 +18,12 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from app.planning.collision import CollisionConfig, CollisionWorld, EnvShape, shapes_from_project
+from app.planning.collision import (
+    DEFAULT_FIT_MODE, FIT_MODES, CollisionConfig, CollisionWorld, EnvShape, shapes_from_project,
+)
 
 _KINDS = ("box", "sphere", "cylinder")
+_FIT_LABELS = {"hull": "Convex hull", "obb": "Box (OBB)", "sphere": "Sphere", "capsule": "Capsule"}
 
 
 def _fmt(x: float) -> str:
@@ -50,6 +53,15 @@ class CollisionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
+
+        frow = QHBoxLayout()
+        frow.addWidget(QLabel("Mesh fit"))
+        self._fit = QComboBox()
+        for mode in FIT_MODES:
+            self._fit.addItem(_FIT_LABELS[mode], mode)
+        self._fit.currentIndexChanged.connect(self._on_fit_changed)
+        frow.addWidget(self._fit, 1)
+        layout.addLayout(frow)
 
         layout.addWidget(QLabel("Environment shapes"))
         self._env = QTableWidget(0, 5)
@@ -174,6 +186,31 @@ class CollisionPanel(QWidget):
         self.log_requested.emit(f"[INFO] Collision: {message}")
         self.changed.emit()
 
+    # ------------------------------------------------------------------ mesh fit
+    @property
+    def fit_mode(self) -> str:
+        return self._fit.currentData()
+
+    def set_fit_mode(self, mode: str) -> bool:
+        """Set the mesh fit of the project's collision shapes (hull, obb, sphere, capsule)."""
+        if mode not in FIT_MODES:
+            self._status.setText(f"Unknown fit mode {mode!r}.")
+            return False
+        cfg = self._ensure_config()
+        if cfg is None:
+            return False
+        if cfg.fit_mode != mode:
+            cfg.fit_mode = mode
+            self._edited(f"Mesh fit: {_FIT_LABELS[mode]}.")
+        else:
+            self._refresh()
+        return True
+
+    def _on_fit_changed(self, _i: int) -> None:
+        if self._loading or self._project is None:
+            return
+        self.set_fit_mode(self._fit.currentData())
+
     # ------------------------------------------------------------------ environment
     def _on_kind(self, kind: str) -> None:
         labels = {"box": ("size x", "size y", "size z"), "sphere": ("radius", "", ""),
@@ -288,6 +325,9 @@ class CollisionPanel(QWidget):
     # ------------------------------------------------------------------ table refresh
     def _refresh(self) -> None:
         cfg = self.config
+        self._loading = True
+        self._fit.setCurrentIndex(self._fit.findData(cfg.fit_mode if cfg else DEFAULT_FIT_MODE))
+        self._loading = False
         env = list(cfg.environment) if cfg is not None else []
         edits = sorted(cfg.edits.items()) if cfg is not None else []
         self._env.setRowCount(len(env))

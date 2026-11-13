@@ -2,9 +2,10 @@
 
 Library: python-fcl (FCL) behind ``CollisionWorld``; see ``docs/collision-decision.md``.
 
-Shapes: ``sphere``, ``box``, ``capsule`` and ``cylinder`` (FCL exact cylinder, no
-capsule approximation). Mesh collision geometry is never used as a mesh: it is
-fitted by an oriented box, a sphere or a capsule (``fit_mesh``).
+Shapes: ``sphere``, ``box``, ``capsule``, ``cylinder`` (FCL exact cylinder, no
+capsule approximation) and ``convex`` (hull of a mesh, <= 64 vertices, U3.1). Mesh
+collision geometry is never used as a raw mesh: it is fitted by a convex hull (default),
+an oriented box, a sphere or a capsule (``fit_mesh``).
 
 Link ids in ``pairs()``: link index >= 0 for robot links; an environment shape
 number ``k`` is reported as ``-1 - k`` (``env_id``).
@@ -26,8 +27,9 @@ try:                                    # optional at import time; needed by Col
 except ImportError:                     # pragma: no cover - depends on the environment
     fcl = None
 
-SHAPE_KINDS = ("sphere", "box", "capsule", "cylinder")
-FIT_MODES = ("obb", "sphere", "capsule")
+SHAPE_KINDS = ("sphere", "box", "capsule", "cylinder", "convex")
+FIT_MODES = ("obb", "sphere", "capsule", "hull")
+DEFAULT_FIT_MODE = "hull"
 COLLISION_FORMAT = 1
 
 
@@ -55,7 +57,8 @@ class Shape:
     ``link`` is the robot link index (pose is in the link frame) or -1 for an
     environment shape (pose is in the world frame).
     params: sphere ``radius``; box ``size`` [x,y,z]; capsule/cylinder ``radius``,
-    ``length`` (axis = local z; capsule length is the cylindrical part).
+    ``length`` (axis = local z; capsule length is the cylindrical part); convex ``vertices``
+    (n,3) and ``faces`` (m,3) outward triangles.
     """
 
     kind: str
@@ -70,6 +73,12 @@ class Shape:
         if self.kind == "box":
             if len(self.params.get("size", ())) != 3:
                 raise ValueError("box needs size [x, y, z]")
+        elif self.kind == "convex":
+            v = np.asarray(self.params.get("vertices", ()), dtype=float)
+            f = np.asarray(self.params.get("faces", ()), dtype=int)
+            if v.ndim != 2 or v.shape[1] != 3 or len(v) < 4 or f.ndim != 2 or f.shape[1] != 3:
+                raise ValueError("convex needs vertices (n,3) and faces (m,3)")
+            self.params = {"vertices": v, "faces": f}
         elif self.kind == "sphere":
             if "radius" not in self.params:
                 raise ValueError("sphere needs radius")
@@ -83,6 +92,8 @@ class Shape:
             return float(p["radius"])
         if self.kind == "box":
             return 0.5 * float(np.linalg.norm(p["size"]))
+        if self.kind == "convex":
+            return float(np.linalg.norm(p["vertices"], axis=1).max())
         h = 0.5 * float(p["length"])
         r = float(p["radius"])
         return h + r if self.kind == "capsule" else float(np.hypot(h, r))
@@ -95,6 +106,10 @@ class Shape:
             return fcl.Box(*[float(v) for v in p["size"]])
         if self.kind == "capsule":
             return fcl.Capsule(float(p["radius"]), float(p["length"]))
+        if self.kind == "convex":
+            f = np.asarray(p["faces"], dtype=np.int64)
+            flat = np.column_stack([np.full(len(f), 3, dtype=np.int64), f]).ravel()
+            return fcl.Convex(np.asarray(p["vertices"], dtype=float), len(f), flat)
         return fcl.Cylinder(float(p["radius"]), float(p["length"]))
 
 
@@ -146,14 +161,14 @@ class CollisionConfig:
 
     edits: dict = field(default_factory=dict)          # (a, b) with a <= b -> bool check
     environment: list = field(default_factory=list)    # list[EnvShape]
-    fit_mode: str = "obb"                              # mesh fit used by shapes_from_geometry
+    fit_mode: str = DEFAULT_FIT_MODE                   # mesh fit used by shapes_from_geometry
 
     def __post_init__(self) -> None:
         if self.fit_mode not in FIT_MODES:
             raise ValueError(f"fit_mode must be one of {FIT_MODES}")
 
     def is_default(self) -> bool:
-        return not self.edits and not self.environment and self.fit_mode == "obb"
+        return not self.edits and not self.environment and self.fit_mode == DEFAULT_FIT_MODE
 
     def set_check(self, a: int, b: int, check: bool) -> None:
         if a == b:
@@ -184,18 +199,19 @@ class CollisionConfig:
             edits[_key(int(a), int(b))] = bool(v)
         return cls(edits=edits,
                    environment=[EnvShape.from_dict(e) for e in d.get("environment", [])],
-                   fit_mode=d.get("fit_mode", "obb"))
+                   fit_mode=d.get("fit_mode", "obb"))   # old file without the key
 
 
 # ---------------------------------------------------------------------------
 # Shapes from stored geometry (R3.5) and mesh fit
 # ---------------------------------------------------------------------------
 
-def fit_mesh(points: np.ndarray, mode: str = "obb") -> tuple[str, dict, np.ndarray]:
+def fit_mesh(points: np.ndarray, mode: str = DEFAULT_FIT_MODE) -> tuple[str, dict, np.ndarray]:
     """Fit a primitive to mesh points (n, 3) in the mesh frame.
 
     Returns ``(kind, params, pose)``; pose is the primitive pose in the mesh frame.
-    ``obb``: PCA oriented box; ``sphere``: bounding sphere of the AABB centre;
+    ``hull``: convex hull (<= 64 vertices, kind ``convex``, pose identity; a flat or
+    degenerate mesh falls back to ``obb``); ``obb``: PCA oriented box; ``sphere``: bounding sphere of the AABB centre;
     ``capsule``: axis = principal direction, radius = max distance to the axis.
     All fits contain every point (conservative).
     """
@@ -204,6 +220,12 @@ def fit_mesh(points: np.ndarray, mode: str = "obb") -> tuple[str, dict, np.ndarr
         raise ValueError("no points to fit")
     if mode not in FIT_MODES:
         raise ValueError(f"unknown fit mode {mode!r}")
+    if mode == "hull":
+        from app.planning.hull import convex_hull
+        h = convex_hull(pts)
+        if h is not None:
+            return "convex", {"vertices": h[0], "faces": h[1]}, np.eye(4)
+        mode = "obb"
     if mode == "sphere":
         c = 0.5 * (pts.min(0) + pts.max(0))
         r = float(np.linalg.norm(pts - c, axis=1).max())
@@ -258,7 +280,22 @@ def _mesh_points(v: Any) -> np.ndarray | None:
     return pts * scale
 
 
-def shapes_from_geometry(items: Iterable[Any], fit_mode: str = "obb") -> list[Shape]:
+def _fit_visual(v: Any, fit_mode: str):
+    """``fit_mesh`` of a mesh LinkVisual, cached per mesh file + scale + mode."""
+    from app.planning import hull as _hull
+
+    def fit():
+        pts = _mesh_points(v)
+        return None if pts is None else fit_mesh(pts, fit_mode)
+
+    path = getattr(v, "mesh_path", None)
+    if not path:
+        return fit()
+    key = _hull.mesh_key(path, v.params.get("scale", (1, 1, 1))) + (fit_mode,)
+    return _hull.cached(key, fit)
+
+
+def shapes_from_geometry(items: Iterable[Any], fit_mode: str = DEFAULT_FIT_MODE) -> list[Shape]:
     """Build link shapes from stored ``LinkVisual`` items (collisions, or visuals).
 
     Mesh items are fitted (``fit_mode``); a mesh that cannot be read is skipped.
@@ -267,10 +304,10 @@ def shapes_from_geometry(items: Iterable[Any], fit_mode: str = "obb") -> list[Sh
     for v in items:
         pose = pose_matrix(v.origin_xyz, v.origin_rpy)
         if v.kind == "mesh":
-            pts = _mesh_points(v)
-            if pts is None:
+            fitted = _fit_visual(v, fit_mode)
+            if fitted is None:
                 continue
-            kind, params, fp = fit_mesh(pts, fit_mode)
+            kind, params, fp = fitted
             out.append(Shape(kind, params, int(v.link_index), pose @ fp))
         elif v.kind in SHAPE_KINDS:
             out.append(Shape(v.kind, dict(v.params), int(v.link_index), pose))
@@ -283,7 +320,7 @@ def shapes_from_project(project: Any) -> list[Shape]:
     if not items:
         items = list(getattr(project, "visuals", []) or [])
     cfg = getattr(project, "collision", None)
-    return shapes_from_geometry(items, cfg.fit_mode if cfg else "obb")
+    return shapes_from_geometry(items, cfg.fit_mode if cfg else DEFAULT_FIT_MODE)
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,15 @@ link frame). Meshes are fitted, never used as meshes: oriented box (default), sp
 every fit contains all vertices. Robots with no stored collision geometry use their visuals; a link
 with no shape is never checked.
 
+## Convex hulls (U3.1)
+Kind `convex`: `params {"vertices": (n,3), "faces": (m,3)}`, outward triangles, built by
+`app/planning/hull.py` from the mesh points (VTK Delaunay through PyVista, no scipy). At most 64
+vertices: a bigger hull is rebuilt from support points in fewer directions and inflated about its
+centroid so every mesh point stays inside (conservative). A flat or collinear mesh falls back to the
+oriented box. `fit_mode "hull"` is the default for new projects and imports; a saved `collision.json`
+keeps its own `fit_mode`. Hulls are cached per mesh path + scale (+ mtime), cleared when a project
+opens.
+
 ## Allowed collision matrix (ACM)
 Default: parent-child link pairs are not checked. `CollisionConfig.edits[(a, b)]` = `True` (force
 check) or `False` (never check) overrides. `CollisionWorld.disable_always_colliding()` (panel button
