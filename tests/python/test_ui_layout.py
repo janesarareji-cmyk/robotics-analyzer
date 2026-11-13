@@ -53,12 +53,11 @@ def test_default_viewport_is_large():
         c = win.centralWidget()
         assert c.width() >= 0.55 * win.width()
         assert c.height() >= 0.55 * win.height()
-        assert _visible(win) == {
-            "model_dock", "props_dock", "dh_dock", "joint_dock", "log_dock"}
+        assert _visible(win) == {"joint_dock", "matrices_dock", "collision_dock", "log_dock"}
         # Properties tabbed into the left area, right area holds Joints (raised) + DH
         assert win.dockWidgetArea(win.findChild(QDockWidget, "props_dock")).name == "LeftDockWidgetArea"
         assert win.dockWidgetArea(win.joint_dock).name == "RightDockWidgetArea"
-        assert win.joint_dock.isVisible() and win.findChild(QDockWidget, "model_dock").isVisible()
+        assert win.joint_dock.isVisible()
     finally:
         _close(win)
 
@@ -72,8 +71,7 @@ def test_focus_mode_hides_all_and_restores():
         assert win.focus_mode
         assert _visible(win) == set()
         assert win._action_focus.isChecked()
-        side = win.findChild(QToolBar, "tool_bar_side")
-        assert win.centralWidget().width() >= win.width() - side.width() - 20
+        assert win.centralWidget().width() >= win.width() - 20
         win.set_focus_mode(False)
         QApplication.processEvents()
         assert not win.focus_mode
@@ -191,21 +189,18 @@ def test_settings_layout_version_api():
     assert s.layout_version() == 5
 
 
-def test_side_bar_actions():
+def test_mode_bar_replaces_side_bar():
     win = _make()
     try:
-        bar = win.findChild(QToolBar, "tool_bar_side")
-        assert bar is not None
-        assert win.toolBarArea(bar).name == "LeftToolBarArea"
-        assert not bar.isMovable()
-        labels = [a.iconText() for a in bar.actions() if not a.isSeparator()]
-        assert labels == ["Model", "Joints", "DH", "IK", "Target", "Curve", "Analysis", "Workspace", "Sim",
-                          "Graphs", "Planning", "Ghosts", "Collision", "Physical", "Compare", "Matrices",
-                          "Script", "Log", "Focus 3D", "Reset"]
-        assert win._action_view_ik in bar.actions()
+        assert win.findChild(QToolBar, "tool_bar_side") is None
+        bar = win.findChild(QToolBar, "mode_bar")
+        assert bar is not None and not bar.isMovable()
+        labels = [a.text() for a in bar.actions()]
+        assert labels == ["Model", "Move", "Target", "Plan", "Simulate", "Analyze"]
+        assert [a.shortcut().toString() for a in bar.actions()] == [f"Ctrl+{i}" for i in range(1, 7)]
+        assert win.mode == "Move" and win._modes.action("Move").isChecked()
         assert win._action_view_ik.text() == "&Inverse Kinematics"   # menu text unchanged
-        assert win._action_focus in bar.actions()
-        assert win._action_reset_layout in bar.actions()
+        assert win._action_focus.isEnabled() and win._action_reset_layout.isEnabled()
     finally:
         _close(win)
 
@@ -221,7 +216,7 @@ def test_close_in_focus_mode_saves_normal_layout():
     try:
         assert not w2.focus_mode
         vis = _visible(w2)
-        assert "model_dock" in vis and "joint_dock" in vis
+        assert "joint_dock" in vis
     finally:
         _close(w2)
 

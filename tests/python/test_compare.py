@@ -140,11 +140,9 @@ def _wait(panel, limit=60.0):
     QCoreApplication.processEvents()
 
 
-def test_dock_wiring_side_bar_and_view_menu(win):
+def test_dock_wiring_mode_bar_and_view_menu(win):
     assert win.compare_dock is not None
-    bar = win.findChild(QToolBar, "tool_bar_side")
-    assert win._action_view_compare in bar.actions()
-    assert win._action_view_compare.iconText() == "Compare"
+    assert win.mode_for_dock("compare") == "Analyze"
     assert (win._action_view_compare, win.compare_dock) in win._view_action_docks()
     assert win.compare_dock.isHidden()
     win._action_view_compare.trigger()

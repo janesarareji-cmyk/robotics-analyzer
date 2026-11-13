@@ -44,6 +44,7 @@ from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
 from app import __version__
+from app.modes import DEFAULT_MODE, ModeController, mode_for_dock as _mode_for_dock
 from app.settings import AppSettings, LAYOUT_VERSION
 from app.sample_robots import list_sample_robots
 from app.collision_service import CollisionService
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
         self._setup_status_bar()
         self._setup_central_widget()
         self._setup_dock_panels()
-        self._setup_side_bar()
+        self._setup_mode_bar()
         self._default_state = self.saveState()     # U1: before user state is restored
         self._restore_layout()
         self._wire_collision()
@@ -851,33 +852,28 @@ class MainWindow(QMainWindow):
                 return action
         return None
 
-    def _setup_side_bar(self) -> None:
-        """Vertical tool bar (activity bar) with one button per panel."""
-        bar = QToolBar("Panels")
-        bar.setObjectName("tool_bar_side")
-        bar.setMovable(False)
-        bar.setFloatable(False)
-        bar.setMaximumWidth(72)     # narrow strip; labels are short
-        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, bar)
-        items = [
-            (self._action_view_model, "Model"), (self._action_view_joints, "Joints"),
-            (self._action_view_dh, "DH"), (self._action_view_ik, "IK"), (self._action_view_target, "Target"),
-            (self._action_view_curve, "Curve"),
-            (self._action_view_analysis, "Analysis"), (self._action_view_workspace, "Workspace"),
-            (self._action_view_simulation, "Sim"), (self._action_view_graphs, "Graphs"),
-            (self._action_view_planning, "Planning"), (self._action_view_ghosts, "Ghosts"),
-            (self._action_view_collision, "Collision"), (self._action_view_physical, "Physical"),
-            (self._action_view_compare, "Compare"), (self._action_view_matrices, "Matrices"),
-            (self._action_view_script, "Script"), (self._action_view_log, "Log"),
-        ]
-        for action, label in items:
-            action.setIconText(label)
-            bar.addAction(action)
-        bar.addSeparator()
-        bar.addAction(self._action_focus)
-        bar.addAction(self._action_reset_layout)
-        self._side_bar = bar
+    def _setup_mode_bar(self) -> None:
+        """U5.4: one bar of 6 work modes (Ctrl+1..6) replaces the old 18-button side bar."""
+        self._modes = ModeController(self)
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._modes.bar)
+        self._modes.apply(DEFAULT_MODE)
+
+    @property
+    def mode_bar(self) -> ModeController:
+        return self._modes
+
+    @property
+    def mode(self) -> str | None:
+        """Name of the current work mode."""
+        return self._modes.current
+
+    def set_mode(self, name: str) -> None:
+        self._modes.apply(name)
+
+    @staticmethod
+    def mode_for_dock(name: str) -> str:
+        return _mode_for_dock(name)
 
     @property
     def focus_mode(self) -> bool:
@@ -915,6 +911,7 @@ class MainWindow(QMainWindow):
         if self._default_state is not None:
             self.restoreState(self._default_state)
         self._apply_default_sizes()
+        self._modes.set_current(DEFAULT_MODE)
 
     def _populate_sample_menu(self) -> None:
         """Fill File > Open Sample Robot from robots/*/<name>.urdf."""
@@ -982,6 +979,9 @@ class MainWindow(QMainWindow):
 
             # Update 3D viewport and reset camera on project open
             self._update_robot_view(reset_camera=True)
+        mode = self._modes.recall()
+        if mode:
+            self._modes.apply(mode)
 
     def _on_project_closed(self) -> None:
         """Clear viewport and disable actions on project close."""
