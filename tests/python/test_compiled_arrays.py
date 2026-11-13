@@ -225,3 +225,57 @@ def test_legacy_link_count_mismatch_pure_links_compile_throws():
         cb.compile(m)
     with pytest.raises(ValueError):
         cb.compile_arrays(m)
+
+
+# ------------------------------------------------------------------ A1.4
+
+def test_a14_compile_rejects_bad_models():
+    """Audit M4 + LOW: missing incoming joint, duplicate names, NaN mimic -> ValueError."""
+    m = cb.RobotModel()
+    for _ in range(3):
+        m.links.append(cb.Link())
+    m.joints.append(tree_model().joints[0])      # origin/axis root, parent 0 -> child 1
+    with pytest.raises(ValueError):
+        cb.compile(m)                            # link 2 has no incoming joint
+
+    d = dh_chain(2)
+    d.joints[1].name = d.joints[0].name
+    with pytest.raises(ValueError):
+        cb.compile(d)
+
+    mm = mimic_model()
+    mm.joints[1].mimic.multiplier = float("nan")
+    with pytest.raises(ValueError):
+        cb.compile(mm)
+    mm = mimic_model()
+    mm.joints[1].mimic.offset = float("inf")
+    with pytest.raises(ValueError):
+        cb.compile(mm)
+
+
+def test_a14_from_arrays_range_checks():
+    """Audit M5: bad arrays dict -> ValueError before any index is used."""
+    gb = pytest.importorskip("gpu_bridge")
+    good = cb.compile_arrays(tree_model())
+    q = np.zeros((4, 3))
+    for key, idx, val in (("src_q_index", 0, 99), ("child_link", 0, 50),
+                          ("parent_link", 0, -1)):
+        bad = dict(good)
+        arr = np.array(good[key], copy=True)
+        arr[idx] = val
+        bad[key] = arr
+        with pytest.raises(ValueError):
+            gb.fk_batch(bad, q)
+    bad = dict(good)
+    bad["tcp_link"] = -2
+    with pytest.raises(ValueError):
+        gb.fk_batch(bad, q)
+
+
+def test_a14_parallel_for_huge_thread_count():
+    """Audit LOW parallel.hpp: n_threads=10**6 is clamped, call still works."""
+    m = tree_model()
+    cm = cb.compile(m)
+    q = np.zeros((20000, m.dof()))
+    r = cb.fk_batch(cm, q, n_threads=10**6)
+    assert r["position"].shape == (20000, 3)

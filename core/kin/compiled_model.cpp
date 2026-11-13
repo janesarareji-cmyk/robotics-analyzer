@@ -1,6 +1,7 @@
 #include "compiled_model.hpp"
 #include "fk.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -54,6 +55,37 @@ static int resolve_tcp(const urm::RobotModel& model, int n_links) {
     return t;
 }
 
+static void require_finite(double v, const urm::Joint& j, const char* what) {
+    if (!std::isfinite(v)) {
+        throw std::invalid_argument("joint '" + j.name + "': " + what + " is not finite");
+    }
+}
+
+// A1.4 (audit M4 + LOW): numeric inputs must be finite, joint names unique.
+static void check_joint_inputs(const urm::Joint& j) {
+    for (int k = 0; k < 3; ++k) {
+        require_finite(j.origin.xyz[k], j, "origin xyz");
+        require_finite(j.origin.rpy[k], j, "origin rpy");
+        require_finite(j.axis[k], j, "axis");
+    }
+    require_finite(j.dh.a, j, "dh a");
+    require_finite(j.dh.alpha, j, "dh alpha");
+    require_finite(j.dh.d, j, "dh d");
+    require_finite(j.dh.theta, j, "dh theta");
+    require_finite(j.mdh.a, j, "mdh a");
+    require_finite(j.mdh.alpha, j, "mdh alpha");
+    require_finite(j.mdh.d, j, "mdh d");
+    require_finite(j.mdh.theta, j, "mdh theta");
+    require_finite(j.limits.lower, j, "limit lower");
+    require_finite(j.limits.upper, j, "limit upper");
+    require_finite(j.limits.vel, j, "limit vel");
+    require_finite(j.limits.effort, j, "limit effort");
+    if (j.mimic.has_value()) {
+        require_finite(j.mimic->multiplier, j, "mimic multiplier");
+        require_finite(j.mimic->offset, j, "mimic offset");
+    }
+}
+
 CompiledModel compile(const urm::RobotModel& model) {
     const int nj = static_cast<int>(model.joints.size());
     if (is_legacy_serial(model) && model.links.size() != model.joints.size() + 1) {
@@ -72,7 +104,12 @@ CompiledModel compile(const urm::RobotModel& model) {
     cm.n_dof = model.dof();
 
     std::unordered_map<std::string, int> by_name;
-    for (int i = 0; i < nj; ++i) by_name.emplace(model.joints[i].name, i);
+    for (int i = 0; i < nj; ++i) {
+        check_joint_inputs(model.joints[i]);
+        if (!by_name.emplace(model.joints[i].name, i).second) {
+            throw std::invalid_argument("duplicate joint name '" + model.joints[i].name + "'");
+        }
+    }
 
     std::vector<bool> child_used(cm.n_links, false);
     cm.joints.reserve(nj);
@@ -169,6 +206,12 @@ CompiledModel compile(const urm::RobotModel& model) {
             }
         }
         cm.joints.push_back(cj);
+    }
+
+    for (int c = 1; c < cm.n_links; ++c) {
+        if (!child_used[c]) {
+            throw std::invalid_argument("link " + std::to_string(c) + " has no incoming joint");
+        }
     }
 
     std::sort(cm.joints.begin(), cm.joints.end(),

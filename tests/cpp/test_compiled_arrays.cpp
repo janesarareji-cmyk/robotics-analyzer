@@ -150,6 +150,28 @@ static void test_bad_arrays_throw() {
     bad = good; bad.type[0] = 7;
     CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
 
+    // A1.4 (audit M5): range checks.
+    bad = good; bad.src_q_index[0] = 99;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.child_link[0] = 50;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.parent_link[0] = -1;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.parent_link[0] = bad.child_link[0];
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.tcp_link = -2;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.tcp_link = bad.n_links;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.n_links = 0;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.n_dof = -1;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.pre[3] = std::nan("");
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+    bad = good; bad.base[0] = INFINITY;
+    CHECK(throws_invalid([&] { kin::from_arrays(bad); }));
+
     // The good one still works.
     CHECK(!throws_invalid([&] { kin::from_arrays(good); }));
 }

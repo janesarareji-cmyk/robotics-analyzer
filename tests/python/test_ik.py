@@ -154,7 +154,7 @@ def test_limits_enforced_and_best_iterate():
     target[:3, 3] = [0.5, 0.5, 0.0]
     r = cb.solve_ik(cm, lo, hi, target, [0.0] * 3, None)
     assert all(-0.2 - 1e-12 <= v <= 0.2 + 1e-12 for v in r["q"])
-    r0 = cb.solve_ik(cm, lo, hi, target, [0.0] * 3, {"max_iter": 0})
+    r0 = cb.solve_ik(cm, lo, hi, target, [0.0] * 3, {"max_iter": 1})
     assert r["pos_error"] <= r0["pos_error"] + 1e-12
 
 
@@ -230,3 +230,29 @@ def test_dof_limits_mimic_and_branch():
     lo, hi = dof_limits(model)
     assert len(lo) == len(hi) == model.dof()
     assert all(l < h for l, h in zip(lo, hi))
+
+
+def test_a14_bad_options_raise():
+    """A1.4 (audit LOW): IK options that break the solver -> ValueError."""
+    model = planar_3r()
+    cm = cb.compile(model)
+    lo, hi = [-3.0] * 3, [3.0] * 3
+    T = np.eye(4)
+    T[:3, 3] = [0.5, 0.5, 0.0]
+    for bad in ({"damping": 0.0}, {"damping": -1.0}, {"max_iter": 0},
+                {"max_iter": 10**7}, {"max_step": 0.0}, {"tol_pos": 0.0},
+                {"tol_rot": -1e-6}, {"damping": float("nan")}):
+        with pytest.raises(ValueError):
+            cb.solve_ik(cm, lo, hi, T, [0.0] * 3, bad)
+    cb.solve_ik(cm, lo, hi, T, [0.0] * 3, {"damping": 0.05, "max_iter": 50})
+
+
+def test_a14_ik_multi_limits_must_be_finite():
+    """A1.4 (audit LOW ik_multi): non-finite limits -> ValueError; hi <= lo is fine."""
+    model = planar_3r()
+    cm = cb.compile(model)
+    T = np.eye(4)
+    T[:3, 3] = [0.5, 0.5, 0.0]
+    with pytest.raises(ValueError):
+        cb.solve_ik_multi(cm, [-3.0, -3.0, float("nan")], [3.0] * 3, T, [0.0] * 3)
+    cb.solve_ik_multi(cm, [-3.0, 0.5, -3.0], [3.0, 0.5, 3.0], T, [0.0] * 3)

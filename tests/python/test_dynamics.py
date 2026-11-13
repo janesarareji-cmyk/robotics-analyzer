@@ -283,3 +283,14 @@ def test_zero_gravity_rest_gives_zero():
     tau = cb.inverse_dynamics(dm, q, z, z, (0.0, 0.0, 0.0))
     assert np.max(np.abs(tau)) < 1e-15
     assert np.max(np.abs(cb.inverse_dynamics(dm, q, z, z))) > 1e-3   # default gravity -z
+
+
+def test_a14_forward_dynamics_nonfinite_input():
+    """A1.4 (audit LOW): NaN q/qd/tau in forward dynamics -> error, never NaN qdd."""
+    model = random_robot(1, 3)
+    cm, dm = _setup(model)
+    ok = [0.0] * 3
+    for args in (([float("nan"), 0, 0], ok, ok), (ok, [0, float("inf"), 0], ok),
+                 (ok, ok, [0, 0, float("nan")])):
+        with pytest.raises(ValueError):
+            cb.forward_dynamics(dm, *args)

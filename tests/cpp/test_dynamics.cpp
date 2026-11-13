@@ -238,12 +238,44 @@ static void singular_and_sizes() {
     CHECK(thrown);
 }
 
+// A1.4 (audit M4): a link with no incoming joint must throw, not index -1.
+static void a14_missing_link_and_nonfinite() {
+    urm::RobotModel m;
+    for (int i = 0; i < 3; ++i) m.links.push_back(urm::Link{"l" + std::to_string(i)});
+    Joint j; j.name = "a"; j.parent_link = 0; j.child_link = 1;
+    j.kinematics = JointKinematics::OriginAxis; j.axis = {0, 0, 1};
+    m.joints.push_back(j);
+    kin::CompiledModel cm;
+    cm.n_links = 3; cm.n_dof = 1; cm.tcp_link = 1;
+    kin::CompiledJoint cj; cj.joint_index = 0; cj.parent_link = 0; cj.child_link = 1;
+    cj.type = JointType::Revolute; cj.q_index = 0; cj.src_q_index = 0;
+    cm.joints.push_back(cj);
+    bool threw = false;
+    try { dyn::build_dyn_model(m, cm); } catch (const std::invalid_argument&) { threw = true; }
+    CHECK(threw);
+    // non-finite q in forward dynamics
+    urm::RobotModel m1;
+    m1.links.push_back(urm::Link{"l0"});
+    m1.links.push_back(urm::Link{"l1"});
+    m1.links[1].inertia.mass = 1.0;
+    m1.links[1].inertia.inertia_tensor = {0.1, 0, 0, 0.1, 0, 0.1};
+    Joint j1 = j; m1.joints.push_back(j1);
+    kin::CompiledModel c1 = kin::compile(m1);
+    dyn::DynModel d1 = dyn::build_dyn_model(m1, c1);
+    const Eigen::Vector3d g(0, 0, -9.81);
+    bool t2 = false;
+    try { dyn::forward_dynamics(d1, {std::nan("")}, {0.0}, {0.0}, g); } catch (const std::invalid_argument&) { t2 = true; }
+    CHECK(t2);
+    CHECK(dyn::forward_dynamics(d1, {0.1}, {0.0}, {0.0}, g).size() == 1);
+}
+
 int main() {
     singular_and_sizes();
     case_A();
     case_B();
     case_C();
     misc();
+    a14_missing_link_and_nonfinite();
     std::cout << "worst relative error: " << g_worst << "\n";
     if (g_fail) { std::cerr << g_fail << " failure(s)\n"; return 1; }
     std::cout << "test_dynamics OK\n";

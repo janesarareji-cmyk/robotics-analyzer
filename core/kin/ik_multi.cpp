@@ -31,6 +31,9 @@ std::vector<IKSolution> solve_ik_multi(const CompiledModel& cm, const std::vecto
     if (static_cast<int>(lo.size()) != n || static_cast<int>(hi.size()) != n)
         throw std::invalid_argument("solve_ik_multi: limit vectors size != n_dof");
     if (n_starts < 1) throw std::invalid_argument("solve_ik_multi: n_starts < 1");
+    for (int i = 0; i < n; ++i)
+        if (!std::isfinite(lo[i]) || !std::isfinite(hi[i]))
+            throw std::invalid_argument("solve_ik_multi: joint limits must be finite");
 
     // Per-DOF: wrap when revolute master and limits span >= 2*pi.
     std::vector<char> wrap(n, 0);
@@ -58,8 +61,12 @@ std::vector<IKSolution> solve_ik_multi(const CompiledModel& cm, const std::vecto
         std::vector<double> q0 = q_current;
         if (s > 0) {
             for (int i = 0; i < n; ++i) {
-                std::uniform_real_distribution<double> u(lo[i], hi[i]);
-                q0[i] = (hi[i] > lo[i]) ? u(rng) : lo[i];
+                if (hi[i] > lo[i]) {
+                    std::uniform_real_distribution<double> u(lo[i], hi[i]);
+                    q0[i] = u(rng);
+                } else {
+                    q0[i] = lo[i];
+                }
             }
         }
         const IKResult r = solve_ik(cm, lo, hi, target, q0, opt);

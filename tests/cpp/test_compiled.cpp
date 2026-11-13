@@ -271,6 +271,40 @@ static void test_legacy_fallback() {
     CHECK(!kin::is_legacy_serial(mixed));
 }
 
+// A1.4 (audit M4 + LOW compile items): compile() rejects bad input, no crash.
+static void test_a14_validation() {
+    // link 2 has no incoming joint (3 links, 1 joint, explicit tree links)
+    auto m = make_links(3);
+    m.joints.push_back(oa("a", 0, 1, JointType::Revolute, {0, 0, 0}, {0, 0, 1}));
+    CHECK(!kin::is_legacy_serial(m));
+    CHECK(throws([&] { kin::compile(m); }));
+    // duplicate joint names
+    auto d = make_links(3);
+    d.joints.push_back(oa("a", 0, 1, JointType::Revolute, {0, 0, 0}, {0, 0, 1}));
+    d.joints.push_back(oa("a", 1, 2, JointType::Revolute, {0, 0, 0}, {0, 0, 1}));
+    CHECK(throws([&] { kin::compile(d); }));
+    d.joints[1].name = "b";
+    CHECK(!throws([&] { kin::compile(d); }));
+    // non-finite mimic multiplier / offset, origin, axis, limit
+    const double nan = std::nan("");
+    auto mm = d;
+    mm.joints[1].mimic = urm::Mimic{"a", nan, 0.0};
+    CHECK(throws([&] { kin::compile(mm); }));
+    mm.joints[1].mimic = urm::Mimic{"a", 1.0, INFINITY};
+    CHECK(throws([&] { kin::compile(mm); }));
+    mm.joints[1].mimic = urm::Mimic{"a", 2.0, 0.1};
+    CHECK(!throws([&] { kin::compile(mm); }));
+    auto o = d; o.joints[0].origin.xyz[1] = nan;
+    CHECK(throws([&] { kin::compile(o); }));
+    auto ax = d; ax.joints[0].axis[2] = nan;
+    CHECK(throws([&] { kin::compile(ax); }));
+    auto lm = d; lm.joints[1].limits.upper = INFINITY;
+    CHECK(throws([&] { kin::compile(lm); }));
+    auto dh = legacy_model(false); dh.joints[1].dh.a = nan;
+    CHECK(throws([&] { kin::compile(dh); }));
+    CHECK(!throws([&] { kin::compile(legacy_model(false)); }));   // legacy fallback still fine
+}
+
 int main() {
     test_random_chains();
     test_origin_axis();
@@ -279,6 +313,7 @@ int main() {
     test_tree();
     test_misc();
     test_legacy_fallback();
+    test_a14_validation();
     if (g_fail == 0) { std::cout << "All compiled-model tests passed.\n"; return 0; }
     std::cerr << g_fail << " check(s) FAILED\n";
     return 1;

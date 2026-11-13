@@ -24,7 +24,10 @@ inline int default_threads() {
 template <class F>
 void parallel_for(std::size_t n, int n_threads, std::size_t min_per_thread, F&& f) {
     if (n == 0) return;
+    // A1.4 (audit LOW): clamp to [1, 4 * hardware_concurrency].
+    const std::size_t cap = 4 * static_cast<std::size_t>(default_threads());
     std::size_t nt = static_cast<std::size_t>(n_threads > 0 ? n_threads : default_threads());
+    nt = std::min(nt, cap);
     if (min_per_thread == 0) min_per_thread = 1;
     nt = std::min(nt, std::max<std::size_t>(1, n / min_per_thread));
     if (nt <= 1) {
@@ -47,7 +50,13 @@ void parallel_for(std::size_t n, int n_threads, std::size_t min_per_thread, F&& 
     for (std::size_t t = 1; t < nt; ++t) {
         const std::size_t b = t * per;
         if (b >= n) break;
-        th.emplace_back(work, b, std::min(n, b + per));
+        try {
+            th.emplace_back(work, b, std::min(n, b + per));
+        } catch (...) {
+            // thread create failed: join the started ones, then rethrow (no std::terminate)
+            for (auto& t : th) t.join();
+            throw;
+        }
     }
     work(0, std::min(n, per));
     for (auto& t : th) t.join();

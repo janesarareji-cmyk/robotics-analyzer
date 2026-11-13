@@ -11,6 +11,7 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -43,6 +44,15 @@ inline IKOptions parse_ik_options(const py::object& options) {
         else if (k == "null_gain") o.null_gain = v.cast<double>();
         else throw std::invalid_argument("solve_ik: unknown option '" + k + "'");
     }
+    // A1.4 (audit LOW): reject values that make the solver misbehave.
+    if (!(o.damping > 0.0) || !std::isfinite(o.damping))
+        throw std::invalid_argument("solve_ik: damping must be > 0");
+    if (o.max_iter < 1 || o.max_iter > 100000)
+        throw std::invalid_argument("solve_ik: max_iter must be in [1, 100000]");
+    if (!(o.max_step > 0.0) || !std::isfinite(o.max_step))
+        throw std::invalid_argument("solve_ik: max_step must be > 0");
+    if (!(o.tol_pos > 0.0) || !std::isfinite(o.tol_pos) || !(o.tol_rot > 0.0) || !std::isfinite(o.tol_rot))
+        throw std::invalid_argument("solve_ik: tol_pos and tol_rot must be > 0");
     return o;
 }
 

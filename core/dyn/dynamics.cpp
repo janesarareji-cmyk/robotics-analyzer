@@ -114,6 +114,12 @@ DynModel build_dyn_model(const urm::RobotModel& model, const kin::CompiledModel&
         I.bottomRightCorner<3, 3>() = m * Matrix3d::Identity();
         dm.I[k] = I;
     }
+    std::vector<char> has_joint(cm.n_links, 0);
+    for (const kin::CompiledJoint& cj : cm.joints) has_joint[cj.child_link] = 1;
+    for (int k = 1; k < cm.n_links; ++k) {
+        if (!has_joint[k])
+            throw std::invalid_argument("dynamics: link " + std::to_string(k) + " has no incoming joint");
+    }
     for (const kin::CompiledJoint& cj : cm.joints) {
         DynJoint j;
         j.parent_link = cj.parent_link;
@@ -205,6 +211,7 @@ Eigen::MatrixXd mass_matrix(const DynModel& dm, const std::vector<double>& q) {
         while (dm.joints[j].parent_link != 0) {
             F = X[dm.joints[j].child_link].transpose() * F;
             j = pj[dm.joints[j].parent_link];
+            if (j < 0) throw std::invalid_argument("dynamics: link has no incoming joint");
             const DynJoint& jj = dm.joints[j];
             if (jj.type != JointType::Fixed) {
                 const double v = ji.mult * jj.mult * jj.S.dot(F);
@@ -224,6 +231,9 @@ std::vector<double> forward_dynamics(const DynModel& dm, const std::vector<doubl
     check_size(dm, qd, "qd");
     check_size(dm, tau, "tau");
     if (armature) check_size(dm, *armature, "armature");
+    for (const auto* v : {&q, &qd, &tau})
+        for (double x : *v)
+            if (!std::isfinite(x)) throw std::invalid_argument("dynamics: q, qd, tau must be finite");
     Eigen::MatrixXd M = mass_matrix(dm, q);
     if (armature)
         for (int i = 0; i < dm.n_dof; ++i) M(i, i) += (*armature)[i];
@@ -236,6 +246,7 @@ std::vector<double> forward_dynamics(const DynModel& dm, const std::vector<doubl
     if (llt.info() != Eigen::Success)
         throw std::runtime_error("mass matrix not positive definite: massless link or DOF with no inertia");
     const Eigen::VectorXd x = llt.solve(rhs);
+    if (!x.allFinite()) throw std::runtime_error("forward dynamics: non-finite solution");
     return std::vector<double>(x.data(), x.data() + x.size());
 }
 
