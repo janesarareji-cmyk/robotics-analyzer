@@ -182,6 +182,10 @@ Panels: [workspace-panels.md](workspace-panels.md). Method and numbers: [workspa
     [graphs.md](graphs.md).
 -   Trajectories: a trajectory is a list of timed waypoints with cubic or linear interpolation. It is
     stored in the project (`trajectory.json`, see [trajectory.md](trajectory.md)).
+-   Teach waypoints: in the Simulation dock, move the robot with the Joints panel and press "Add current pose as
+    waypoint" for each pose (cubic interpolation, segment time = largest joint distance / 1 rad/s, at least 0.5 s).
+    "Undo last" removes the last waypoint, "Clear waypoints" all of them, "Play" runs the trajectory.
+    Taught waypoints are the project trajectory and can be edited in the table below.
 
 ## 8. Planning and ghosts
 

@@ -26,6 +26,8 @@ from app.sim.playback import MAX_SPEED, MIN_SPEED
 from app.sim.trajectory import INTERPOLATIONS, Trajectory, Waypoint, waypoint_problems
 
 SLIDER_STEPS = 1000
+TEACH_SPEED = 1.0       # default joint speed [rad/s or m/s] for taught segment times
+TEACH_MIN_SEGMENT = 0.5  # shortest taught segment [s]
 _BAD = QBrush(QColor(210, 70, 70))
 _WARN = QBrush(QColor(230, 200, 70))
 _BLACK = QBrush(QColor(0, 0, 0))
@@ -64,7 +66,23 @@ class TimelinePanel(QWidget):
         lay = QVBoxLayout(box)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        # Teach group (U2.5): record the current pose as a waypoint, then play.
+        teach = QGroupBox("Teach waypoints")
+        tlay = QHBoxLayout(teach)
+        self._btn_teach = QPushButton("Add current pose as waypoint")
+        self._btn_teach_undo = QPushButton("Undo last")
+        self._btn_teach_clear = QPushButton("Clear waypoints")
+        self._btn_teach_play = QPushButton("Play")
+        self._teach_count = QLabel("Waypoints: 0")
+        for w in (self._btn_teach, self._btn_teach_undo, self._btn_teach_clear,
+                  self._btn_teach_play, self._teach_count):
+            tlay.addWidget(w)
+        outer.addWidget(teach)
         outer.addWidget(box)
+        self._btn_teach.clicked.connect(self.teach_add)
+        self._btn_teach_undo.clicked.connect(self.teach_undo)
+        self._btn_teach_clear.clicked.connect(self.teach_clear)
+        self._btn_teach_play.clicked.connect(self.teach_play)
 
         row = QHBoxLayout()
         self._interp = QComboBox()
@@ -291,6 +309,56 @@ class TimelinePanel(QWidget):
             self._loading = False
         self._rebuild()
 
+    # ------------------------------------------------------- teach (U2.5)
+    def teach_add(self) -> None:
+        """Append the current q as a waypoint. Segment time = max joint distance /
+        TEACH_SPEED, at least TEACH_MIN_SEGMENT. The first taught waypoint switches the
+        interpolation to cubic."""
+        if self._n_dof == 0:
+            return
+        q = self._cur_q()
+        n = self._table.rowCount()
+        t = 0.0
+        if n:
+            last_t, last_q = self._row_values(n - 1)
+            if not math.isfinite(last_t) or any(not math.isfinite(x) for x in last_q):
+                return
+            dist = max((abs(a - b) for a, b in zip(q, last_q)), default=0.0)
+            t = last_t + max(TEACH_MIN_SEGMENT, dist / TEACH_SPEED)
+        else:
+            self._interp.blockSignals(True)
+            try:
+                self._interp.setCurrentText("cubic")
+            finally:
+                self._interp.blockSignals(False)
+        self._loading = True
+        try:
+            self._append_row(round(t, 9), q)
+        finally:
+            self._loading = False
+        self._rebuild()
+
+    def teach_undo(self) -> None:
+        n = self._table.rowCount()
+        if n == 0:
+            return
+        self._loading = True
+        try:
+            self._table.removeRow(n - 1)
+        finally:
+            self._loading = False
+        self._rebuild()
+
+    def teach_clear(self) -> None:
+        if self._table.rowCount() == 0:
+            return
+        self._load_rows([])
+        self._rebuild()
+
+    def teach_play(self) -> None:
+        if self._playable:
+            self.play_requested.emit()
+
     def delete_selected(self) -> None:
         rows = sorted({i.row() for i in self._table.selectedIndexes()}, reverse=True)
         if not rows:
@@ -434,6 +502,11 @@ class TimelinePanel(QWidget):
         sel = has and self._table.rowCount() > 0
         for w in (self._btn_del, self._btn_up, self._btn_down, self._btn_capture):
             w.setEnabled(sel)
+        nrows = self._table.rowCount()
+        self._btn_teach.setEnabled(has)
+        self._btn_teach_undo.setEnabled(nrows > 0)
+        self._btn_teach_clear.setEnabled(nrows > 0)
+        self._teach_count.setText(f"Waypoints: {nrows}")
         T = self._traj.duration if self._traj is not None else 0.0
         can = self._playable
         self._slider.setEnabled(can)
@@ -449,6 +522,7 @@ class TimelinePanel(QWidget):
     def _apply_transport(self) -> None:
         play, pause, stop = self._want
         self._btn_play.setEnabled(play and self._playable)
+        self._btn_teach_play.setEnabled(play and self._playable)
         self._btn_pause.setEnabled(pause)
         self._btn_stop.setEnabled(stop)
 
