@@ -200,7 +200,7 @@ def test_side_bar_actions():
         assert not bar.isMovable()
         labels = [a.iconText() for a in bar.actions() if not a.isSeparator()]
         assert labels == ["Model", "Joints", "DH", "IK", "Target", "Curve", "Analysis", "Workspace", "Sim",
-                          "Graphs", "Planning", "Ghosts", "Collision", "Physical", "Compare",
+                          "Graphs", "Planning", "Ghosts", "Collision", "Physical", "Compare", "Matrices",
                           "Script", "Log", "Focus 3D", "Reset"]
         assert win._action_view_ik in bar.actions()
         assert win._action_view_ik.text() == "&Inverse Kinematics"   # menu text unchanged

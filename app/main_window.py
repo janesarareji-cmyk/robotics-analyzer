@@ -35,6 +35,7 @@ from app.panels.collision_panel import CollisionPanel
 from app.panels.compare_panel import ComparePanel
 from app.panels.target_panel import TargetPanel
 from app.panels.curve_panel import CurvePanel
+from app.panels.matrix_panel import MatrixPanel
 from app.panels.script_panel import ScriptPanel
 from app.script_runner import ScriptRunner
 from app.panels.plugin_manager_panel import PluginManagerPanel
@@ -329,6 +330,11 @@ class MainWindow(QMainWindow):
         self._action_view_curve.setCheckable(True)
         self._action_view_curve.setChecked(False)
         view_menu.addAction(self._action_view_curve)
+
+        self._action_view_matrices = QAction("&Matrices", self)
+        self._action_view_matrices.setCheckable(True)
+        self._action_view_matrices.setChecked(False)
+        view_menu.addAction(self._action_view_matrices)
 
         self._action_view_script = QAction("Scr&ipt console", self)
         self._action_view_script.setCheckable(True)
@@ -687,6 +693,11 @@ class MainWindow(QMainWindow):
         self._curve_panel.set_collision_service(self._collision_service)
         self._curve_panel.log_requested.connect(self.log)
         self._curve_panel.trajectory_ready.connect(self._on_curve_trajectory)
+
+        # Matrices dock (U4b.5): live transforms, Jacobian, manipulability, copy.
+        self._matrix_panel = MatrixPanel()
+        self._matrix_dock = self._add_tool_dock(
+            "Matrices", "matrices_dock", self._matrix_panel, self._action_view_matrices, 380)
         self._curve_loaded: Any = None          # the timeline trajectory that came from the Curve dock
         self._sim_panel.position_changed.connect(self._on_curve_position)
         self._sim_panel.playback_finished.connect(self._on_playback_finished)
@@ -765,6 +776,7 @@ class MainWindow(QMainWindow):
             (self._action_view_compare, self._compare_dock),
             (self._action_view_target, self._target_dock),
             (self._action_view_curve, self._curve_dock),
+            (self._action_view_matrices, self._matrix_dock),
             (self._action_view_script, self._script_dock),
             (self._action_view_plugins, self._plugin_dock),
         ]
@@ -855,7 +867,7 @@ class MainWindow(QMainWindow):
             (self._action_view_simulation, "Sim"), (self._action_view_graphs, "Graphs"),
             (self._action_view_planning, "Planning"), (self._action_view_ghosts, "Ghosts"),
             (self._action_view_collision, "Collision"), (self._action_view_physical, "Physical"),
-            (self._action_view_compare, "Compare"),
+            (self._action_view_compare, "Compare"), (self._action_view_matrices, "Matrices"),
             (self._action_view_script, "Script"), (self._action_view_log, "Log"),
         ]
         for action, label in items:
@@ -1052,6 +1064,7 @@ class MainWindow(QMainWindow):
         self._target_panel.set_model(model)
         self._curve_panel.set_project(project)
         self._curve_panel.set_model(model)
+        self._matrix_panel.set_model(model)
         gp = self._ghost_panel
         gp.set_store(project.configs if project is not None else None)
         gp.set_model(model)
@@ -1853,6 +1866,7 @@ class MainWindow(QMainWindow):
             import core_bridge as cb
             fk_res = cb.fk(model)
             self._viewport.robot_view.update(model, fk_res)
+            self._matrix_panel.notify(model, fk_res)
             self._tcp_drag.refresh()
             self._joint_panel.update_tcp_readout(fk_res["tcp"])
             self._physical_panel.update_readout()
@@ -1895,6 +1909,7 @@ class MainWindow(QMainWindow):
         self._tcp_drag.dispose()
         self._target_panel.dispose()
         self._curve_panel.dispose()
+        self._matrix_panel.dispose()
         self._compare_panel.shutdown()
         self._script_runner.cancel()
         self._workspace_panel.cancel()
@@ -2090,6 +2105,15 @@ class MainWindow(QMainWindow):
     @property
     def curve_dock(self) -> QDockWidget:
         return self._curve_dock
+
+    @property
+    def matrix_panel(self) -> MatrixPanel:
+        """Matrices dock content (U4b.5)."""
+        return self._matrix_panel
+
+    @property
+    def matrix_dock(self) -> QDockWidget:
+        return self._matrix_dock
 
     @property
     def compare_panel(self) -> ComparePanel:

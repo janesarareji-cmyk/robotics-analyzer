@@ -53,3 +53,16 @@ purple ghost shows the end pose, the tube and ghost stay when you switch to the 
 status bar shows "Motion finished" at the end. Speed 0.1x to 4x, scrub, Pause and Stop are the
 timeline's own. Editing the curve drops the generated trajectory, marker and ghost.
 Fix: Play from the Target and Curve docks now keeps the clock running while the Simulation dock is hidden.
+
+## Matrices dock (U4b.5)
+
+`app/analysis/matrices.py` (`compute_matrices`, `export_text`) and `app/panels/matrix_panel.py`. The
+dock updates at most 30 times a second on any q change (joint slider, 3D drag, IK Apply, playback,
+scrub); a hidden dock computes nothing. It shows the 4 x 4 tool pose `T_base_tcp` (and `T_world_tcp` when
+the base pose is not the identity), the chosen joint's `T_parent_child` and cumulative `T_base_link`, the
+joint values (degrees, prismatic in mm), the Jacobian 6 x N (world frame, toggle), the manipulability w
+and sigma_min with a bar that turns red below `SINGULAR_WARN`. Translation units mm or m, 4 decimals.
+"Pause updates" freezes the numbers (changing the joint then shows that joint at the frozen q).
+Copy as text, numpy (`np.array(...)` assignments that run as Python) or LaTeX (`bmatrix`); the copied
+translation uses the units chosen on the panel. One refresh costs about 1 ms (panda, Jacobian shown).
+Not done: the short flash of changed values (optional in the spec).

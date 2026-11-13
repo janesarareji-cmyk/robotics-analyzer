@@ -406,3 +406,10 @@ Open the Curve dock (side bar "Curve", it sits next to Target).
    speed and scrub slider to follow it.
 
 Details: [curves](curves.md).
+
+### Matrices dock
+
+Side bar "Matrices": the 4 x 4 tool pose, the transform of a joint you pick, the joint values, the
+Jacobian (tick "Show the Jacobian") and the manipulability bar (red near a singularity). The numbers
+follow every move of the arm, also while a curve plays. "Pause updates" freezes them; "Copy as" puts
+all matrices on the clipboard as text, numpy or LaTeX.
