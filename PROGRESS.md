@@ -6,7 +6,7 @@ every handoff. Keep it short.
 
 ## Current
 
--   **Stage U2 committed (2026-11-13):** U2.1 small fixes (report dock only on errors, start pose 0 or mid-range, frames off with meshes, sample/file names), U2.2 PRM cancel checks (worst 52 -> 13 ms), U2.3 floor grid + drag-drop, U2.4 gripper open/close (`app/gripper.py`), U2.5 teach waypoints (Simulation dock), U2.6 drag TCP in 3D (`app/viewport/tcp_drag.py`, IK 0.15 ms/event), U2.7 Compare dock (`app/analysis/compare.py`; UR reach measured to flange 0.74/1.04/1.47 m; payload from URDF effort limits), U2.8 MuJoCo 4.0.1 validator (all 9 robots agree to ~1e-15; Pinocchio backend optional, micromamba download blocked by session policy), U2.9 TOPP Hermite knots + end-of-stage LP rows (planar 2R +17 % -> +0.3 % vs solver, six_dof 2.561 -> 2.500 s, double integrator exact). Full suite: 1363 passed, 5 skipped, exit code 0.
+-   **Stage U2 committed (2026-11-13):** U2.1 small fixes (report dock only on errors, start pose 0 or mid-range, frames off with meshes, sample/file names), U2.2 PRM cancel checks (worst 52 -> 13 ms), U2.3 floor grid + drag-drop, U2.4 gripper open/close (`app/gripper.py`), U2.5 teach waypoints (Simulation dock), U2.6 drag TCP in 3D (`app/viewport/tcp_drag.py`, IK 0.15 ms/event), U2.7 Compare dock (`app/analysis/compare.py`; UR reach measured to flange 0.74/1.04/1.47 m; payload from URDF effort limits), U2.8 MuJoCo 4.0.1 validator (all 9 robots agree to ~1e-15; Pinocchio backend optional, micromamba download blocked by session policy), U2.9 TOPP Hermite knots + end-of-stage LP rows (planar 2R +17 % -> +0.3 % vs solver, six_dof 2.561 -> 2.500 s, double integrator exact). Full suite: 1363 passed, 5 skipped, exit code 0. U2-fix 58ccab4: tree root shows display name, Drag TCP off resets status, Simulation dock fits 360 px with Teach group on top, Compare table scrolls; full suite 1368 passed, 5 skipped, exit 0. Real-window screenshots checked by orchestrator.
 
 -   **U1-fix committed (2026-11-13):** fixes from real-window screenshots: right dock 380 px, joint panel rows compact (inner scroll removed, names max 110 px + tooltip, TCP pose wraps), side bar checks only the shown tab (`_resync_dock_actions`), model tree indentation 12 + horizontal scroll, joint markers hidden when visual meshes shown. Full suite 1320 passed, 5 skipped, exit 0. test_default_viewport_is_large now 1700x1000 (at 1400x900 viewport 0.50 with 380 px dock).
 
@@ -196,6 +196,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | U2.7 | Robot comparison | test_compare.py | committed |
 | U2.8 | MuJoCo dynamics validator | test_dynamics_validation.py | committed |
 | U2.9 | TOPP Hermite | test_topp.py | committed |
+| U2-fix | UI fixes from U2 screenshots | test_u2_fix.py | committed |
 
 R0--R1 rows marked `approved` from existing code and tests. Reviewer has
 not re-run them in this file's first version.
