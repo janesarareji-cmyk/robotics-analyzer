@@ -207,6 +207,23 @@ Panels: [workspace-panels.md](workspace-panels.md). Method and numbers: [workspa
     ghost robots next to the live model; a comparison table shows the differences. Stored in
     `configs.json` (see [planning.md](planning.md)).
 
+### Compare robots
+
+**View -> Compare robots** (side bar: Compare) compares two or more robots. Tick bundled samples and/or
+add URDF files, press **Compare** (runs in the background with progress and Cancel), then **Export CSV...**.
+All robots use the same sample count (default 20 000), voxel size (0.05 m) and seed. Columns:
+
+-   DOF, total mass (sum of link masses).
+-   Reach: largest TCP distance from the base origin over the samples (plus a small local refinement). The TCP
+    is the tool point, so it lies beyond the data-sheet reach of a robot (for UR arms the sheet value is the
+    wrist-3 centre).
+-   Workspace volume from the voxel study (`analyze_workspace`, CPU).
+-   Gravity torque per joint at the stretched pose, next to the effort limit of each joint. The stretched pose is
+    the sample with the largest horizontal TCP distance (gravity along -z), so the arm is not pointing straight up.
+-   Payload: largest point mass at the TCP at that pose such that every joint torque stays within its effort
+    limit (0 if the robot cannot hold itself there; n/a when a joint that carries the load has no effort limit).
+-   Joint limit ranges (degrees, metres for prismatic joints).
+
 ## 9. Export and reports
 
 -   **File -> Export -> Whole run (CSV)...** and **Whole run (NPZ)...** write the recorded run.

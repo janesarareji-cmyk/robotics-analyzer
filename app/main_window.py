@@ -32,6 +32,7 @@ from app.panels.workspace_panel import WorkspacePanel
 from app.panels.planning_panel import PlanningPanel
 from app.panels.ghost_panel import GhostPanel
 from app.panels.collision_panel import CollisionPanel
+from app.panels.compare_panel import ComparePanel
 from app.panels.script_panel import ScriptPanel
 from app.script_runner import ScriptRunner
 from app.panels.plugin_manager_panel import PluginManagerPanel
@@ -303,6 +304,11 @@ class MainWindow(QMainWindow):
         self._action_view_collision.setCheckable(True)
         self._action_view_collision.setChecked(False)
         view_menu.addAction(self._action_view_collision)
+
+        self._action_view_compare = QAction("Co&mpare robots", self)
+        self._action_view_compare.setCheckable(True)
+        self._action_view_compare.setChecked(False)
+        view_menu.addAction(self._action_view_compare)
 
         self._action_view_script = QAction("Scr&ipt console", self)
         self._action_view_script.setCheckable(True)
@@ -612,6 +618,12 @@ class MainWindow(QMainWindow):
         self._collision_panel.log_requested.connect(self.log)
         self._collision_panel.changed.connect(self._on_collision_changed)
 
+        # Robot comparison (U2.7): sample / URDF robots side by side, runs in the task runner.
+        self._compare_panel = ComparePanel(self._task_runner)
+        self._compare_dock = self._add_tool_dock(
+            "Compare", "compare_dock", self._compare_panel, self._action_view_compare, 420)
+        self._compare_panel.log_requested.connect(self.log)
+
         # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
         self._script_runner = ScriptRunner(
             self._task_runner, project_provider=lambda: self._project_controller.current_project,
@@ -683,6 +695,7 @@ class MainWindow(QMainWindow):
             (self._action_view_planning, self._planning_dock),
             (self._action_view_ghosts, self._ghost_dock),
             (self._action_view_collision, self._collision_dock),
+            (self._action_view_compare, self._compare_dock),
             (self._action_view_script, self._script_dock),
             (self._action_view_plugins, self._plugin_dock),
         ]
@@ -772,6 +785,7 @@ class MainWindow(QMainWindow):
             (self._action_view_simulation, "Sim"), (self._action_view_graphs, "Graphs"),
             (self._action_view_planning, "Planning"), (self._action_view_ghosts, "Ghosts"),
             (self._action_view_collision, "Collision"), (self._action_view_physical, "Physical"),
+            (self._action_view_compare, "Compare"),
             (self._action_view_script, "Script"), (self._action_view_log, "Log"),
         ]
         for action, label in items:
@@ -1568,6 +1582,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self._tcp_drag.dispose()
+        self._compare_panel.shutdown()
         self._script_runner.cancel()
         self._workspace_panel.cancel()
         self._workspace_panel.dispose()
@@ -1742,6 +1757,15 @@ class MainWindow(QMainWindow):
     @property
     def collision_dock(self) -> QDockWidget:
         return self._collision_dock
+
+    @property
+    def compare_panel(self) -> ComparePanel:
+        """Robot comparison panel (U2.7)."""
+        return self._compare_panel
+
+    @property
+    def compare_dock(self) -> QDockWidget:
+        return self._compare_dock
 
     @property
     def sim_panel(self) -> SimPanel:
