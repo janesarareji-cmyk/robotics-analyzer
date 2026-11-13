@@ -45,6 +45,10 @@ from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
 from app import __version__
 from app.viewport.view_tools import LinkPicker, ViewButtons, apply_view
+from app.help import TourCard
+from app.kin_utils import current_q, write_q
+from app.kin_utils import current_q, write_q
+from app.undo import UndoManager
 from app.cartesian_jog import CartesianJog
 from app.panels.jog_panel import JogPanel
 from app.panels.start_screen import StartScreen, attach as _attach_start
@@ -737,6 +741,7 @@ class MainWindow(QMainWindow):
         self._curve_loaded: Any = None          # the timeline trajectory that came from the Curve dock
         self._sim_panel.position_changed.connect(self._on_curve_position)
         self._sim_panel.playback_finished.connect(self._on_playback_finished)
+        self._sim_panel.playback_finished.connect(lambda: self._undo.rebase("q"))
 
         # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
         self._script_runner = ScriptRunner(
@@ -892,6 +897,108 @@ class MainWindow(QMainWindow):
         self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._modes.bar)
         self._modes.apply(DEFAULT_MODE)
+        self._setup_undo_help()
+
+    # ------------------------------------------------------------------
+    # U5.9: undo / redo, help, first-run tour
+    # ------------------------------------------------------------------
+
+    def _setup_undo_help(self) -> None:
+        self._undo = UndoManager(self)
+        self._undo.register("q", self._snap_q, self._restore_q)
+        self._undo.register("targets", self._snap_targets, self._restore_targets)
+        self._undo.register("objects", self._snap_objects, self._restore_objects)
+        self._action_undo = self._undo.stack.createUndoAction(self, "&Undo")
+        self._action_undo.setShortcut(QKeySequence("Ctrl+Z"))
+        self._action_redo = self._undo.stack.createRedoAction(self, "&Redo")
+        self._action_redo.setShortcuts([QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")])
+        edit_menu = QMenu("&Edit", self)
+        edit_menu.addAction(self._action_undo)
+        edit_menu.addAction(self._action_redo)
+        bar = self.menuBar()
+        view_action = next(a for a in bar.actions() if a.text() == "&View")
+        bar.insertMenu(view_action, edit_menu)
+        self._edit_menu = edit_menu
+        self._action_help = QAction("&Shortcuts and panels", self)
+        self._action_help.setShortcut(QKeySequence("F1"))
+        self._action_help.setStatusTip("Shortcuts and what each panel does")
+        self._action_help.triggered.connect(self.show_help)
+        help_action = next(a for a in bar.actions() if a.text() == "&Help")
+        help_action.menu().insertAction(help_action.menu().actions()[0], self._action_help)
+        self._help_dialog = None
+        self._tour = TourCard(self._viewport)
+        self._tour.finished.connect(self._on_tour_finished)
+
+    @property
+    def undo_manager(self) -> UndoManager:
+        return self._undo
+
+    def _snap_q(self):
+        model = self._project_controller.robot
+        return None if model is None else current_q(model)
+
+    def _restore_q(self, q) -> None:
+        model = self._project_controller.robot
+        if model is None or q is None:
+            return
+        write_q(model, list(q))
+        self._on_jog_q()
+
+    def _snap_targets(self):
+        return [t.to_dict() for t in self._target_panel.store]
+
+    def _restore_targets(self, state) -> None:
+        from app.target import Target
+        store = self._target_panel.store
+        store.clear()
+        for d in state:
+            t = Target.from_dict(d)
+            store.add(t.pose, t.name, t.frame)
+        self._target_panel._reload_combo()
+        self._target_panel._after_target_change(solve=False)
+        self._on_targets_changed()
+
+    def _snap_objects(self):
+        cfg = self._collision_panel.config
+        return [] if cfg is None else [s.to_dict() for s in cfg.environment]
+
+    def _restore_objects(self, state) -> None:
+        from app.planning.collision import EnvShape
+        cfg = self._collision_panel.config
+        if cfg is None or state is None:
+            return
+        cfg.environment[:] = [EnvShape.from_dict(d) for d in state]
+        self._collision_panel.refresh()
+        self._on_collision_changed()
+
+    def show_help(self) -> None:
+        from app.help import HelpDialog
+        if self._help_dialog is None:
+            self._help_dialog = HelpDialog(self)
+        self._help_dialog.set_mode(self.mode)
+        self._help_dialog.show()
+        self._help_dialog.raise_()
+
+    def start_tour(self) -> None:
+        """Show the four-step tour over the 3D view."""
+        self._tour.start()
+
+    def maybe_start_tour(self) -> bool:
+        """First run only: called by app/main.py after the window is shown."""
+        try:
+            done = bool(self._settings._settings.value("ui/tour_done", False, type=bool))
+        except Exception:
+            done = False
+        if done:
+            return False
+        self.start_tour()
+        return True
+
+    def _on_tour_finished(self, _completed: bool) -> None:
+        try:
+            self._settings._settings.setValue("ui/tour_done", True)
+        except Exception:
+            pass
 
     @property
     def mode_bar(self) -> ModeController:
@@ -1048,6 +1155,7 @@ class MainWindow(QMainWindow):
         mode = self._modes.recall()
         if mode:
             self._modes.apply(mode)
+        self._undo.reset()
 
     def _on_project_closed(self) -> None:
         """Clear viewport and disable actions on project close."""
@@ -1069,6 +1177,7 @@ class MainWindow(QMainWindow):
         self._action_close.setEnabled(False)
         self._update_title()
         self._refresh_start_screen()
+        self._undo.reset()
         self.set_status("Project closed.")
 
     def _on_workspace_display(self, data: Any) -> None:
@@ -1103,6 +1212,7 @@ class MainWindow(QMainWindow):
         self._analysis_panel.refresh()
         self._sim_panel.notify_q_edited()
         self._curve_panel.notify_q_changed()
+        self._undo.record("q")
 
     def _add_tool_dock(self, title: str, name: str, widget: QWidget, action: QAction,
                        min_width: int = 260) -> QDockWidget:
@@ -1275,10 +1385,12 @@ class MainWindow(QMainWindow):
         self._env_timer.start()
         if self._project_controller.has_project:
             self._project_controller.mark_modified()
+        self._undo.record("objects")
 
     def _on_targets_changed(self) -> None:
         if self._project_controller.has_project:
             self._project_controller.mark_modified()
+        self._undo.record("targets")
 
     def _on_target_trajectory(self, traj: Any, info: dict) -> None:
         """Target dock Play to target: load the planned motion into the timeline and play it."""
@@ -1398,6 +1510,7 @@ class MainWindow(QMainWindow):
         self._analysis_panel.refresh()
         self._sim_panel.notify_q_edited()
         self._curve_panel.notify_q_changed()
+        self._undo.record("q")
 
     def _on_tcp_reachable(self, ok: bool) -> None:
         self.set_status("Ready" if ok else "Target not reachable")
@@ -1422,6 +1535,7 @@ class MainWindow(QMainWindow):
         self._update_robot_view(reset_camera=False)
         self._analysis_panel.refresh()
         self._curve_panel.notify_q_changed()
+        self._undo.record("q")
 
     def _on_physical_edited(self) -> None:
         """Mass / COM / inertia edited in the Physical panel."""
@@ -1843,7 +1957,7 @@ class MainWindow(QMainWindow):
         task.signals.progress.connect(self._on_auto_acm_progress)
         task.signals.result.connect(self._on_auto_acm_result)
         task.signals.error.connect(self._on_auto_acm_error)
-        self.set_status("Auto collision matrix ...")
+        self.set_status("Checking which links may touch ...")
         self._task_runner.submit(task)
 
     def _recompute_auto_acm(self) -> None:
@@ -1868,6 +1982,7 @@ class MainWindow(QMainWindow):
         self._joint_panel.set_model(model, save_baseline=False)
         self._joint_panel.save_baseline()
         self._update_robot_view(reset_camera=False)
+        self._undo.rebase("q")                    # not a user edit: new baseline
 
     def _on_auto_acm_error(self, msg: str) -> None:
         self.log(f"[WARNING] Auto ACM failed: {msg}")
@@ -1887,7 +2002,7 @@ class MainWindow(QMainWindow):
                 self._project_controller.mark_modified()
             self.log(f"[INFO] Auto collision matrix: {len(result['pairs'])} pairs disabled "
                      f"({result.get('n_samples', 0)} samples, {result.get('seconds', 0)} s)")
-            self.set_status("Auto collision matrix ready")
+            self.set_status("Collision check ready")
 
     @property
     def motion_guard(self) -> MotionGuard:

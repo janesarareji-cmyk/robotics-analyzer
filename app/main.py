@@ -102,6 +102,7 @@ if __name__ == "__main__":
     app, window, logger = create_app()
     window.show()
     window.project_controller.check_startup_recovery(window)   # R8.4
+    window.maybe_start_tour()                                   # U5.9: first run only
     rc = app.exec()
     _destroy_window(app, window)
     del window, logger

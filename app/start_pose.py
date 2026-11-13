@@ -78,4 +78,4 @@ def ensure_free_start(model: Any, items: Sequence, config: CollisionConfig | Non
     if np.allclose(q, q0):
         return None, ""
     d = float(np.linalg.norm(np.asarray(q) - np.asarray(q0)))
-    return q, f"Start pose collided: moved to a free pose (distance {d:.2f} rad)"
+    return q, f"The start pose touched something, so a nearby free pose is used (moved {d:.2f} rad)"
