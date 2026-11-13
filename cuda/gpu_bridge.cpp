@@ -7,6 +7,7 @@
 #include <pybind11/pybind11.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <mutex>
@@ -55,6 +56,26 @@ struct Pool {
 
 Pool g_pool;
 std::mutex g_fk_mutex;
+std::atomic<int> g_pool_handles{0};  // live pool handles (streams, events, device tables): debug counter
+
+/// Destroys every handle the pool owns (also half-initialised ones) and resets it (A1.5).
+void pool_destroy_all() {
+    for (Slot& s : g_pool.slot) {
+        if (s.h_in) cudaFreeHost(s.h_in);
+        if (s.h_out) cudaFreeHost(s.h_out);
+        if (s.d_in) cudaFree(s.d_in);
+        if (s.d_out) cudaFree(s.d_out);
+        if (s.e0) { cudaEventDestroy(s.e0); --g_pool_handles; }
+        if (s.e1) { cudaEventDestroy(s.e1); --g_pool_handles; }
+        if (s.st) { cudaStreamDestroy(s.st); --g_pool_handles; }
+        s = Slot{};
+    }
+    if (g_pool.d_tab) { cudaFree(g_pool.d_tab); --g_pool_handles; }
+    if (g_pool.d_itab) { cudaFree(g_pool.d_itab); --g_pool_handles; }
+    g_pool.d_tab = nullptr;
+    g_pool.d_itab = nullptr;
+    g_pool.init = false;
+}
 
 void pool_free_buffers() {
     for (Slot& s : g_pool.slot) {
@@ -72,14 +93,28 @@ cudaError_t ensure_pool(size_t in_b, size_t out_b) {
     in_b = std::max<size_t>(in_b, 16);
     out_b = std::max<size_t>(out_b, 16);
     if (!g_pool.init) {
-        for (Slot& s : g_pool.slot) {
-            CUDA_CHECK(cudaStreamCreateWithFlags(&s.st, cudaStreamNonBlocking));
-            CUDA_CHECK(cudaEventCreate(&s.e0));
-            CUDA_CHECK(cudaEventCreate(&s.e1));
+        try {
+            for (Slot& s : g_pool.slot) {
+                CUDA_CHECK(cudaStreamCreateWithFlags(&s.st, cudaStreamNonBlocking));
+                ++g_pool_handles;
+                CUDA_CHECK(cudaEventCreate(&s.e0));
+                ++g_pool_handles;
+                CUDA_CHECK(cudaEventCreate(&s.e1));
+                ++g_pool_handles;
+            }
+            if (gpu::fault_active("pool_init"))  // A1.5 test hook
+                CUDA_CHECK(cudaErrorMemoryAllocation);
+            CUDA_CHECK(cudaMalloc(&g_pool.d_tab, kTabCap));
+            ++g_pool_handles;
+            CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&g_pool.d_itab), kItabCap));
+            ++g_pool_handles;
+            g_pool.init = true;
+        } catch (...) {
+            // A1.5 (audit LOW): destroy what was created, a retry starts clean.
+            cudaGetLastError();
+            pool_destroy_all();
+            throw;
         }
-        CUDA_CHECK(cudaMalloc(&g_pool.d_tab, kTabCap));
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&g_pool.d_itab), kItabCap));
-        g_pool.init = true;
     }
     if (g_pool.slot[0].in_bytes >= in_b && g_pool.slot[0].out_bytes >= out_b)
         return gpu::check_alloc();  // fake-OOM hook is consumed even when nothing is allocated
@@ -659,6 +694,7 @@ PYBIND11_MODULE(gpu_bridge, m) {
         for (int dv : o.divisions)
             if (dv < 1) throw std::invalid_argument("sample_q: every division must be >= 1");
         const compute::SamplerTables s = compute::make_sampler(lo, hi, o);
+        gpu::check_sample_q_size(lo.size(), static_cast<std::size_t>(n));  // ValueError before any allocation
         py::array_t<float> out(std::vector<py::ssize_t>{static_cast<py::ssize_t>(n),
                                                         static_cast<py::ssize_t>(lo.size())});
         {
@@ -678,6 +714,18 @@ PYBIND11_MODULE(gpu_bridge, m) {
           "CPU fp64 polish (10 iterations). Same result dict as core_bridge.solve_ik_batch plus "
           "info (gpu_ms, polish_ms, n_polish_converged, ...). CPU fallback without a GPU. chunk "
           "(multiple of 128) is a test hook.");
+    m.def("_debug_set_fault", [](const std::string& name) {
+        if (!name.empty() && name != "ws_count_oom" && name != "pool_init")
+            throw std::invalid_argument("_debug_set_fault: unknown fault '" + name + "'");
+        gpu::set_fault(name);
+    }, py::arg("name"), "Test hook (A1.5): 'ws_count_oom' | 'pool_init' | '' (clear).");
+    m.def("_debug_pool_handle_count", [] { return g_pool_handles.load(); },
+          "Test hook (A1.5): live streams/events/device tables owned by the FK pool.");
+    m.def("_debug_reset_pool", [] {
+        std::lock_guard<std::mutex> lk(g_fk_mutex);
+        cudaDeviceSynchronize();
+        pool_destroy_all();
+    }, "Test hook (A1.5): destroy the whole FK pool (next call re-initialises it).");
     m.def("release_buffers", [] {
         std::lock_guard<std::mutex> lk(g_fk_mutex);
         cudaDeviceSynchronize();

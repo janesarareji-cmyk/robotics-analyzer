@@ -17,6 +17,9 @@
 #include <chrono>
 #include <cstring>
 #include <map>
+#include <new>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "compute/budget.hpp"
@@ -334,8 +337,10 @@ bool workspace_gpu(const FkPathTables& tables, const compute::SamplerTables& smp
             x.h_pts = nullptr;
         }
         bool done_gpu = false;
-        const unsigned long long m_set = ws_count_bits(a.d_occ, occ_words, sl.s[0].st);
-        if (m_set > 0 && nvox <= 0x7fffffffu) {
+        // A1.5: an OOM while counting skips the device compaction (host bitset_to_voxels below).
+        unsigned long long m_set = 0;
+        const bool counted = ws_count_bits(a.d_occ, occ_words, sl.s[0].st, m_set);
+        if (counted && m_set > 0 && nvox <= 0x7fffffffu) {
             const size_t temp = ws_compact(nullptr, 0, a.d_occ, static_cast<unsigned int>(nvox),
                                            nullptr, nullptr, sl.s[0].st);
             const size_t need = m_set * 4 + temp + 16;
@@ -399,15 +404,29 @@ bool workspace_gpu(const FkPathTables& tables, const compute::SamplerTables& smp
     return true;
 }
 
+void check_sample_q_size(std::size_t n_dof, std::size_t n) {
+    if (n == 0 || n_dof == 0) return;
+    const gpu::MemInfo mi = gpu::mem_info();
+    if (!mi.ok) return;
+    if (n > mi.total_bytes / (n_dof * sizeof(float)))
+        throw std::invalid_argument("sample_q: n * n_dof * 4 bytes exceed the GPU memory (" +
+                                    std::to_string(mi.total_bytes) + " bytes); use a smaller n");
+}
+
 void sample_q_gpu(const compute::SamplerTables& smp, std::size_t start, std::size_t n, float* out) {
     if (n == 0) return;
+    check_sample_q_size(static_cast<size_t>(smp.n_dof), n);
     DevMem dev;
     const size_t nd = static_cast<size_t>(smp.n_dof);
     void *d_lo = nullptr, *d_a = nullptr, *d_div = nullptr, *d_q = nullptr;
-    dev.must(&d_lo, nd * sizeof(float), "lo");
-    dev.must(&d_a, nd * sizeof(float), "a");
-    dev.must(&d_div, nd * sizeof(int), "div");
-    dev.must(&d_q, n * nd * sizeof(float), "q");
+    try {
+        dev.must(&d_lo, nd * sizeof(float), "lo");
+        dev.must(&d_a, nd * sizeof(float), "a");
+        dev.must(&d_div, nd * sizeof(int), "div");
+        dev.must(&d_q, n * nd * sizeof(float), "q");
+    } catch (const Oom&) {
+        throw std::bad_alloc();  // pybind11 maps this to MemoryError
+    }
     if (nd) {
         CUDA_CHECK(cudaMemcpy(d_lo, smp.lo.data(), nd * sizeof(float), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_a, smp.a.data(), nd * sizeof(float), cudaMemcpyHostToDevice));

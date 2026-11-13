@@ -131,23 +131,36 @@ void ws_gen_q(int n_dof, const float* d_lo, const float* d_a, const int* d_div, 
     CUDA_CHECK(cudaGetLastError());
 }
 
-unsigned long long ws_count_bits(const unsigned int* d_occ, size_t n_words, cudaStream_t stream) {
-    if (n_words == 0) return 0;
+bool ws_count_bits(const unsigned int* d_occ, size_t n_words, cudaStream_t stream,
+                   unsigned long long& out) {
+    out = 0;
+    if (n_words == 0) return true;
+    if (gpu::fault_active("ws_count_oom")) return false;  // A1.5 test hook
     auto it = thrust::make_transform_iterator(d_occ, PopCount{});
     unsigned long long* d_res = nullptr;
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_res), sizeof(unsigned long long)));
+    cudaError_t e = gpu::checked_malloc(reinterpret_cast<void**>(&d_res), sizeof(unsigned long long));
+    if (e != cudaSuccess) {
+        cudaGetLastError();
+        if (gpu::is_oom(e)) return false;
+        CUDA_CHECK(e);
+    }
     void* d_temp = nullptr;
     size_t temp = 0;
-    cudaError_t e = cub::DeviceReduce::Sum(d_temp, temp, it, d_res, static_cast<int>(n_words), stream);
-    if (e == cudaSuccess) e = cudaMalloc(&d_temp, temp ? temp : 1);
+    e = cub::DeviceReduce::Sum(d_temp, temp, it, d_res, static_cast<int>(n_words), stream);
+    if (e == cudaSuccess) e = gpu::checked_malloc(&d_temp, temp ? temp : 1);
     if (e == cudaSuccess) e = cub::DeviceReduce::Sum(d_temp, temp, it, d_res, static_cast<int>(n_words), stream);
     unsigned long long h = 0;
     if (e == cudaSuccess) e = cudaMemcpyAsync(&h, d_res, sizeof h, cudaMemcpyDeviceToHost, stream);
     if (e == cudaSuccess) e = cudaStreamSynchronize(stream);
     if (d_temp) cudaFree(d_temp);
     cudaFree(d_res);
+    if (gpu::is_oom(e)) {
+        cudaGetLastError();
+        return false;
+    }
     CUDA_CHECK(e);
-    return h;
+    out = h;
+    return true;
 }
 
 size_t ws_compact(void* d_temp, size_t temp_bytes, const unsigned int* d_occ, unsigned int n_voxels,

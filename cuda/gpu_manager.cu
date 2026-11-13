@@ -132,6 +132,18 @@ cudaError_t checked_malloc(void** ptr, size_t bytes) {
     return cudaMalloc(ptr, bytes);
 }
 
+static std::string g_fault;
+
+void set_fault(const std::string& name) {
+    std::lock_guard<std::mutex> lk(g_state_mutex);
+    g_fault = name;
+}
+
+bool fault_active(const char* name) {
+    std::lock_guard<std::mutex> lk(g_state_mutex);
+    return !g_fault.empty() && g_fault == name;
+}
+
 void cuda_check(cudaError_t e, const char* expr, const char* file, int line) {
     if (e == cudaSuccess) return;
     std::ostringstream os;

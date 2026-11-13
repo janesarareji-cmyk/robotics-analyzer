@@ -65,6 +65,11 @@ cudaError_t check_alloc();
 /// cudaMalloc wrapper honoring the fake OOM hook (returns the error code, no throw).
 cudaError_t checked_malloc(void** ptr, size_t bytes);
 
+/// A1.5 test hook (debug only): named fault injection. "" clears. Known names:
+/// "ws_count_oom" (workspace bit count allocation fails), "pool_init" (FK pool init fails).
+void set_fault(const std::string& name);
+bool fault_active(const char* name);
+
 /// Throws CudaError with name and string; marks the GPU dead for sticky errors.
 void cuda_check(cudaError_t e, const char* expr, const char* file, int line);
 

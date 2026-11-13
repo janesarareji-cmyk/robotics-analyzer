@@ -45,7 +45,10 @@ void ws_gen_q(int n_dof, const float* d_lo, const float* d_a, const int* d_div, 
               cudaStream_t stream);
 
 /// Number of set bits in a bitset of n_words words (small internal temp allocation).
-unsigned long long ws_count_bits(const unsigned int* d_occ, size_t n_words, cudaStream_t stream);
+/// Counts set bits. Returns false (out = 0) when its scratch allocation hits out-of-memory
+/// (caller takes the host path); other CUDA errors throw (A1.5).
+bool ws_count_bits(const unsigned int* d_occ, size_t n_words, cudaStream_t stream,
+                   unsigned long long& out);
 
 /// cub::DeviceSelect::Flagged over voxel linear indices 0..n_voxels (flag = bit set).
 /// Pass d_temp = nullptr to query temp bytes. d_out holds n_set uint32 linear indices.
