@@ -43,6 +43,7 @@ from app.plugins.loader import PluginManager
 from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
+from app import __version__
 from app.settings import AppSettings, LAYOUT_VERSION
 from app.sample_robots import list_sample_robots
 from app.collision_service import CollisionService
@@ -70,7 +71,7 @@ class MainWindow(QMainWindow):
     """
 
     APP_NAME = "Robotics Analyzer"
-    APP_VERSION = "0.1.0"
+    APP_VERSION = __version__
     LAYOUT_VERSION = LAYOUT_VERSION      # U1: bump (app/settings.py) to reset saved dock layouts
 
     def __init__(self, parent=None):

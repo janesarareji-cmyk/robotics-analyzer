@@ -19,6 +19,9 @@ from app.main_window import MainWindow
 from app.logger import AppLogger, log
 
 
+from app import __version__  # noqa: E402
+
+
 def create_app(log_level: str = "INFO"):
     """
     Create the QApplication, AppLogger, and MainWindow.
@@ -26,7 +29,7 @@ def create_app(log_level: str = "INFO"):
     """
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("RoboticsAnalyzer")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("RoboticsAnalyzer")
 
     # Initialize logging before creating MainWindow

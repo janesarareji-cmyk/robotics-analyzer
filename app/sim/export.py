@@ -17,7 +17,7 @@ import numpy as np
 
 from .recorder import SIGNALS
 
-APP_VERSION = "0.1.0"
+from app import __version__ as APP_VERSION  # noqa: E402
 _UNITS = {name: unit for name, _w, unit, _s in SIGNALS}
 _SUFFIX = {"tcp_pos": "xyz", "tcp_vel": "xyz", "tcp_quat": "wxyz"}
 _CHUNK = 20000

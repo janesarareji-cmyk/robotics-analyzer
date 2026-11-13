@@ -175,7 +175,7 @@ def test_current_layout_version_is_restored():
     QApplication.processEvents()
     win.settings.save_window(win)
     win.settings.sync()
-    assert win.settings.layout_version() == LAYOUT_VERSION == 2
+    assert win.settings.layout_version() == LAYOUT_VERSION == 3
     _close(win)
     w2 = _make()
     try:

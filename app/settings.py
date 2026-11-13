@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 # U1: bump when the default dock layout changes. A saved window state with another
 # (or no) version is ignored once, so users get the new default layout.
-LAYOUT_VERSION = 2
+LAYOUT_VERSION = 3
 
 
 class AppSettings:
