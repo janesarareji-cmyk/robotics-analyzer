@@ -19,6 +19,16 @@ oriented box. `fit_mode "hull"` is the default for new projects and imports; a s
 keeps its own `fit_mode`. Hulls are cached per mesh path + scale (+ mtime), cleared when a project
 opens.
 
+## Automatic ACM (U3.2)
+`CollisionWorld.auto_acm(n_samples=2000, seed=0, q0=None)` samples `q` uniformly inside the joint
+limits (all DOFs, gripper included) and counts collisions per link pair. Disabled: pairs colliding in
+>= 95 % of samples ("always"), pairs that never collide and are >= 3 joints apart on the tree
+("never"), and pairs colliding at the start pose ("start"; hulls of neighbouring meshes overlap
+there). User edits always win. The result is stored in `CollisionConfig.auto` (+ `auto_info`),
+saved as `acm_auto` in `collision.json`, and shown in the Collision dock with source `auto (reason)`
+next to `user`. It runs in a worker after every URDF import / sample load (`app/auto_acm.py`), and on
+the dock button "Recompute automatic matrix". About 0.1 to 0.4 s per sample robot at 2000 samples.
+
 ## Allowed collision matrix (ACM)
 Default: parent-child link pairs are not checked. `CollisionConfig.edits[(a, b)]` = `True` (force
 check) or `False` (never check) overrides. `CollisionWorld.disable_always_colliding()` (panel button

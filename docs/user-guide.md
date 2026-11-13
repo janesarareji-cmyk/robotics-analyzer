@@ -330,3 +330,8 @@ Details: [project-recovery.md](project-recovery.md). Format history: [schema/REA
 Link collision shapes follow the real link meshes: each mesh becomes a convex hull of at most 64
 vertices (Collision dock > Mesh fit: Convex hull, the default; Box, Sphere and Capsule stay
 available). Projects saved earlier keep their saved fit. Hulls are cached per mesh file.
+
+After an import the program computes an automatic allowed-collision matrix in the background
+(status bar "Auto collision matrix ..."): link pairs that always touch, never touch or touch at the
+start pose are not checked. The Collision dock lists them with source `auto`; your own edits
+(source `user`) always win. "Recompute automatic matrix" runs it again.

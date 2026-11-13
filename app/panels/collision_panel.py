@@ -43,6 +43,7 @@ class CollisionPanel(QWidget):
 
     log_requested = Signal(str)
     changed = Signal()          # project.collision edited (project becomes dirty)
+    auto_acm_requested = Signal()   # U3.2: recompute the automatic matrix
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -104,8 +105,8 @@ class CollisionPanel(QWidget):
         layout.addLayout(row)
 
         layout.addWidget(QLabel("Allowed-collision matrix edits"))
-        self._acm = QTableWidget(0, 3)
-        self._acm.setHorizontalHeaderLabels(["Link A", "Link B", "Check"])
+        self._acm = QTableWidget(0, 4)
+        self._acm.setHorizontalHeaderLabels(["Link A", "Link B", "Check", "Source"])
         self._acm.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._acm.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._acm.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -127,6 +128,11 @@ class CollisionPanel(QWidget):
         self._btn_zero = QPushButton("Disable pairs always colliding at zero pose")
         self._btn_zero.clicked.connect(self.disable_zero_pose_pairs)
         layout.addWidget(self._btn_zero)
+        self._btn_auto = QPushButton("Recompute automatic matrix")
+        self._btn_auto.setToolTip("Sample the joint limits and disable pairs that always or never "
+                                  "collide. Your own edits are kept.")
+        self._btn_auto.clicked.connect(self.auto_acm_requested.emit)
+        layout.addWidget(self._btn_auto)
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
@@ -330,17 +336,22 @@ class CollisionPanel(QWidget):
         self._loading = False
         env = list(cfg.environment) if cfg is not None else []
         edits = sorted(cfg.edits.items()) if cfg is not None else []
+        rows = [(a, b, chk, "user") for (a, b), chk in edits]
+        if cfg is not None:
+            rows += [(a, b, False, f"auto ({why})") for (a, b), why in sorted(cfg.auto.items())
+                     if (a, b) not in cfg.edits]
         self._env.setRowCount(len(env))
         for r, e in enumerate(env):
             cells = [e.name, e.kind, "(" + ", ".join(_fmt(v) for v in e.xyz) + ")",
                      "(" + ", ".join(_fmt(v) for v in e.rpy) + ")", _params_text(e.kind, e.params)]
             for c, text in enumerate(cells):
                 self._env.setItem(r, c, QTableWidgetItem(text))
-        self._acm.setRowCount(len(edits))
-        for r, ((a, b), chk) in enumerate(edits):
-            for c, text in enumerate((str(a), str(b), "yes" if chk else "no")):
+        self._acm.setRowCount(len(rows))
+        for r, (a, b, chk, src) in enumerate(rows):
+            for c, text in enumerate((str(a), str(b), "yes" if chk else "no", src)):
                 self._acm.setItem(r, c, QTableWidgetItem(text))
         has = self._project is not None
         for w in (self._btn_add, self._btn_remove, self._btn_acm_add, self._btn_acm_rm,
-                  self._btn_zero):
+                  self._btn_zero,
+                  self._btn_auto):
             w.setEnabled(has)

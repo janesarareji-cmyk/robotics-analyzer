@@ -160,6 +160,8 @@ class CollisionConfig:
     """
 
     edits: dict = field(default_factory=dict)          # (a, b) with a <= b -> bool check
+    auto: dict = field(default_factory=dict)           # (a, b) -> "always" | "never" | "start" (U3.2)
+    auto_info: dict = field(default_factory=dict)      # n_samples, seed, seconds of the last run
     environment: list = field(default_factory=list)    # list[EnvShape]
     fit_mode: str = DEFAULT_FIT_MODE                   # mesh fit used by shapes_from_geometry
 
@@ -168,7 +170,24 @@ class CollisionConfig:
             raise ValueError(f"fit_mode must be one of {FIT_MODES}")
 
     def is_default(self) -> bool:
-        return not self.edits and not self.environment and self.fit_mode == DEFAULT_FIT_MODE
+        return (not self.edits and not self.environment and self.fit_mode == DEFAULT_FIT_MODE
+                and not self.auto and not self.auto_info)
+
+    def source(self, a: int, b: int) -> str:
+        """Where the check state of a pair comes from: ``user`` edit, ``auto`` or ``default``."""
+        k = _key(int(a), int(b))
+        if k in self.edits:
+            return "user"
+        return "auto" if k in self.auto else "default"
+
+    def set_auto(self, pairs: dict, info: dict | None = None) -> None:
+        """Replace the automatic ACM (``pairs``: (a, b) -> reason). User edits are kept."""
+        self.auto = {_key(int(a), int(b)): str(r) for (a, b), r in pairs.items()}
+        self.auto_info = dict(info or {})
+
+    def clear_auto(self) -> None:
+        self.auto = {}
+        self.auto_info = {}
 
     def set_check(self, a: int, b: int, check: bool) -> None:
         if a == b:
@@ -182,6 +201,8 @@ class CollisionConfig:
         k = _key(a, b)
         if k in self.edits:
             return self.edits[k]
+        if k in self.auto:
+            return False
         return not adjacent
 
     def to_dict(self) -> dict:
@@ -189,6 +210,8 @@ class CollisionConfig:
             "format": COLLISION_FORMAT,
             "fit_mode": self.fit_mode,
             "acm_edits": [[a, b, bool(v)] for (a, b), v in sorted(self.edits.items())],
+            "acm_auto": [[a, b, r] for (a, b), r in sorted(self.auto.items())],
+            "acm_auto_info": dict(self.auto_info),
             "environment": [e.to_dict() for e in self.environment],
         }
 
@@ -197,7 +220,8 @@ class CollisionConfig:
         edits = {}
         for a, b, v in d.get("acm_edits", []):
             edits[_key(int(a), int(b))] = bool(v)
-        return cls(edits=edits,
+        auto = {_key(int(a), int(b)): str(r) for a, b, r in d.get("acm_auto", [])}
+        return cls(edits=edits, auto=auto, auto_info=dict(d.get("acm_auto_info", {})),
                    environment=[EnvShape.from_dict(e) for e in d.get("environment", [])],
                    fit_mode=d.get("fit_mode", "obb"))   # old file without the key
 
@@ -491,6 +515,107 @@ class CollisionWorld:
             self.config.set_check(a, b, False)
         self._build_pairs()
         return found
+
+    # -- automatic allowed-collision matrix (U3.2) ---------------------------
+    def link_tree_distance(self) -> np.ndarray:
+        """(n_links, n_links) number of joints on the tree path between two links."""
+        n = self.n_links
+        adj = [[] for _ in range(n)]
+        for p, c in cb.effective_links(self.model):
+            adj[int(p)].append(int(c))
+            adj[int(c)].append(int(p))
+        dist = np.full((n, n), 10 ** 6, dtype=int)
+        for s in range(n):
+            dist[s, s] = 0
+            todo = [s]
+            while todo:
+                u = todo.pop(0)
+                for w in adj[u]:
+                    if dist[s, w] > dist[s, u] + 1:
+                        dist[s, w] = dist[s, u] + 1
+                        todo.append(w)
+        return dist
+
+    def _colliding_link_pairs(self) -> set:
+        """Link pairs (robot-robot, current pair list) colliding at the current q."""
+        out = set()
+        rr, _ = self._candidates()
+        for i, j in rr:
+            a, b = int(self._link_of[i]), int(self._link_of[j])
+            if _key(a, b) in out:
+                continue
+            if fcl.collide(self._robot_objs[i], self._robot_objs[j], self._req,
+                           fcl.CollisionResult()):
+                out.add(_key(a, b))
+        return out
+
+    def auto_acm(self, n_samples: int = 2000, seed: int = 0, q0: Sequence[float] | None = None,
+                 progress=None, cancel=None, apply: bool = True,
+                 always: float = 0.95, never_min_joints: int = 3) -> dict | None:
+        """Allowed-collision matrix from random sampling (U3.2).
+
+        Samples ``q`` uniformly inside the joint limits (every DOF, gripper included) and counts,
+        per robot-robot link pair, the samples in which the pair collides. A pair is disabled when
+        it collides in >= ``always`` of the samples ("always"), when it never collides and its links
+        are >= ``never_min_joints`` joints apart on the tree ("never"), or when it collides at the
+        start pose ``q0`` (default: the zero pose; "start"). Pairs with a user edit are left alone.
+
+        Returns ``{"pairs": {(a, b): reason}, "counts": {(a, b): n}, "n_samples", "seed",
+        "seconds"}``; with ``apply`` the result replaces ``config.auto`` and the pair list is
+        rebuilt. ``cancel()`` true -> returns None and changes nothing.
+        """
+        import time
+        t0 = time.perf_counter()
+        n_samples = max(int(n_samples), 1)
+        keep_auto, keep_q = dict(self.config.auto), self._q
+        self.config.auto = {}                         # count every non-user pair
+        self._build_pairs()
+        try:
+            rng = np.random.default_rng(seed)
+            n = self.model.dof()
+            from app.kin_utils import dof_limits
+            lo, hi = (np.asarray(v, dtype=float) for v in dof_limits(self.model))
+            span = np.where(hi > lo, hi - lo, 0.0)
+            checked = {_key(int(self._link_of[i]), int(self._link_of[j])) for i, j in self._rr}
+            counts = {k: 0 for k in checked}
+            for m in range(n_samples):
+                if cancel is not None and cancel():
+                    return None
+                q = lo + rng.random(n) * span
+                self.set_q(q)
+                for k in self._colliding_link_pairs():
+                    counts[k] += 1
+                if progress is not None and m % 50 == 0:
+                    progress(int(100 * m / n_samples), f"Auto ACM {m}/{n_samples}")
+            start = set()
+            self.set_q(np.zeros(n) if q0 is None else q0)
+            start = self._colliding_link_pairs()
+            dist = self.link_tree_distance()
+            pairs = {}
+            for k, c in counts.items():
+                if k in self.config.edits:
+                    continue
+                if k in start:
+                    pairs[k] = "start"
+                elif c >= always * n_samples:
+                    pairs[k] = "always"
+                elif c == 0 and dist[k[0], k[1]] >= never_min_joints:
+                    pairs[k] = "never"
+            info = {"n_samples": n_samples, "seed": int(seed),
+                    "seconds": round(time.perf_counter() - t0, 3)}
+            res = {"pairs": pairs, "counts": counts, **info}
+            if progress is not None:
+                progress(100, "Auto ACM done")
+            if apply:
+                self.config.set_auto(pairs, info)
+                keep_auto = None
+            return res
+        finally:
+            if keep_auto is not None:
+                self.config.auto = keep_auto
+            self._build_pairs()
+            if keep_q is not None:
+                self.set_q(keep_q)
 
     def check_batch(self, q_array: np.ndarray) -> np.ndarray:
         """Collision flag for every row of ``q_array`` (N, dof). Leaves state at the last row."""

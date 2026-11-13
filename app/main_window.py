@@ -617,6 +617,7 @@ class MainWindow(QMainWindow):
             "Collision", "collision_dock", self._collision_panel, self._action_view_collision, 260)
         self._collision_panel.log_requested.connect(self.log)
         self._collision_panel.changed.connect(self._on_collision_changed)
+        self._collision_panel.auto_acm_requested.connect(self._start_auto_acm)
 
         # Robot comparison (U2.7): sample / URDF robots side by side, runs in the task runner.
         self._compare_panel = ComparePanel(self._task_runner)
@@ -1494,9 +1495,50 @@ class MainWindow(QMainWindow):
             return
         prefix = "[WARNING]" if report.by_severity(SEV_WARNING) else "[INFO]"
         self.log(f"{prefix} URDF imported: {where}{report.summary()}")
+        self._start_auto_acm()
         n_warn = len(report.by_severity(SEV_WARNING))
         if n_warn and not report.has_errors():
             self.set_status(f"Imported with {n_warn} warnings (View > Import Report)")
+
+    def _start_auto_acm(self) -> None:
+        """U3.2: compute the automatic allowed-collision matrix of the new project in a worker."""
+        project = self._project_controller.current_project
+        if project is None or project.robot_model is None or len(project.robot_model.joints) == 0:
+            return
+        old = getattr(self, "_auto_acm_task", None)
+        if old is not None:
+            old.cancel()
+        from app.auto_acm import AutoAcmTask
+        task = AutoAcmTask(project)
+        self._auto_acm_task = task
+        self._auto_acm_project = project
+        task.signals.progress.connect(self._on_auto_acm_progress)
+        task.signals.result.connect(self._on_auto_acm_result)
+        task.signals.error.connect(self._on_auto_acm_error)
+        self.set_status("Auto collision matrix ...")
+        self._task_runner.submit(task)
+
+    def _on_auto_acm_progress(self, pct: int, msg: str) -> None:
+        self.set_status(msg)
+
+    def _on_auto_acm_error(self, msg: str) -> None:
+        self.log(f"[WARNING] Auto ACM failed: {msg}")
+
+    def _on_auto_acm_result(self, result: Any) -> None:
+        project = self._project_controller.current_project
+        if project is None or project is not getattr(self, "_auto_acm_project", None):
+            return                                   # a newer import replaced this project
+        from app.auto_acm import apply_auto_acm
+        if apply_auto_acm(project, result):
+            self._collision_panel.set_project(project)
+            self._project_controller.mark_modified()
+            self.log(f"[INFO] Auto collision matrix: {len(result['pairs'])} pairs disabled "
+                     f"({result.get('n_samples', 0)} samples, {result.get('seconds', 0)} s)")
+            self.set_status("Auto collision matrix ready")
+
+    @property
+    def auto_acm_task(self) -> Any:
+        return getattr(self, "_auto_acm_task", None)
 
     def _on_report_element_clicked(self, name: str) -> None:
         """Import report row click -> select the joint or link in the tree."""
