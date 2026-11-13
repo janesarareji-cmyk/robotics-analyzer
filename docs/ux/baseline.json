@@ -1,0 +1,61 @@
+{
+  "label": "baseline",
+  "tasks": {
+    "1_load_robot": {
+      "actions": 2,
+      "seconds": 0.66,
+      "steps": [
+        "1x click toolbar Sample robot",
+        "1x menu Universal Robots UR5"
+      ]
+    },
+    "2_jog_joint": {
+      "actions": 1,
+      "seconds": 0.21,
+      "steps": [
+        "1x type joint 2 +30 deg"
+      ]
+    },
+    "3_target_reach": {
+      "actions": 4,
+      "seconds": 0.59,
+      "steps": [
+        "1x click side bar target",
+        "1x click New at TCP",
+        "1x type target offset [0.0, 0.0, -50.0] mm",
+        "1x click Play to target"
+      ]
+    },
+    "4_box_and_plan": {
+      "actions": 6,
+      "seconds": 0.54,
+      "steps": [
+        "1x click toolbar Add object",
+        "1x menu Box",
+        "1x click side bar planning",
+        "1x click Start = current q",
+        "1x type goal q1",
+        "1x click Plan"
+      ]
+    },
+    "5_dynamic_sim": {
+      "actions": 4,
+      "seconds": 0.71,
+      "steps": [
+        "1x click side bar simulation",
+        "2x choose dynamic",
+        "1x click Start"
+      ]
+    },
+    "6_compare": {
+      "actions": 4,
+      "seconds": 0.54,
+      "steps": [
+        "1x click side bar compare",
+        "2x tick ur3, ur5",
+        "1x click Compare"
+      ]
+    }
+  },
+  "task1_plus_3": 6
+}

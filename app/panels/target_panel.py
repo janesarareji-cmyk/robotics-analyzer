@@ -143,7 +143,7 @@ class TargetPanel(QWidget):
         row = QHBoxLayout()
         self._btn_add = QPushButton("New at TCP")
         self._btn_add.setToolTip("New target at the current tool pose")
-        self._btn_add.clicked.connect(self.add_from_tcp)
+        self._btn_add.clicked.connect(lambda _checked=False: self.add_from_tcp())
         self._btn_click = QPushButton("Pick on surface")
         self._btn_click.setCheckable(True)
         self._btn_click.setToolTip("Click a surface in the 3D view: the tool points into it")
