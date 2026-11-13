@@ -12,6 +12,7 @@ from app.kin_utils import current_q
 from app.planning.collision import (
     DEFAULT_FIT_MODE, CollisionConfig, CollisionWorld, shapes_from_geometry,
 )
+from app.start_pose import ensure_free_start
 from app.task_runner import Task
 
 
@@ -42,8 +43,15 @@ class AutoAcmTask(Task):
             return {"pairs": {}, "counts": {}, "n_samples": 0, "seed": self.seed, "seconds": 0.0}
         world = CollisionWorld(self._model, shapes,
                                CollisionConfig(edits=dict(self._edits), fit_mode=self._fit))
-        return world.auto_acm(self.n_samples, self.seed, self._q0, apply=False,
-                              progress=self.report_progress, cancel=lambda: self.is_cancelled)
+        res = world.auto_acm(self.n_samples, self.seed, self._q0, apply=False,
+                             progress=self.report_progress, cancel=lambda: self.is_cancelled)
+        # U3.4b: start pose free with the new matrix and the floor, else a nearby free pose
+        cfg = CollisionConfig(edits=dict(self._edits), fit_mode=self._fit)
+        cfg.set_auto(res["pairs"], {})
+        self.report_progress(99, "Checking start pose")
+        q, note = ensure_free_start(self._model, self._items, cfg, self.seed)
+        res["start_q"], res["start_note"] = q, note
+        return res
 
 
 def apply_auto_acm(project: Any, result: dict) -> bool:

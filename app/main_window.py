@@ -1580,6 +1580,21 @@ class MainWindow(QMainWindow):
     def _on_auto_acm_progress(self, pct: int, msg: str) -> None:
         self.set_status(msg)
 
+    def _apply_start_pose(self, project: Any, result: dict) -> None:
+        """U3.4b: the worker found the start pose in collision: use its free pose instead."""
+        q = result.get("start_q")
+        note = result.get("start_note", "")
+        if note:
+            self.log(f"[INFO] {note}")
+        if not q or project.robot_model is None:
+            return
+        from app.kin_utils import write_q
+        model = project.robot_model
+        write_q(model, q)
+        self._joint_panel.set_model(model, save_baseline=False)
+        self._joint_panel.save_baseline()
+        self._update_robot_view(reset_camera=False)
+
     def _on_auto_acm_error(self, msg: str) -> None:
         self.log(f"[WARNING] Auto ACM failed: {msg}")
 
@@ -1591,6 +1606,8 @@ class MainWindow(QMainWindow):
         if apply_auto_acm(project, result):
             self._collision_panel.set_project(project)
             self._collision_service.invalidate()
+            if not getattr(self, "_auto_acm_mark", False):        # import only, not the dock button
+                self._apply_start_pose(project, result)
             if getattr(self, "_auto_acm_mark", False):     # import already made it modified
                 self._auto_acm_mark = False
                 self._project_controller.mark_modified()
