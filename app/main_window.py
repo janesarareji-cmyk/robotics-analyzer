@@ -44,6 +44,7 @@ from app.importers import import_urdf
 from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
 from app import __version__
+from app.panels.start_screen import StartScreen, attach as _attach_start
 from app.modes import DEFAULT_MODE, ModeController, mode_for_dock as _mode_for_dock
 from app.settings import AppSettings, LAYOUT_VERSION
 from app.sample_robots import list_sample_robots
@@ -483,6 +484,16 @@ class MainWindow(QMainWindow):
         self._tcp_drag.reachable_changed.connect(self._on_tcp_reachable)
         self._action_drag_tcp.toggled.connect(self._tcp_drag.set_enabled)
 
+        # U5.5: start screen over the 3D view until a robot is loaded
+        self._start_screen = StartScreen()
+        _attach_start(self._start_screen, self._viewport)
+        self._start_screen.sample_requested.connect(self.import_urdf_file)
+        self._start_screen.import_requested.connect(self._on_import_urdf)
+        self._start_screen.open_requested.connect(self._on_open_project)
+        self._start_screen.recent_requested.connect(
+            lambda p: self._project_controller.open_project(self, p))
+        self._refresh_start_screen()
+
     def _setup_dock_panels(self) -> None:
         """Create and place all dock panels."""
         # U1: viewport-first layout. Bottom docks only span under the viewport.
@@ -660,6 +671,12 @@ class MainWindow(QMainWindow):
         self._ghost_panel.log_requested.connect(self.log)
         self._ghost_panel.ghosts_changed.connect(self._on_ghosts_changed)
         self._ghost_panel.configs_changed.connect(self._on_configs_changed)
+        self._joint_panel.set_pose_source(
+            lambda: list(self._ghost_panel.store.names),
+            lambda n, q: self._ghost_panel.add_configuration(n, q),
+            lambda n: self._ghost_panel.delete(n),
+            lambda n: self._ghost_panel.store.get(n))
+        self._ghost_panel.configs_changed.connect(self._joint_panel.refresh_poses)
 
         self._collision_panel = CollisionPanel()
         self._collision_dock = self._add_tool_dock(
@@ -938,8 +955,21 @@ class MainWindow(QMainWindow):
         pc.modified_changed.connect(self._on_modified_changed)
         pc.robot_changed.connect(self._on_robot_changed)
 
+    @property
+    def start_screen(self) -> StartScreen:
+        return self._start_screen
+
+    def _refresh_start_screen(self) -> None:
+        """Show the start screen while no robot is loaded; list the recent projects."""
+        has_robot = self._project_controller.robot is not None
+        self._start_screen.set_recent(self._settings.recent_projects())
+        self._start_screen.setVisible(not has_robot)
+        if not has_robot:
+            self._start_screen.raise_()
+
     def _on_project_opened(self, project: ProjectData) -> None:
         """Update UI when a project is opened or created."""
+        self._start_screen.setVisible(project.robot_model is None)
         self._action_save.setEnabled(True)
         self._action_save_as.setEnabled(True)
         self._action_close.setEnabled(True)
@@ -1002,6 +1032,7 @@ class MainWindow(QMainWindow):
         self._action_save_as.setEnabled(False)
         self._action_close.setEnabled(False)
         self._update_title()
+        self._refresh_start_screen()
         self.set_status("Project closed.")
 
     def _on_workspace_display(self, data: Any) -> None:
@@ -1069,6 +1100,7 @@ class MainWindow(QMainWindow):
         gp = self._ghost_panel
         gp.set_store(project.configs if project is not None else None)
         gp.set_model(model)
+        self._joint_panel.refresh_poses()
         self._collision_panel.set_project(project)
         self._collision_panel.set_model(model)
         self._sync_env_objects_later()
