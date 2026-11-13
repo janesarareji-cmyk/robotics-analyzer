@@ -429,3 +429,9 @@ all matrices on the clipboard as text, numpy or LaTeX.
 -   Ctrl+Z / Ctrl+Y undo and redo; F1 help; a short tour on the first start.
 
 Details: [user-interface.md](user-interface.md); review of the design: [ui-review-u5.md](ui-review-u5.md).
+
+## 18. Analysis overlays (U6)
+
+Open the **Overlays** dock (Analyze mode) or View -> Analysis overlays. Each overlay is a toggle with an
+opacity slider and a colour bar. Results are kept until the robot or its tool changes; "Recompute" makes
+a new one. Details: [overlays.md](overlays.md).

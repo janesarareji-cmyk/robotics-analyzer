@@ -106,6 +106,10 @@ class RobotView:
         # R7.6 ghosts: translucent static copies of the robot, key -> (actors, tcp 4x4)
         self._ghosts: dict[Any, tuple[list[Any], np.ndarray]] = {}
 
+        # U6.1 analysis overlays: key -> actor (coloured voxel sets, outline boxes)
+        self._overlay_actors: dict[str, Any] = {}
+        self._overlay_counts: dict[str, int] = {}
+
     # ------------------------------------------------------------------
     # Properties & Getters
     # ------------------------------------------------------------------
@@ -411,6 +415,7 @@ class RobotView:
         self._mesh_cache.clear()
         self.set_target_pose(None)
         self.clear_workspace()
+        self.clear_overlays()
         self.set_tcp_path(None)
         self.clear_ghosts()
         self._remove_floor()
@@ -516,6 +521,94 @@ class RobotView:
         if transform is not None:
             self._ws_voxel_actor.user_matrix = np.asarray(transform, dtype=float)
         self._ws_voxel_count = len(c)
+        self._render()
+
+    # ------------------------------------------------------------------
+    # U6.1 analysis overlays: named, coloured voxel sets and outline boxes
+    # ------------------------------------------------------------------
+
+    MAX_OVERLAY_VOXELS = 200_000
+
+    @property
+    def overlay_keys(self) -> list[str]:
+        return list(self._overlay_actors)
+
+    def overlay_actor(self, key: str) -> Any:
+        return self._overlay_actors.get(key)
+
+    def overlay_voxel_count(self, key: str) -> int:
+        return int(self._overlay_counts.get(key, 0))
+
+    def clear_overlay(self, key: str, render: bool = True) -> None:
+        actor = self._overlay_actors.pop(key, None)
+        self._overlay_counts.pop(key, None)
+        if actor is not None:
+            self._remove_ws_actor(actor)
+            if render:
+                self._render()
+
+    def clear_overlays(self) -> None:
+        keys = list(self._overlay_actors)
+        for k in keys:
+            self.clear_overlay(k, render=False)
+        if keys:
+            self._render()
+
+    def set_overlay_voxels(self, key: str, centers: Any, voxel_size: float, rgb: Any,
+                           opacity: float = 0.35, transform: Any = None) -> int:
+        """Draw voxel cubes (M,3 centers, M,3 uint8 or float 0..1 ``rgb``) as overlay ``key``.
+
+        Cap ``MAX_OVERLAY_VOXELS`` (evenly thinned). Returns the number drawn. Empty input removes it.
+        """
+        import pyvista as pv
+
+        self.clear_overlay(key, render=False)
+        c = np.asarray(centers, dtype=np.float32).reshape(-1, 3) if centers is not None else None
+        if c is None or len(c) == 0 or not voxel_size:
+            self._render()
+            return 0
+        col = np.asarray(rgb)
+        if col.dtype != np.uint8:
+            col = np.clip(np.asarray(col, dtype=float) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+        col = col.reshape(len(c), -1)[:, :3]
+        if len(c) > self.MAX_OVERLAY_VOXELS:
+            step = int(np.ceil(len(c) / self.MAX_OVERLAY_VOXELS))
+            c, col = c[::step], col[::step]
+        cube = pv.Cube(x_length=float(voxel_size), y_length=float(voxel_size),
+                       z_length=float(voxel_size))
+        pts = pv.PolyData(c)
+        pts["rgb"] = np.ascontiguousarray(col)
+        mesh = pts.glyph(geom=cube, orient=False, scale=False)
+        actor = self._plotter.add_mesh(mesh, scalars="rgb", rgb=True, opacity=float(opacity),
+                                       reset_camera=False, show_scalar_bar=False, lighting=False)
+        if transform is not None:
+            actor.user_matrix = np.asarray(transform, dtype=float)
+        self._overlay_actors[key] = actor
+        self._overlay_counts[key] = len(c)
+        self._render()
+        return len(c)
+
+    def set_overlay_opacity(self, key: str, opacity: float) -> None:
+        actor = self._overlay_actors.get(key)
+        if actor is not None:
+            actor.GetProperty().SetOpacity(float(opacity))
+            self._render()
+
+    def set_overlay_outline(self, key: str, center: Any, size: float, color: str = "#ffffff",
+                            transform: Any = None, width: float = 3.0) -> None:
+        """Wireframe cube of edge ``size`` at ``center`` (None removes it)."""
+        import pyvista as pv
+
+        self.clear_overlay(key, render=False)
+        if center is not None:
+            cube = pv.Cube(center=tuple(float(v) for v in center), x_length=float(size),
+                           y_length=float(size), z_length=float(size))
+            actor = self._plotter.add_mesh(cube, style="wireframe", color=color, line_width=width,
+                                           reset_camera=False, lighting=False)
+            if transform is not None:
+                actor.user_matrix = np.asarray(transform, dtype=float)
+            self._overlay_actors[key] = actor
+            self._overlay_counts[key] = 1
         self._render()
 
     # ------------------------------------------------------------------

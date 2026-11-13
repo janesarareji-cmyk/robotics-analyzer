@@ -29,6 +29,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [Curves, follow and live matrices](curves.md): line / arc / spline, path check, coloured tube, matrix panel (U4b).
 -   [User interface](user-interface.md): start screen, work modes, joint poses, Cartesian jog, 3D view buttons, undo, help (U5).
 -   [UI review U5](ui-review-u5.md): findings of the GUI skills, what was fixed or skipped.
+-   [Analysis overlays](overlays.md): reach map, singularity zones, joint load, timeline and video export (U6).
 
 ## Import
 

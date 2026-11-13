@@ -29,6 +29,8 @@ from app.panels.performance_panel import PerformancePanel
 from app.panels.sim_panel import SimPanel
 from app.panels.graph_panel import GraphPanel
 from app.panels.workspace_panel import WorkspacePanel
+from app.analysis.overlays import OverlayManager, default_overlays
+from app.panels.overlay_panel import OverlayPanel
 from app.panels.planning_panel import PlanningPanel
 from app.panels.ghost_panel import GhostPanel
 from app.panels.collision_panel import CollisionPanel
@@ -332,6 +334,12 @@ class MainWindow(QMainWindow):
         self._action_view_compare.setCheckable(True)
         self._action_view_compare.setChecked(False)
         view_menu.addAction(self._action_view_compare)
+
+        self._action_view_overlays = QAction("&Overlays", self)
+        self._action_view_overlays.setCheckable(True)
+        self._action_view_overlays.setChecked(False)
+        view_menu.addAction(self._action_view_overlays)
+        self._menu_view = view_menu
 
         self._action_view_target = QAction("Ta&rget", self)
         self._action_view_target.setCheckable(True)
@@ -752,6 +760,25 @@ class MainWindow(QMainWindow):
             "Compare", "compare_dock", self._compare_panel, self._action_view_compare, 420)
         self._compare_panel.log_requested.connect(self.log)
 
+        # Analysis overlays (U6.1): reach map, singularity zones, joint load. Cards in the Overlays dock.
+        self._overlays = OverlayManager(self._task_runner, lambda: self._viewport.robot_view, parent=self)
+        for ov in default_overlays():
+            self._overlays.register(ov)
+        self._overlays.set_extra_hash(self._collision_hash)
+        self._overlay_panel = OverlayPanel(self._overlays)
+        self._overlay_dock = self._add_tool_dock(
+            "Overlays", "overlays_dock", self._overlay_panel, self._action_view_overlays, 300)
+        self._overlay_menu = self._menu_view.addMenu("Analysis o&verlays")
+        self._overlay_actions: dict[str, QAction] = {}
+        for key in self._overlays.keys:
+            act = QAction(self._overlays.overlay(key).title, self)
+            act.setCheckable(True)
+            act.toggled.connect(lambda on, k=key: self._overlays.set_enabled(k, on))
+            self._overlays.enabled_changed.connect(
+                lambda k, on, a=act, kk=key: (k == kk and a.isChecked() != on) and a.setChecked(on))
+            self._overlay_menu.addAction(act)
+            self._overlay_actions[key] = act
+
         # Target dock (U4a.4): 3D target, ranked IK, ghost preview, play to target.
         self._target_panel = TargetPanel(self._task_runner)
         self._target_dock = self._add_tool_dock(
@@ -855,6 +882,7 @@ class MainWindow(QMainWindow):
             (self._action_view_ghosts, self._ghost_dock),
             (self._action_view_collision, self._collision_dock),
             (self._action_view_compare, self._compare_dock),
+            (self._action_view_overlays, self._overlay_dock),
             (self._action_view_target, self._target_dock),
             (self._action_view_curve, self._curve_dock),
             (self._action_view_matrices, self._matrix_dock),
@@ -1297,6 +1325,7 @@ class MainWindow(QMainWindow):
         Ghost set_model drops configurations whose length differs from the robot DOF count.
         """
         self._collision_service.set_project(project)
+        self._overlays.set_model(model)
         self._viewport.robot_view.set_collision_highlight()
         self._target_panel.set_project(project)
         self._target_panel.set_model(model)
@@ -2173,6 +2202,7 @@ class MainWindow(QMainWindow):
         self._curve_panel.dispose()
         self._matrix_panel.dispose()
         self._compare_panel.shutdown()
+        self._overlays.dispose()
         self._script_runner.cancel()
         self._workspace_panel.cancel()
         self._workspace_panel.dispose()
@@ -2381,6 +2411,31 @@ class MainWindow(QMainWindow):
     def compare_panel(self) -> ComparePanel:
         """Robot comparison panel (U2.7)."""
         return self._compare_panel
+
+    @property
+    def overlays(self) -> OverlayManager:
+        """Analysis overlay manager (U6.1)."""
+        return self._overlays
+
+    @property
+    def overlay_panel(self) -> OverlayPanel:
+        return self._overlay_panel
+
+    @property
+    def overlay_dock(self) -> QDockWidget:
+        return self._overlay_dock
+
+    def _collision_hash(self) -> str:
+        """Hash of the collision matrix + fit mode (part of the overlay cache key)."""
+        import hashlib
+        import json
+        cfg = self._collision_panel.config
+        if cfg is None:
+            return ""
+        try:
+            return hashlib.sha1(json.dumps(cfg.to_dict(), sort_keys=True, default=str).encode()).hexdigest()
+        except Exception:
+            return ""
 
     @property
     def compare_dock(self) -> QDockWidget:

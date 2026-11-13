@@ -21,7 +21,7 @@ MODES: dict[str, tuple[str, tuple[str, ...]]] = {
     "Target": ("Set a 3D target or a curve and let the robot follow it", ("target", "curve")),
     "Plan": ("Plan a path around objects", ("planning", "collision", "ghosts")),
     "Simulate": ("Run a simulation and look at graphs", ("simulation", "graphs")),
-    "Analyze": ("Workspace, IK, dynamics, compare robots", ("workspace", "ik", "analysis", "compare")),
+    "Analyze": ("Overlays, workspace, IK, dynamics, compare robots", ("overlays", "workspace", "ik", "analysis", "compare")),
 }
 MODE_NAMES = list(MODES)
 LEFT_DOCKS = ("model", "props", "physical")

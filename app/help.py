@@ -38,6 +38,7 @@ PANEL_HELP = {
     "ik": "Inverse kinematics for a typed pose with all solutions.",
     "analysis": "Jacobian, singularity, torques and energy at the current pose.",
     "compare": "Compare reach, volume and payload of several robots.",
+    "overlays": "Show reach, singularity zones and joint load as colours in the 3D view.",
     "performance": "Benchmarks of the compute backend.",
 }
 
