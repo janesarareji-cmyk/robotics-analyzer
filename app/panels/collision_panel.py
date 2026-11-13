@@ -44,11 +44,13 @@ class CollisionPanel(QWidget):
     log_requested = Signal(str)
     changed = Signal()          # project.collision edited (project becomes dirty)
     auto_acm_requested = Signal()   # U3.2: recompute the automatic matrix
+    shape_selected = Signal(int)    # U3.6: index of the selected environment object, -1 = none
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._project: Any = None
         self._n_links = 0
+        self._model: Any = None
         self._loading = False
 
         layout = QVBoxLayout(self)
@@ -77,6 +79,7 @@ class CollisionPanel(QWidget):
         self._env.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._env.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._env.setMinimumHeight(90)
+        self._env.itemSelectionChanged.connect(self._on_env_selection)
         layout.addWidget(self._env, 1)
 
         grid = QGridLayout()
@@ -106,7 +109,12 @@ class CollisionPanel(QWidget):
         self._btn_add.clicked.connect(lambda: self._add_from_form())
         self._btn_remove = QPushButton("Remove selected")
         self._btn_remove.clicked.connect(self._remove_selected_shape)
+        self._btn_update = QPushButton("Update selected")
+        self._btn_update.setToolTip("Write the name, size, position and rotation above into the "
+                                    "selected object")
+        self._btn_update.clicked.connect(lambda: self._update_selected_from_form())
         row.addWidget(self._btn_add)
+        row.addWidget(self._btn_update)
         row.addWidget(self._btn_remove)
         layout.addLayout(row)
 
@@ -175,9 +183,11 @@ class CollisionPanel(QWidget):
     # ------------------------------------------------------------------ setup
     def set_project(self, project: Any) -> None:
         self._project = project
+        self._env.clearSelection()
         self._refresh()
 
     def set_model(self, model: Any) -> None:
+        self._model = model
         self._n_links = len(model.links) if model is not None else 0
         top = max(self._n_links - 1, 0)
         self._a.setRange(0, top)
@@ -192,8 +202,8 @@ class CollisionPanel(QWidget):
             self._project.collision = CollisionConfig()
         return self._project.collision
 
-    def _edited(self, message: str) -> None:
-        self._refresh()
+    def _edited(self, message: str, keep: int | None = None) -> None:
+        self._refresh(keep)
         self._status.setText(message)
         self.log_requested.emit(f"[INFO] Collision: {message}")
         self.changed.emit()
@@ -287,6 +297,95 @@ class CollisionPanel(QWidget):
         return self.add_shape(kind, params, [w.value() for w in self._pos],
                               [w.value() for w in self._rot], self._name.text().strip())
 
+    def add_default_object(self, kind: str) -> bool:
+        """U3.6 toolbar: a 0.1 m object on the floor, 0.4 m in front of the robot, selected."""
+        from app.scene_objects import default_object
+
+        if kind not in _KINDS:
+            return False
+        params, xyz = default_object(kind, self._model)
+        if not self.add_shape(kind, params, xyz):
+            return False
+        self.select_shape(len(self.config.environment) - 1)
+        return True
+
+    @property
+    def selected_shape(self) -> int:
+        rows = self._env.selectionModel().selectedRows()
+        return rows[0].row() if rows else -1
+
+    def select_shape(self, index: int) -> None:
+        """Select row ``index`` of the object list (-1 clears)."""
+        if 0 <= index < self._env.rowCount():
+            self._env.selectRow(index)
+        else:
+            self._env.clearSelection()
+
+    def _on_env_selection(self) -> None:
+        if self._loading:
+            return
+        i = self.selected_shape
+        cfg = self.config
+        if cfg is not None and 0 <= i < len(cfg.environment):
+            self._load_form(cfg.environment[i])
+        self.shape_selected.emit(i)
+
+    def _load_form(self, e: EnvShape) -> None:
+        self._loading = True
+        self._name.setText(e.name)
+        self._kind.setCurrentText(e.kind)
+        for w, v in zip(self._pos, e.xyz):
+            w.setValue(float(v))
+        for w, v in zip(self._rot, e.rpy):
+            w.setValue(float(v))
+        p = e.params
+        vals = {"box": list(p.get("size", [])), "sphere": [p.get("radius", 0.0)],
+                "cylinder": [p.get("radius", 0.0), p.get("length", 0.0)]}[e.kind]
+        for w, v in zip(self._size, vals):
+            w.setValue(float(v))
+        self._loading = False
+
+    def update_shape(self, index: int, name: str | None = None, params: dict | None = None,
+                     xyz=None, rpy=None) -> bool:
+        """Edit object ``index`` (kind stays). False on a bad index or bad size."""
+        cfg = self.config
+        if cfg is None or not 0 <= index < len(cfg.environment):
+            return False
+        old = cfg.environment[index]
+        try:
+            new = EnvShape(old.kind, dict(params if params is not None else old.params),
+                           [float(v) for v in (xyz if xyz is not None else old.xyz)],
+                           [float(v) for v in (rpy if rpy is not None else old.rpy)],
+                           old.name if name is None else name)
+            sizes = []
+            for v in new.params.values():
+                sizes.extend(v if isinstance(v, (list, tuple)) else [v])
+            if any(float(x) <= 0.0 for x in sizes):
+                raise ValueError("every size must be positive")
+        except (ValueError, KeyError, TypeError) as exc:
+            self._status.setText(f"Bad shape: {exc}")
+            return False
+        cfg.environment[index] = new
+        self._edited(f"Updated '{new.name}'.", keep=index)
+        return True
+
+    def move_shape(self, index: int, xyz) -> bool:
+        """Set the position of object ``index`` (drag widget)."""
+        return self.update_shape(index, xyz=xyz)
+
+    def _update_selected_from_form(self) -> bool:
+        i = self.selected_shape
+        cfg = self.config
+        if cfg is None or not 0 <= i < len(cfg.environment):
+            self._status.setText("Select an object first.")
+            return False
+        kind = cfg.environment[i].kind
+        v = [w.value() for w in self._size]
+        params = {"box": {"size": v[:3]}, "sphere": {"radius": v[0]},
+                  "cylinder": {"radius": v[0], "length": v[1]}}[kind]
+        return self.update_shape(i, self._name.text().strip() or None, params,
+                                 [w.value() for w in self._pos], [w.value() for w in self._rot])
+
     def remove_shape(self, index: int) -> bool:
         cfg = self.config
         if cfg is None or not 0 <= index < len(cfg.environment):
@@ -356,7 +455,8 @@ class CollisionPanel(QWidget):
         return found
 
     # ------------------------------------------------------------------ table refresh
-    def _refresh(self) -> None:
+    def _refresh(self, keep: int | None = None) -> None:
+        sel = self.selected_shape if keep is None else keep
         cfg = self.config
         self._loading = True
         self._fit.setCurrentIndex(self._fit.findData(cfg.fit_mode if cfg else DEFAULT_FIT_MODE))
@@ -368,12 +468,18 @@ class CollisionPanel(QWidget):
         if cfg is not None:
             rows += [(a, b, False, f"auto ({why})") for (a, b), why in sorted(cfg.auto.items())
                      if (a, b) not in cfg.edits]
+        self._loading = True
         self._env.setRowCount(len(env))
+        self._loading = False
         for r, e in enumerate(env):
             cells = [e.name, e.kind, "(" + ", ".join(_fmt(v) for v in e.xyz) + ")",
                      "(" + ", ".join(_fmt(v) for v in e.rpy) + ")", _params_text(e.kind, e.params)]
             for c, text in enumerate(cells):
                 self._env.setItem(r, c, QTableWidgetItem(text))
+        if 0 <= sel < len(env):
+            self._loading = True
+            self._env.selectRow(sel)
+            self._loading = False
         self._acm.setRowCount(len(rows))
         for r, (a, b, chk, src) in enumerate(rows):
             for c, text in enumerate((str(a), str(b), "yes" if chk else "no", src)):

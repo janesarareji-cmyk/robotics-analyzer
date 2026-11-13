@@ -90,3 +90,12 @@ After an URDF import, the auto-ACM worker also checks the start pose with the ne
 floor. If it collides, the nearest free pose (mid-range, 0.25-step blends towards it, then seeded
 random samples; smallest L2 distance to the original) becomes the start pose; the log says so.
 Code: `app/start_pose.py`.
+
+## Scene objects (U3.6)
+Toolbar menu "Add object" (Box / Cylinder / Sphere) adds an `EnvShape` of 0.1 m, on the floor,
+0.4 m in front of the robot base (along the base x axis), and selects it. Objects live in
+`project.collision.environment` (saved with the project). The selected object gets a PyVista box
+widget: drag it to move it (position only). The Collision panel lists the objects; selecting a row
+loads name, size, xyz and rpy into the form, "Update selected" writes them back, "Remove selected"
+deletes. The viewport redraw is debounced 100 ms; the collision world rebuilds lazily at the next
+check. A touched object turns red. Code: `app/scene_objects.py`, `RobotView.set_env_objects`.

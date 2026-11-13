@@ -416,6 +416,17 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._action_reset_camera)
         toolbar.addAction(self._action_drag_tcp)
         toolbar.addAction(self._action_collision)
+        self._objects_button = QToolButton()
+        self._objects_button.setText("Add object")
+        self._objects_button.setToolTip("Add a box, cylinder or sphere to the scene "
+                                        "(0.4 m in front of the robot, on the floor)")
+        self._objects_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._menu_objects = QMenu("Add object", self)
+        for kind in ("box", "cylinder", "sphere"):
+            act = self._menu_objects.addAction(kind.capitalize())
+            act.triggered.connect(lambda _=False, k=kind: self.add_scene_object(k))
+        self._objects_button.setMenu(self._menu_objects)
+        toolbar.addWidget(self._objects_button)
         toolbar.addAction(self._action_focus)
 
     def _setup_status_bar(self) -> None:
@@ -1001,6 +1012,7 @@ class MainWindow(QMainWindow):
         gp.set_model(model)
         self._collision_panel.set_project(project)
         self._collision_panel.set_model(model)
+        self._sync_env_objects_later()
         self._planning_panel.set_project(project)
         self._planning_panel.set_model(model)
         self._planning_panel.set_named_configs(gp.store.as_dict())
@@ -1040,12 +1052,50 @@ class MainWindow(QMainWindow):
         self._sim_panel.collision_stopped.connect(self._on_collision_stopped)
         self._action_collision.toggled.connect(self._on_collision_toggled)
         svc.collision_changed.connect(self._on_collision_highlight)
+        from app.scene_objects import ObjectDragController
+        self._object_drag = ObjectDragController(self._viewport, self)
+        self._object_drag.moved.connect(self._collision_panel.move_shape)
+        self._collision_panel.shape_selected.connect(self._on_object_selected)
+        self._env_timer = QTimer(self)
+        self._env_timer.setSingleShot(True)
+        self._env_timer.setInterval(100)
+        self._env_timer.timeout.connect(self._sync_env_objects)
 
     def _on_collision_highlight(self, res: Any) -> None:
         """U3.5: colliding links (and touched objects) turn red in the viewport."""
         self._viewport.robot_view.set_collision_highlight(res.links, res.env_ids)
         if not res.ok and res.text():
             self.set_status(f"Collision: {res.text()}")
+
+    def add_scene_object(self, kind: str) -> bool:
+        """U3.6: add a default box / cylinder / sphere in front of the robot (selected)."""
+        if not self._project_controller.has_project or self._project_controller.robot is None:
+            self.set_status("Open a robot first")
+            return False
+        ok = self._collision_panel.add_default_object(kind)
+        if ok:
+            self.set_status(f"Added {kind}: drag it, or edit it in the Collision panel")
+        return ok
+
+    def _on_object_selected(self, index: int) -> None:
+        cfg = getattr(self._project_controller.current_project, "collision", None)
+        env = list(cfg.environment) if cfg is not None else []
+        self._viewport.robot_view.set_env_selected(index)
+        self._object_drag.select(index, env[index] if 0 <= index < len(env) else None)
+
+    def _sync_env_objects_later(self) -> None:
+        if hasattr(self, "_env_timer"):
+            self._sync_env_objects()
+
+    def _sync_env_objects(self) -> None:
+        """Debounced: redraw the objects and move the drag widget (the world rebuilds lazily)."""
+        p = self._project_controller.current_project
+        cfg = getattr(p, "collision", None)
+        env = list(cfg.environment) if cfg is not None else []
+        sel = self._collision_panel.selected_shape
+        self._viewport.robot_view.set_env_objects(env, sel)
+        self._object_drag.select(sel, env[sel] if 0 <= sel < len(env) else None)
+        self._collision_service.invalidate()
 
     def _on_collision_toggled(self, on: bool) -> None:
         self._settings.set_collision_enabled(on)
@@ -1068,6 +1118,7 @@ class MainWindow(QMainWindow):
 
     def _on_collision_changed(self) -> None:
         self._collision_service.invalidate()
+        self._env_timer.start()
         if self._project_controller.has_project:
             self._project_controller.mark_modified()
 

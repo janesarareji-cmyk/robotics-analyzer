@@ -353,3 +353,8 @@ move away.
 Colliding links turn red in the viewport while a pose touches something (it can happen at a start
 pose or with blocking off). A robot whose imported start pose collides starts at the nearest free
 pose instead (see the log).
+
+Scene objects: toolbar "Add object" puts a box, cylinder or sphere (0.1 m) on the floor in front of
+the robot. Drag the yellow box widget to move it, or select it in the Collision panel to type name,
+size, position and rotation ("Update selected"). Objects block the robot like the floor does, turn
+red when touched, and are saved in the project.

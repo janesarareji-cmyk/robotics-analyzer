@@ -87,6 +87,9 @@ class RobotView:
         self._hl_actor: Any = None
         self._hl_frames: list[np.ndarray] | None = None
         self._visual_rgba: list[list[float]] = []
+        # U3.6 environment objects: one actor per EnvShape
+        self._env_actors: list[Any] = []
+        self._env_selected: int = -1
 
         # R7.6 ghosts: translucent static copies of the robot, key -> (actors, tcp 4x4)
         self._ghosts: dict[Any, tuple[list[Any], np.ndarray]] = {}
@@ -401,6 +404,7 @@ class RobotView:
         self._remove_floor()
         self._hl_links = set()
         self._hl_env = set()
+        self.set_env_objects([])
         self._clear_actors()
 
     def set_target_pose(self, iso: Any) -> None:
@@ -733,6 +737,7 @@ class RobotView:
             except Exception:
                 pass
         self._update_highlight_overlay()
+        self._apply_env_colors()
 
     def _update_highlight_overlay(self) -> None:
         """Red spheres at the origin of colliding links without a visible visual mesh."""
@@ -759,6 +764,72 @@ class RobotView:
             mesh = mesh.merge(m)
         self._hl_actor = self._plotter.add_mesh(mesh, color=self.HIGHLIGHT_COLOR,
                                                 reset_camera=False, pickable=False)
+
+    # ------------------------------------------------------------------
+    # U3.6 environment objects
+    # ------------------------------------------------------------------
+
+    ENV_COLOR = "#d9a441"
+    ENV_SELECTED = "#ffd54f"
+
+    @property
+    def env_actors(self) -> list[Any]:
+        """Actors of the environment objects, in the order of ``environment``."""
+        return list(self._env_actors)
+
+    def env_color(self, i: int) -> tuple:
+        return tuple(self._env_actors[i].prop.color)[:3]
+
+    @staticmethod
+    def _env_mesh(shape: Any) -> Any:
+        import pyvista as pv
+
+        p = shape.params
+        if shape.kind == "box":
+            sx, sy, sz = (float(v) for v in p["size"])
+            return pv.Box(bounds=(-sx / 2, sx / 2, -sy / 2, sy / 2, -sz / 2, sz / 2))
+        if shape.kind == "sphere":
+            return pv.Sphere(radius=float(p["radius"]), theta_resolution=24, phi_resolution=24)
+        return pv.Cylinder(radius=float(p["radius"]), height=float(p["length"]),
+                           direction=(0, 0, 1), resolution=32)
+
+    def set_env_objects(self, shapes: Any, selected: int = -1) -> None:
+        """Draw the environment shapes (list of ``EnvShape``); replaces the previous actors."""
+        from app.planning.collision import pose_matrix
+
+        for a in self._env_actors:
+            try:
+                self._plotter.remove_actor(a)
+            except Exception:
+                pass
+        self._env_actors = []
+        self._env_selected = int(selected)
+        for s in shapes or []:
+            try:
+                actor = self._plotter.add_mesh(self._env_mesh(s), color=self.ENV_COLOR,
+                                               opacity=0.85, reset_camera=False)
+                actor.user_matrix = pose_matrix(s.xyz, s.rpy)
+            except Exception:
+                continue
+            self._env_actors.append(actor)
+        self._apply_env_colors()
+        self._render()
+
+    def set_env_selected(self, index: int) -> None:
+        self._env_selected = int(index)
+        self._apply_env_colors()
+        self._render()
+
+    def _apply_env_colors(self) -> None:
+        for i, a in enumerate(self._env_actors):
+            try:
+                if i in self._hl_env:
+                    a.prop.color, a.prop.opacity = self.HIGHLIGHT_COLOR, 1.0
+                else:
+                    a.prop.color = self.ENV_SELECTED if i == self._env_selected else self.ENV_COLOR
+                    a.prop.opacity = 0.85
+            except Exception:
+                pass
 
     def highlight_joint(self, index: int | None) -> None:
         """Draw the marker of joint `index` 1.6x larger; reset the previous one."""
