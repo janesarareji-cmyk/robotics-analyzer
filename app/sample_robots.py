@@ -42,3 +42,26 @@ def list_sample_robots(root: Path | str | None = None) -> list[tuple[str, Path]]
         out.append((title, urdf))
     out.sort(key=lambda t: t[0].lower())
     return out
+
+
+_GENERIC_ROBOT_NAMES = {"", "uf_robot", "robot", "unnamed robot"}
+
+
+def import_display_name(path: str, urdf_name: str | None) -> str:
+    """Project name for an imported URDF (U2.1).
+
+    Sample robot -> sample title. Generic URDF name (empty, ``robot``, ``UF_ROBOT``)
+    -> file stem. Otherwise the URDF robot name.
+    """
+    p = Path(path)
+    try:
+        rp = p.resolve()
+        for title, urdf in list_sample_robots():
+            if urdf.resolve() == rp:
+                return title
+    except OSError:
+        pass
+    name = (urdf_name or "").strip()
+    if name.lower() in _GENERIC_ROBOT_NAMES:
+        return p.stem or "Imported Robot"
+    return name

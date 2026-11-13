@@ -414,7 +414,9 @@ def _build_joint(rj: _RawJoint, index: Dict[str, int], joint_names: set,
     j.axis = [a / norm for a in axis]
 
     j.limits = _joint_limits(rj, report)
-    j.q = min(max(0.0, j.limits.lower), j.limits.upper)
+    lo, hi = j.limits.lower, j.limits.upper
+    # U2.1: start at 0 when inside the range, else the middle of the range
+    j.q = 0.0 if lo <= 0.0 <= hi else 0.5 * (lo + hi)
 
     mimic_el = rj.el.find("mimic")
     if mimic_el is not None:

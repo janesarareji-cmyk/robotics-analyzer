@@ -829,6 +829,8 @@ class MainWindow(QMainWindow):
         self.set_status(f"Project '{project.name}' opened.")
 
         self._viewport.robot_view.set_visuals(project.visuals)
+        # U2.1: frame triads default off when the model has visual meshes
+        self._action_show_frames.setChecked(not project.visuals)
         self._physical_panel.set_model(project.robot_model, project.visuals)
 
         # Load robot model into DH editor and Joint panel
@@ -1359,14 +1361,13 @@ class MainWindow(QMainWindow):
         if report.has_errors():
             self._import_report_dock.show()
             self._import_report_dock.raise_()
-        elif report.by_severity(SEV_WARNING):
-            self._import_report_dock.show()
 
         where = f"{path}: " if path else ""
         if result.model is None:
             self.log(f"[ERROR] URDF import failed: {where}{report.summary()}")
             return
-        name = result.model.metadata.name or "Imported Robot"
+        from app.sample_robots import import_display_name
+        name = import_display_name(path, result.model.metadata.name)
         if not self._project_controller.import_robot(
             self, result.model, name, result.visuals, result.collisions
         ):
@@ -1376,6 +1377,9 @@ class MainWindow(QMainWindow):
             return
         prefix = "[WARNING]" if report.by_severity(SEV_WARNING) else "[INFO]"
         self.log(f"{prefix} URDF imported: {where}{report.summary()}")
+        n_warn = len(report.by_severity(SEV_WARNING))
+        if n_warn and not report.has_errors():
+            self.set_status(f"Imported with {n_warn} warnings (View > Import Report)")
 
     def _on_report_element_clicked(self, name: str) -> None:
         """Import report row click -> select the joint or link in the tree."""

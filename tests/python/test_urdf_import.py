@@ -208,7 +208,7 @@ def test_reversed_file_order_gives_canonical_order():
     assert m.tcp_link == 3
 
 
-def test_prismatic_initial_q_clamped_into_limits(tmp_path):
+def test_prismatic_initial_q_mid_range_when_zero_outside(tmp_path):
     text = """<?xml version="1.0"?>
 <robot name="pr">
   <link name="base"/><link name="slider"/>
@@ -221,7 +221,7 @@ def test_prismatic_initial_q_clamped_into_limits(tmp_path):
     res = import_urdf(_write(tmp_path, text))
     assert res.model is not None
     j = res.model.joints[0]
-    assert j.q == pytest.approx(0.1)  # 0 clamped up to lower
+    assert j.q == pytest.approx(0.3)  # U2.1: 0 outside range -> middle
     assert j.limits.lower == pytest.approx(0.1)
     # axis normalised from (0, 0, 2)
     assert j.axis == pytest.approx([0.0, 0.0, 1.0])

@@ -274,3 +274,14 @@ Details: [project-recovery.md](project-recovery.md). Format history: [schema/REA
 
 -   Run `RoboticsAnalyzer.exe --smoke` from a console to see the failing step. If the message names a
     missing DLL, install the Microsoft Visual C++ redistributable. See [packaging.md](packaging.md).
+
+## Import behaviour (U2.1)
+
+- The Import Report dock opens only when the import has errors. Warnings are
+  listed in the dock (View > Import Report); the status bar shows the count.
+- Start pose after an import: each joint starts at 0 when 0 is inside its
+  limits, else at the middle of its range. Saved projects keep their saved pose.
+- Models with visual meshes start with View > Robot > Show Frames off (the TCP
+  triad stays). Models without visuals start with frames on.
+- Project name after an import: the sample title for a sample robot; the file
+  name when the URDF robot name is generic (`UF_ROBOT`, `robot`, empty).

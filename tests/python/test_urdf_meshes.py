@@ -267,6 +267,7 @@ def test_visual_actors_survive_rebuild(win):
 def test_toggle_visuals_independent_of_frames(win):
     _import(win, PRIMS)
     rv = win.robot_view
+    win._action_show_frames.setChecked(True)     # U2.1: frames default off with visuals
     assert rv.show_visuals
     assert all(a.visibility for a in rv.visual_actors)
     win._action_show_visuals.setChecked(False)
