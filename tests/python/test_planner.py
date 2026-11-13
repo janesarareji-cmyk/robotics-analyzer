@@ -36,7 +36,8 @@ START, GOAL = [0.0, 0.0], [2.2, 0.3]
 
 def env_config():
     return CollisionConfig(environment=[EnvShape("box", {"size": [0.3, 0.3, 0.4]},
-                                                xyz=[BOX_C[0], BOX_C[1], 0.0])])
+                                                xyz=[BOX_C[0], BOX_C[1], 0.0])],
+                           floor=False)
 
 
 def env_world(model=None):

@@ -42,6 +42,7 @@ from app.importers.import_report import SEV_WARNING
 from app.panels.import_report_panel import ImportReportPanel, find_element
 from app.settings import AppSettings, LAYOUT_VERSION
 from app.sample_robots import list_sample_robots
+from app.collision_service import CollisionService
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
 from app.project.project_data import ProjectData
@@ -71,6 +72,7 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._settings = AppSettings()
         self._task_runner = TaskRunner(parent=self)
+        self._collision_service = CollisionService(self)
         self._project_controller = ProjectController(
             settings=self._settings, parent=self
         )
@@ -976,6 +978,7 @@ class MainWindow(QMainWindow):
 
         Ghost set_model drops configurations whose length differs from the robot DOF count.
         """
+        self._collision_service.set_project(project)
         gp = self._ghost_panel
         gp.set_store(project.configs if project is not None else None)
         gp.set_model(model)
@@ -1006,6 +1009,7 @@ class MainWindow(QMainWindow):
         self._planning_panel.set_named_configs(self._ghost_panel.store.as_dict())
 
     def _on_collision_changed(self) -> None:
+        self._collision_service.invalidate()
         if self._project_controller.has_project:
             self._project_controller.mark_modified()
 
@@ -1531,10 +1535,15 @@ class MainWindow(QMainWindow):
         from app.auto_acm import apply_auto_acm
         if apply_auto_acm(project, result):
             self._collision_panel.set_project(project)
+            self._collision_service.invalidate()
             self._project_controller.mark_modified()
             self.log(f"[INFO] Auto collision matrix: {len(result['pairs'])} pairs disabled "
                      f"({result.get('n_samples', 0)} samples, {result.get('seconds', 0)} s)")
             self.set_status("Auto collision matrix ready")
+
+    @property
+    def collision_service(self) -> CollisionService:
+        return self._collision_service
 
     @property
     def auto_acm_task(self) -> Any:

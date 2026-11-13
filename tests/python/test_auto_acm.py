@@ -14,7 +14,7 @@ from app.auto_acm import AutoAcmTask, apply_auto_acm
 from app.importers.urdf import import_urdf
 from app.kin_utils import current_q
 from app.main_window import MainWindow
-from app.planning.collision import CollisionConfig, CollisionWorld, shapes_from_geometry
+from app.planning.collision import FLOOR_ID, CollisionConfig, CollisionWorld, shapes_from_geometry
 from app.sample_robots import list_sample_robots
 from app.settings import AppSettings
 
@@ -37,7 +37,7 @@ def test_start_pose_free_and_time(name):
     print(f"auto ACM {name}: {dt:.2f} s, {len(out['pairs'])} pairs disabled")
     assert dt < 10.0
     w.set_q(q0)
-    assert w.pairs() == []
+    assert [p for p in w.pairs() if p[1] != FLOOR_ID] == []      # no self collision at q0
     assert w.config.auto == out["pairs"]
     assert set(out["pairs"].values()) <= {"always", "never", "start"}
 
@@ -75,7 +75,7 @@ def test_folded_ur5_is_flagged():
     q = list(q0)
     q[1], q[2] = 0.79, -3.14                      # upper arm up, elbow folded back over the base
     w.set_q(q)
-    hits = w.pairs()
+    hits = [p for p in w.pairs() if p[1] != FLOOR_ID]
     assert hits, "folded pose must collide"
     names = [l.name for l in res.model.links]
     print("folded ur5:", [(names[a], names[b]) for a, b, _ in hits])

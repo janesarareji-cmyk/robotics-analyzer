@@ -12,12 +12,13 @@ with no shape is never checked.
 
 ## Convex hulls (U3.1)
 Kind `convex`: `params {"vertices": (n,3), "faces": (m,3)}`, outward triangles, built by
-`app/planning/hull.py` from the mesh points (VTK Delaunay through PyVista, no scipy). At most 64
-vertices: a bigger hull is rebuilt from support points in fewer directions and inflated about its
-centroid so every mesh point stays inside (conservative). A flat or collinear mesh falls back to the
-oriented box. `fit_mode "hull"` is the default for new projects and imports; a saved `collision.json`
-keeps its own `fit_mode`. Hulls are cached per mesh path + scale (+ mtime), cleared when a project
-opens.
+`app/planning/hull.py` from the mesh points with an own incremental hull in numpy (no scipy; VTK
+`delaunay_3d` was tried and rejected: on cylinder-like meshes its surface is not convex). At most 64
+vertices: a bigger hull is rebuilt from the 64 most important points (greedy farthest point) and
+its vertices are pushed outward along their normals until every mesh point is inside again
+(conservative). A flat or collinear mesh falls back to the oriented box. `fit_mode "hull"` is the
+default for new projects and imports; a saved `collision.json` keeps its own `fit_mode`. Hulls are
+cached per mesh path + scale (+ mtime), cleared when a project opens.
 
 ## Automatic ACM (U3.2)
 `CollisionWorld.auto_acm(n_samples=2000, seed=0, q0=None)` samples `q` uniformly inside the joint
@@ -28,6 +29,21 @@ there). User edits always win. The result is stored in `CollisionConfig.auto` (+
 saved as `acm_auto` in `collision.json`, and shown in the Collision dock with source `auto (reason)`
 next to `user`. It runs in a worker after every URDF import / sample load (`app/auto_acm.py`), and on
 the dock button "Recompute automatic matrix". About 0.1 to 0.4 s per sample robot at 2000 samples.
+
+## Floor and live service (U3.3)
+`CollisionConfig.floor` (default on, saved as `floor`, old files load with it on) adds a floor: a big
+thin box whose top is 1 mm under the base (same plane as the viewport grid). Links that never move
+(fixed to the base) are not checked against it. Pair id of the floor: `FLOOR_ID` (-1000000). A
+`CollisionWorld` built without a config has no floor (library default); the project paths (service,
+planning panel, Collision dock) use the project config, floor on. The scripting API planner keeps
+its old behaviour (no floor).
+
+`app/collision_service.py` `CollisionService(QObject)` owns one world per project, rebuilt lazily
+after robot / shapes / ACM / environment changes. `check(q) -> CheckResult` (`ok`, `pairs`, `names`),
+`first_free(q_from, q_to)` (last free q on the joint segment, 16 samples then bisection to 1e-3),
+signal `collision_changed` (only when the colliding pair set changes), `enabled = False` = pass-through.
+A start that already touches something (UR zero pose: wrist under the base plane) may move on while
+no new contact pair appears. Speed (median per check, random poses): xarm6 0.05 ms, panda 0.07 ms.
 
 ## Allowed collision matrix (ACM)
 Default: parent-child link pairs are not checked. `CollisionConfig.edits[(a, b)]` = `True` (force

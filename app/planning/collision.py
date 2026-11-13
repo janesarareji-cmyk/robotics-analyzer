@@ -31,6 +31,9 @@ SHAPE_KINDS = ("sphere", "box", "capsule", "cylinder", "convex")
 FIT_MODES = ("obb", "sphere", "capsule", "hull")
 DEFAULT_FIT_MODE = "hull"
 COLLISION_FORMAT = 1
+FLOOR_ID = -1_000_000          # pair id of the floor (robot link vs floor)
+FLOOR_CLEARANCE = 0.001        # floor plane sits 1 mm below the base (same as the viewport grid)
+FLOOR_HALF = 100.0
 
 
 def env_id(k: int) -> int:
@@ -164,6 +167,7 @@ class CollisionConfig:
     auto_info: dict = field(default_factory=dict)      # n_samples, seed, seconds of the last run
     environment: list = field(default_factory=list)    # list[EnvShape]
     fit_mode: str = DEFAULT_FIT_MODE                   # mesh fit used by shapes_from_geometry
+    floor: bool = True                                 # U3.3: floor collision (plane under the base)
 
     def __post_init__(self) -> None:
         if self.fit_mode not in FIT_MODES:
@@ -171,7 +175,7 @@ class CollisionConfig:
 
     def is_default(self) -> bool:
         return (not self.edits and not self.environment and self.fit_mode == DEFAULT_FIT_MODE
-                and not self.auto and not self.auto_info)
+                and not self.auto and not self.auto_info and self.floor)
 
     def source(self, a: int, b: int) -> str:
         """Where the check state of a pair comes from: ``user`` edit, ``auto`` or ``default``."""
@@ -209,6 +213,7 @@ class CollisionConfig:
         return {
             "format": COLLISION_FORMAT,
             "fit_mode": self.fit_mode,
+            "floor": bool(self.floor),
             "acm_edits": [[a, b, bool(v)] for (a, b), v in sorted(self.edits.items())],
             "acm_auto": [[a, b, r] for (a, b), r in sorted(self.auto.items())],
             "acm_auto_info": dict(self.auto_info),
@@ -221,7 +226,7 @@ class CollisionConfig:
         for a, b, v in d.get("acm_edits", []):
             edits[_key(int(a), int(b))] = bool(v)
         auto = {_key(int(a), int(b)): str(r) for a, b, r in d.get("acm_auto", [])}
-        return cls(edits=edits, auto=auto, auto_info=dict(d.get("acm_auto_info", {})),
+        return cls(edits=edits, auto=auto, floor=bool(d.get("floor", True)), auto_info=dict(d.get("acm_auto_info", {})),
                    environment=[EnvShape.from_dict(e) for e in d.get("environment", [])],
                    fit_mode=d.get("fit_mode", "obb"))   # old file without the key
 
@@ -364,7 +369,7 @@ class CollisionWorld:
         if fcl is None:
             raise RuntimeError("python-fcl is not installed (pip install python-fcl)")
         self.model = model
-        self.config = config if config is not None else CollisionConfig()
+        self.config = config if config is not None else CollisionConfig(floor=False)
         self._cm = cb.compile(model)
         self.n_links = len(model.links)
         self.adjacent = {_key(int(p), int(c)) for p, c in cb.effective_links(model)}
@@ -385,6 +390,7 @@ class CollisionWorld:
         self._rad = np.array([s.bounding_radius() for s in self.robot_shapes])
         self._env_rad = np.array([s.bounding_radius() for s in env])
         self._env_c = np.array([s.pose[:3, 3] for s in env]).reshape(-1, 3)
+        self._init_floor()
         self._build_pairs()
         self._req = fcl.CollisionRequest(num_max_contacts=1, enable_contact=False)
         self._req_c = fcl.CollisionRequest(num_max_contacts=1, enable_contact=True)
@@ -394,6 +400,26 @@ class CollisionWorld:
         self.set_q(np.zeros(model.dof()))
 
     # -- setup ---------------------------------------------------------
+    def _init_floor(self) -> None:
+        """Floor = big thin box whose top is 1 mm under the base. Static links are skipped."""
+        self.floor_z = None
+        self._floor_obj = None
+        self._floor_idx = np.zeros(0, dtype=int)
+        if not self.config.floor or not len(self.robot_shapes):
+            return
+        n = self.model.dof()
+        f0 = np.asarray(cb.fk_compiled(self._cm, [0.0] * n)["frames"])
+        rng = np.random.default_rng(1)
+        f1 = np.asarray(cb.fk_compiled(self._cm, list(rng.uniform(-1.0, 1.0, n)))["frames"])
+        moving = np.abs(f1 - f0).reshape(len(f0), -1).max(axis=1) > 1e-9
+        self.static_links = {i for i in range(len(f0)) if not moving[i]}
+        self.floor_z = float(f0[0][2, 3]) - FLOOR_CLEARANCE
+        box = fcl.Box(2 * FLOOR_HALF, 2 * FLOOR_HALF, 1.0)
+        self._floor_obj = fcl.CollisionObject(
+            box, fcl.Transform(np.array([f0[0][0, 3], f0[0][1, 3], self.floor_z - 0.5])))
+        self._floor_idx = np.array([i for i, s in enumerate(self.robot_shapes)
+                                    if s.link not in self.static_links], dtype=int)
+
     def _build_pairs(self) -> None:
         """Robot-robot pairs (ACM filtered) and robot-environment pairs as index lists."""
         n = len(self.robot_shapes)
@@ -430,6 +456,13 @@ class CollisionWorld:
             obj.setTransform(fcl.Transform(M[:3, :3], M[:3, 3]))
 
     # -- queries -------------------------------------------------------
+    def _floor_candidates(self) -> list:
+        """Robot shape indices whose bounding sphere reaches the floor plane."""
+        if self._floor_obj is None or not len(self._floor_idx):
+            return []
+        i = self._floor_idx
+        return [int(m) for m in i[self._wc[i, 2] - self._rad[i] <= self.floor_z]]
+
     def _candidates(self):
         """Pairs whose bounding spheres overlap: lists of (i, j) robot-robot, (i, k) env."""
         rr, re = [], []
@@ -444,6 +477,9 @@ class CollisionWorld:
         return rr, re
 
     def in_collision(self) -> bool:
+        for i in self._floor_candidates():
+            if fcl.collide(self._robot_objs[i], self._floor_obj, self._req, fcl.CollisionResult()):
+                return True
         rr, re = self._candidates()
         for i, j in rr:
             if fcl.collide(self._robot_objs[i], self._robot_objs[j], self._req,
@@ -472,6 +508,10 @@ class CollisionWorld:
     def pairs(self) -> list[tuple[int, int, float]]:
         """Colliding pairs ``(linkA, linkB, -penetration_depth)``; environment id ``-1-k``."""
         out = []
+        for i in self._floor_candidates():
+            if fcl.collide(self._robot_objs[i], self._floor_obj, self._req, fcl.CollisionResult()):
+                out.append((int(self._link_of[i]), FLOOR_ID,
+                            self._signed(self._robot_objs[i], self._floor_obj)))
         rr, re = self._candidates()
         for i, j in rr:
             if fcl.collide(self._robot_objs[i], self._robot_objs[j], self._req,
@@ -495,6 +535,9 @@ class CollisionWorld:
             best = min(best, self._signed(self._robot_objs[i], self._robot_objs[j]))
         for i, k in self._re:
             best = min(best, self._signed(self._robot_objs[i], self._env_objs[k]))
+        if self._floor_obj is not None:
+            for i in self._floor_idx:
+                best = min(best, self._signed(self._robot_objs[int(i)], self._floor_obj))
         return float(best)
 
     def zero_pose_pairs(self, q: Sequence[float] | None = None) -> list[tuple[int, int]]:

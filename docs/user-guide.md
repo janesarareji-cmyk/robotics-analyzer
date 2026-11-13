@@ -335,3 +335,7 @@ After an import the program computes an automatic allowed-collision matrix in th
 (status bar "Auto collision matrix ..."): link pairs that always touch, never touch or touch at the
 start pose are not checked. The Collision dock lists them with source `auto`; your own edits
 (source `user`) always win. "Recompute automatic matrix" runs it again.
+
+Floor: the Collision dock has "Floor collision" (default on). The floor is a plane 1 mm under the
+robot base; parts fixed to the base do not touch it. Some arms start with a part under that plane
+(the UR zero pose puts the wrist there); they can still move away from it.

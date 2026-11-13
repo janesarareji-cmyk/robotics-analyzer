@@ -296,7 +296,7 @@ def plan(robot: Robot, start: Any, goal: Any, obstacles: list | None = None,
         raise InvalidArgument("the robot has no collision geometry: import a URDF with "
                               "geometry or call Robot.set_collision_shapes")
     if shapes:
-        world = CollisionWorld(robot._model, shapes, CollisionConfig(environment=envs))
+        world = CollisionWorld(robot._model, shapes, CollisionConfig(environment=envs, floor=False))
     cancel = current_token()
     check_cancel()
     res = _plan(robot._model, s, g, world, planner=planner, time_limit=float(time_limit),

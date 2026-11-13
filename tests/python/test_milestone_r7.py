@@ -188,6 +188,8 @@ def _load(win):
     lo, hi = (np.asarray(v, float) for v in dof_limits(model))
     for q in (START, GOAL):
         assert np.all(np.asarray(q) >= lo) and np.all(np.asarray(q) <= hi)
+    win.collision_panel.set_fit_mode("obb")                     # the SAT oracle below needs boxes
+    win.collision_panel.set_floor(False)                        # U3: oracle has no floor
     found = win.collision_panel.disable_zero_pose_pairs()       # fitted cubes of finger_l/r overlap
     mid = 0.5 * (np.asarray(START) + np.asarray(GOAL))
     p = fk_numpy(spec, mid)[1][:3, 3]

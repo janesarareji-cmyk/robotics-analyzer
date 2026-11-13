@@ -63,6 +63,12 @@ class CollisionPanel(QWidget):
         self._fit.currentIndexChanged.connect(self._on_fit_changed)
         frow.addWidget(self._fit, 1)
         layout.addLayout(frow)
+        self._floor = QCheckBox("Floor collision")
+        self._floor.setToolTip("The floor is a plane 1 mm below the robot base. Links fixed to the "
+                               "base are not checked against it.")
+        self._floor.setChecked(True)
+        self._floor.toggled.connect(self._on_floor_toggled)
+        layout.addWidget(self._floor)
 
         layout.addWidget(QLabel("Environment shapes"))
         self._env = QTableWidget(0, 5)
@@ -217,6 +223,27 @@ class CollisionPanel(QWidget):
             return
         self.set_fit_mode(self._fit.currentData())
 
+    @property
+    def floor_enabled(self) -> bool:
+        return self._floor.isChecked()
+
+    def set_floor(self, on: bool) -> bool:
+        """Switch the floor plane on or off (saved in ``collision.json``)."""
+        cfg = self._ensure_config()
+        if cfg is None:
+            return False
+        if cfg.floor != bool(on):
+            cfg.floor = bool(on)
+            self._edited(f"Floor collision {'on' if on else 'off'}.")
+        else:
+            self._refresh()
+        return True
+
+    def _on_floor_toggled(self, on: bool) -> None:
+        if self._loading or self._project is None:
+            return
+        self.set_floor(on)
+
     # ------------------------------------------------------------------ environment
     def _on_kind(self, kind: str) -> None:
         labels = {"box": ("size x", "size y", "size z"), "sphere": ("radius", "", ""),
@@ -333,6 +360,7 @@ class CollisionPanel(QWidget):
         cfg = self.config
         self._loading = True
         self._fit.setCurrentIndex(self._fit.findData(cfg.fit_mode if cfg else DEFAULT_FIT_MODE))
+        self._floor.setChecked(cfg.floor if cfg else True)
         self._loading = False
         env = list(cfg.environment) if cfg is not None else []
         edits = sorted(cfg.edits.items()) if cfg is not None else []
@@ -353,5 +381,5 @@ class CollisionPanel(QWidget):
         has = self._project is not None
         for w in (self._btn_add, self._btn_remove, self._btn_acm_add, self._btn_acm_rm,
                   self._btn_zero,
-                  self._btn_auto):
+                  self._btn_auto, self._fit, self._floor):
             w.setEnabled(has)

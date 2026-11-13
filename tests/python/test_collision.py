@@ -62,7 +62,7 @@ def test_adjacent_links_excluded_by_default():
     # sphere (link 0) overlaps link 1 box at every q with q0 = 0, but 0-1 is adjacent
     w.set_q([0.0, 0.0])
     assert not w.in_collision()
-    cfg = CollisionConfig()
+    cfg = CollisionConfig(floor=False)
     cfg.set_check(0, 1, True)
     w2 = CollisionWorld(m, planar_shapes(), cfg)
     w2.set_q([0.0, 0.0])
@@ -98,7 +98,8 @@ def test_disable_always_colliding_at_zero_pose():
 
 def test_environment_box_distance_and_hit():
     cfg = CollisionConfig(environment=[EnvShape("box", {"size": [0.2, 0.2, 0.2]},
-                                                xyz=[2.0, 0.0, 0.0])])
+                                                xyz=[2.0, 0.0, 0.0])],
+                          floor=False)
     sh = planar_shapes(base_sphere_x=-5.0)       # sphere far away
     w = CollisionWorld(planar_2r(), sh, cfg)
     w.set_q([0.0, 0.0])                          # link2 x max 1.5, env x min 1.9
@@ -117,7 +118,7 @@ def test_environment_sphere_and_cylinder_distances():
     cfg = CollisionConfig(environment=[
         EnvShape("sphere", {"radius": 0.25}, xyz=[1.25, 1.0, 0.0]),
         EnvShape("cylinder", {"radius": 0.1, "length": 1.0}, xyz=[-1.0, 0.0, 0.0]),
-    ])
+    ], floor=False)
     w = CollisionWorld(planar_2r(), planar_shapes(base_sphere_x=-5.0), cfg)
     w.set_q([0.0, 0.0])
     d = w.min_distance()

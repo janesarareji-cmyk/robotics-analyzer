@@ -308,7 +308,8 @@ def test_plan_path_is_valid_and_avoids_box():
         d["type"], {"radius": d["radius"]} if d["type"] == "sphere" else {"size": d["size"]},
         d["link"], d["pose"]) for d in r.collision_shapes],
         CollisionConfig(environment=[EnvShape("box", {"size": [0.3, 0.3, 0.4]},
-                                               xyz=[0.0, 1.2, 0.0])]))
+                                               xyz=[0.0, 1.2, 0.0])],
+                        floor=False))
     dense = np.vstack([a + np.linspace(0, 1, int(np.linalg.norm(b - a) / 1e-3) + 2)[:, None] * (b - a)
                        for a, b in zip(path[:-1], path[1:])])
     assert not world.check_batch(dense).any()
