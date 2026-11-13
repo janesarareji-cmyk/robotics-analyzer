@@ -434,6 +434,7 @@ class CurvePanel(QWidget):
 
     def _on_kind(self, _i: int) -> None:
         self._invalidate()
+        self._fill_via_list()
         self._sync_handles()
         self._update_controls()
         self._schedule()
@@ -519,7 +520,7 @@ class CurvePanel(QWidget):
 
     def _fill_via_list(self, select: int = -1) -> None:
         name = self._selected_name()
-        via = self._via.get(name, []) if name is not None else []
+        via = self._via.get(name, []) if name is not None and self.kind != "line" else []
         self._loading = True
         self._via_list.clear()
         for i, v in enumerate(via):

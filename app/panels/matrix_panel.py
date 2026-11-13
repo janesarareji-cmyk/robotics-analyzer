@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+import core_bridge as cb
 from app.analysis.matrices import (
     FORMATS, MatrixData, compute_matrices, export_text, format_matrix, joint_names, pose_for_units,
     q_row,
@@ -83,6 +84,17 @@ class MatrixPanel(QWidget):
         row.addWidget(self._chk_pause)
         row.addStretch(1)
         lay.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Copy as"))
+        self._copy_buttons: dict[str, QPushButton] = {}
+        for fmt, label in (("text", "Text"), ("numpy", "numpy"), ("latex", "LaTeX")):
+            b = QPushButton(label)
+            b.setToolTip(f"Copy every matrix on this panel to the clipboard ({label})")
+            b.clicked.connect(lambda _c=False, f=fmt: self.copy(f))
+            row.addWidget(b)
+            self._copy_buttons[fmt] = b
+        row.addStretch(1)
+        lay.addLayout(row)
 
         g1 = QGroupBox("Tool pose (4 x 4)")
         l1 = QVBoxLayout(g1)
@@ -140,17 +152,6 @@ class MatrixPanel(QWidget):
         l4.addWidget(self._jac)
         lay.addWidget(g4)
 
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Copy as"))
-        self._copy_buttons: dict[str, QPushButton] = {}
-        for fmt, label in (("text", "Text"), ("numpy", "numpy"), ("latex", "LaTeX")):
-            b = QPushButton(label)
-            b.setToolTip(f"Copy every matrix on this panel to the clipboard ({label})")
-            b.clicked.connect(lambda _c=False, f=fmt: self.copy(f))
-            row.addWidget(b)
-            self._copy_buttons[fmt] = b
-        row.addStretch(1)
-        lay.addLayout(row)
         self._note = QLabel("")
         self._note.setWordWrap(True)
         lay.addWidget(self._note)
@@ -168,6 +169,10 @@ class MatrixPanel(QWidget):
         self._joint.clear()
         if model is not None:
             self._joint.addItems(joint_names(model))
+            for i, j in enumerate(model.joints):      # first moving joint, not a fixed world joint
+                if j.type != cb.JointType.Fixed:
+                    self._joint.setCurrentIndex(i)
+                    break
         self._joint.blockSignals(False)
         self._dirty = True
         if self._active and not self._paused:
@@ -365,7 +370,7 @@ class MatrixPanel(QWidget):
             self._tpc.setPlainText("")
             self._tbl.setPlainText("")
         qv = q_row(d)
-        lines = [f"{n:<14.14} {v:10.4f} {'deg' if t == 'revolute' else 'mm'}"
+        lines = [f"{n:<22.22} {v:10.4f} {'deg' if t == 'revolute' else 'mm'}"
                  for n, v, t in zip(d.dof_names, qv, d.dof_types)]
         self._qtext.setPlainText("\n".join(lines))
         _fit_height(self._qtext, max(1, min(len(lines), 8)))
