@@ -81,6 +81,15 @@ class RobotView:
         self._path_actor: Any = None
         self._path_points: np.ndarray | None = None
 
+        # U4b.2 curve tube (independent of the robot actors)
+        self._tube_actor: Any = None
+        self._tube_marks: list[Any] = []
+        self._tube_cursor: Any = None
+        self._tube_points: np.ndarray | None = None
+        self._tube_colors: np.ndarray | None = None
+        self._tube_radius = 0.004
+        self._tube_mesh: Any = None
+
         # U3.5 collision highlight: link indices, env object indices, overlay marker actor
         self._hl_links: set[int] = set()
         self._hl_env: set[int] = set()
@@ -607,6 +616,116 @@ class RobotView:
             had = True
         if had:
             self._render()
+
+    # ------------------------------------------------------------------
+    # U4b.2 curve tube
+    # ------------------------------------------------------------------
+
+    @property
+    def path_tube_actor(self) -> Any:
+        return self._tube_actor
+
+    @property
+    def path_tube_mesh(self) -> Any:
+        return self._tube_mesh
+
+    @property
+    def path_tube_points(self) -> np.ndarray | None:
+        return None if self._tube_points is None else self._tube_points.copy()
+
+    @property
+    def path_tube_colors(self) -> np.ndarray | None:
+        return None if self._tube_colors is None else self._tube_colors.copy()
+
+    @property
+    def path_tube_radius(self) -> float:
+        return float(self._tube_radius)
+
+    @property
+    def path_via_actors(self) -> list[Any]:
+        return list(self._tube_marks)
+
+    @property
+    def path_marker_actor(self) -> Any:
+        return self._tube_cursor
+
+    def _remove_tube_parts(self) -> None:
+        for a in [self._tube_actor, self._tube_cursor, *self._tube_marks]:
+            if a is not None:
+                try:
+                    self._plotter.remove_actor(a)
+                except Exception:
+                    pass
+        self._tube_actor = None
+        self._tube_cursor = None
+        self._tube_marks = []
+
+    def set_path_tube(self, points: Any, colors: Any = None, radius: float | None = None,
+                      via_points: Any = None) -> None:
+        """Draw a curve as a 3D tube (U4b.2). ``points`` (N, 3) world frame, ``colors`` (N, 3) floats
+        0..1 per point (None = one colour), ``radius`` m (default 0.4 % of the robot reach).
+        Small spheres at ``via_points``; green sphere at the start, white at the end. None / <2
+        points removes everything."""
+        import pyvista as pv
+
+        had = self._tube_actor is not None
+        self._remove_tube_parts()
+        self._tube_points = None
+        self._tube_colors = None
+        pts = None if points is None else np.asarray(points, dtype=float).reshape(-1, 3)
+        if pts is None or len(pts) < 2:
+            if had:
+                self._render()
+            return
+        r = float(radius) if radius else max(0.002, 0.004 * self._last_reach())
+        self._tube_radius = r
+        self._tube_points = pts
+        col = np.tile([0.4, 0.73, 0.42], (len(pts), 1)) if colors is None             else np.clip(np.asarray(colors, float).reshape(len(pts), 3), 0.0, 1.0)
+        self._tube_colors = col
+        line_mesh = pv.lines_from_points(pts)
+        line_mesh.point_data["rgb"] = (col * 255).astype(np.uint8)
+        tube = line_mesh.tube(radius=r, n_sides=10)
+        self._tube_mesh = tube
+        self._tube_actor = self._plotter.add_mesh(
+            tube, scalars="rgb", rgb=True, reset_camera=False, pickable=False,
+            show_scalar_bar=False)
+        marks = []
+        specs = [(pts[0], "#43a047", 1.9), (pts[-1], "#ffffff", 1.9)]
+        for v in ([] if via_points is None else np.asarray(via_points, float).reshape(-1, 3)):
+            specs.append((v, "#ffd54f", 1.6))
+        for p, color, k in specs:
+            sph = pv.Sphere(radius=r * k, center=tuple(float(x) for x in p), theta_resolution=16,
+                            phi_resolution=16)
+            marks.append(self._plotter.add_mesh(sph, color=color, reset_camera=False,
+                                                pickable=False))
+        self._tube_marks = marks
+        self._render()
+
+    def set_path_marker(self, point: Any) -> None:
+        """Moving marker on the tube (current sample while playing). None removes it."""
+        import pyvista as pv
+
+        if point is None or self._tube_points is None:
+            if self._tube_cursor is not None:
+                try:
+                    self._plotter.remove_actor(self._tube_cursor)
+                except Exception:
+                    pass
+                self._tube_cursor = None
+                self._render()
+            return
+        p = np.asarray(point, float).reshape(3)
+        if self._tube_cursor is None:
+            sph = pv.Sphere(radius=self._tube_radius * 2.6, theta_resolution=16, phi_resolution=16)
+            self._tube_cursor = self._plotter.add_mesh(sph, color="#ff4081", reset_camera=False,
+                                                       pickable=False)
+        m = np.eye(4)
+        m[:3, 3] = p
+        self._tube_cursor.user_matrix = m
+        self._render()
+
+    def _last_reach(self) -> float:
+        return float(self._last_scale / 0.05) if self._last_scale else 1.0
 
     def clear_workspace(self) -> None:
         """Remove the workspace point cloud and voxel actors."""
