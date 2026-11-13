@@ -77,8 +77,8 @@ def _s_values(n, profile):
     raise ValueError("profile must be 'linear' or 'quintic'")
 
 
-def _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step):
-    lo, hi = dof_limits(model)
+def _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step, limits=None):
+    lo, hi = limits if limits is not None else dof_limits(model)
     cm = cm if cm is not None else cb.compile(model)
     prev = np.asarray(q_seed, float)
     if prev.size != model.dof():
@@ -101,7 +101,8 @@ def _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step):
 
 
 def line(model, T0, T1, q_seed, n: int = 50, duration: float = 1.0, profile: str = "linear",
-         ik_options: dict | None = None, max_joint_step: float = 0.5, cm=None) -> CartesianPath:
+         ik_options: dict | None = None, max_joint_step: float = 0.5, cm=None,
+         limits=None) -> CartesianPath:
     """Straight TCP line from pose ``T0`` to ``T1`` (4x4): linear position, slerp orientation.
 
     ``n`` samples (>= 2) at uniform times over ``duration``; ``profile`` shapes the path
@@ -116,7 +117,7 @@ def line(model, T0, T1, q_seed, n: int = 50, duration: float = 1.0, profile: str
     for k, sk in enumerate(s):
         targets[k, :3, :3] = T0[:3, :3] @ rot_exp(sk * w)
         targets[k, :3, 3] = T0[:3, 3] + sk * (T1[:3, 3] - T0[:3, 3])
-    return _solve(model, cm, targets, u * duration, q_seed, ik_options, max_joint_step)
+    return _solve(model, cm, targets, u * duration, q_seed, ik_options, max_joint_step, limits)
 
 
 def arc_geometry(p0, pv, p1):
@@ -142,7 +143,8 @@ def arc_geometry(p0, pv, p1):
 
 
 def arc(model, T0, via, T1, q_seed, n: int = 50, duration: float = 1.0, profile: str = "linear",
-        ik_options: dict | None = None, max_joint_step: float = 0.5, cm=None) -> CartesianPath:
+        ik_options: dict | None = None, max_joint_step: float = 0.5, cm=None,
+         limits=None) -> CartesianPath:
     """Circular TCP arc from ``T0`` through the point ``via`` to ``T1`` (positions of the
     three points define the circle; orientation slerps from ``T0`` to ``T1`` with the arc
     fraction). Collinear points raise ``ValueError``.
@@ -158,7 +160,7 @@ def arc(model, T0, via, T1, q_seed, n: int = 50, duration: float = 1.0, profile:
         th = sk * sweep
         targets[k, :3, :3] = T0[:3, :3] @ rot_exp(sk * w)
         targets[k, :3, 3] = c + r * (math.cos(th) * e1 + math.sin(th) * e2)
-    res = _solve(model, cm, targets, u * duration, q_seed, ik_options, max_joint_step)
+    res = _solve(model, cm, targets, u * duration, q_seed, ik_options, max_joint_step, limits)
     res.extra.update(center=c, radius=r, sweep=sweep)
     return res
 
@@ -224,7 +226,7 @@ def via_poses(T0, T1, positions):
 
 def spline(model, poses, q_seed, n_per_seg: int = 30, duration: float = 1.0,
            profile: str = "linear", ik_options: dict | None = None, max_joint_step: float = 0.5,
-           cm=None) -> CartesianPath:
+           cm=None, limits=None) -> CartesianPath:
     """TCP path through ``poses`` (list of 4x4: start, via ..., end).
 
     Position: centripetal Catmull-Rom through all poses (``spline_positions``). Orientation: slerp
@@ -256,6 +258,6 @@ def spline(model, poses, q_seed, n_per_seg: int = 30, duration: float = 1.0,
         ts = np.interp(a, s, g) * duration
     else:
         raise ValueError("profile must be 'linear' or 'quintic'")
-    res = _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step)
+    res = _solve(model, cm, targets, ts, q_seed, ik_options, max_joint_step, limits)
     res.extra.update(key_idx=key, length=length)
     return res

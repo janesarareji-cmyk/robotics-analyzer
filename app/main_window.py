@@ -34,6 +34,7 @@ from app.panels.ghost_panel import GhostPanel
 from app.panels.collision_panel import CollisionPanel
 from app.panels.compare_panel import ComparePanel
 from app.panels.target_panel import TargetPanel
+from app.panels.curve_panel import CurvePanel
 from app.panels.script_panel import ScriptPanel
 from app.script_runner import ScriptRunner
 from app.panels.plugin_manager_panel import PluginManagerPanel
@@ -323,6 +324,11 @@ class MainWindow(QMainWindow):
         self._action_view_target.setCheckable(True)
         self._action_view_target.setChecked(False)
         view_menu.addAction(self._action_view_target)
+
+        self._action_view_curve = QAction("&Curve", self)
+        self._action_view_curve.setCheckable(True)
+        self._action_view_curve.setChecked(False)
+        view_menu.addAction(self._action_view_curve)
 
         self._action_view_script = QAction("Scr&ipt console", self)
         self._action_view_script.setCheckable(True)
@@ -672,6 +678,16 @@ class MainWindow(QMainWindow):
         self._target_panel.targets_changed.connect(self._on_targets_changed)
         self._target_panel.trajectory_ready.connect(self._on_target_trajectory)
 
+        # Curve dock (U4b.3): line / arc / spline from the current pose to the target(s).
+        self._curve_panel = CurvePanel(self._task_runner)
+        self._curve_dock = self._add_tool_dock(
+            "Curve", "curve_dock", self._curve_panel, self._action_view_curve, 380)
+        self._curve_panel.attach_viewport(self._viewport)
+        self._curve_panel.attach_target_panel(self._target_panel)
+        self._curve_panel.set_collision_service(self._collision_service)
+        self._curve_panel.log_requested.connect(self.log)
+        self._curve_panel.trajectory_ready.connect(self._on_curve_trajectory)
+
         # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
         self._script_runner = ScriptRunner(
             self._task_runner, project_provider=lambda: self._project_controller.current_project,
@@ -745,6 +761,7 @@ class MainWindow(QMainWindow):
             (self._action_view_collision, self._collision_dock),
             (self._action_view_compare, self._compare_dock),
             (self._action_view_target, self._target_dock),
+            (self._action_view_curve, self._curve_dock),
             (self._action_view_script, self._script_dock),
             (self._action_view_plugins, self._plugin_dock),
         ]
@@ -830,6 +847,7 @@ class MainWindow(QMainWindow):
         items = [
             (self._action_view_model, "Model"), (self._action_view_joints, "Joints"),
             (self._action_view_dh, "DH"), (self._action_view_ik, "IK"), (self._action_view_target, "Target"),
+            (self._action_view_curve, "Curve"),
             (self._action_view_analysis, "Analysis"), (self._action_view_workspace, "Workspace"),
             (self._action_view_simulation, "Sim"), (self._action_view_graphs, "Graphs"),
             (self._action_view_planning, "Planning"), (self._action_view_ghosts, "Ghosts"),
@@ -1001,6 +1019,7 @@ class MainWindow(QMainWindow):
         self._ik_panel.notify_q_edited()
         self._analysis_panel.refresh()
         self._sim_panel.notify_q_edited()
+        self._curve_panel.notify_q_changed()
 
     def _add_tool_dock(self, title: str, name: str, widget: QWidget, action: QAction,
                        min_width: int = 260) -> QDockWidget:
@@ -1028,6 +1047,8 @@ class MainWindow(QMainWindow):
         self._viewport.robot_view.set_collision_highlight()
         self._target_panel.set_project(project)
         self._target_panel.set_model(model)
+        self._curve_panel.set_project(project)
+        self._curve_panel.set_model(model)
         gp = self._ghost_panel
         gp.set_store(project.configs if project is not None else None)
         gp.set_model(model)
@@ -1183,6 +1204,21 @@ class MainWindow(QMainWindow):
         sp.play_trajectory()
         self.set_status("Playing the motion to the target")
 
+    def _on_curve_trajectory(self, traj: Any, info: dict) -> None:
+        """Curve dock Generate / Play: load the timed curve into the timeline (and play it)."""
+        sp = self._sim_panel
+        if not sp.load_trajectory(traj):
+            self.log("[WARNING] Curve trajectory does not fit the robot: not loaded.")
+            return
+        if info.get("play"):
+            sp.set_mode("kinematic")
+            sp.set_background_play(True)
+            sp.play_trajectory()
+            self.set_status(f"Playing the curve ({info.get('duration', 0.0):.1f} s)")
+        else:
+            self.set_status(f"Curve ready in the timeline ({info.get('duration', 0.0):.1f} s). "
+                            "Open Simulation to play it.")
+
     def _on_planned_trajectory(self, traj: Any) -> None:
         """Planning panel Send to trajectory: fill the trajectory editor (and the project)."""
         if not self._sim_panel.load_trajectory(traj):
@@ -1235,6 +1271,7 @@ class MainWindow(QMainWindow):
             return
         self._joint_panel.set_model(model, save_baseline=False)
         self._update_robot_view(reset_camera=False)
+        self._curve_panel.notify_q_changed()
 
     def _on_tcp_drag_committed(self) -> None:
         """Drag TCP released: final q kept, project modified."""
@@ -1246,6 +1283,7 @@ class MainWindow(QMainWindow):
         self._ik_panel.notify_q_edited()
         self._analysis_panel.refresh()
         self._sim_panel.notify_q_edited()
+        self._curve_panel.notify_q_changed()
 
     def _on_tcp_reachable(self, ok: bool) -> None:
         self.set_status("Ready" if ok else "Target not reachable")
@@ -1269,6 +1307,7 @@ class MainWindow(QMainWindow):
             self._dh_editor.refresh_q()
         self._update_robot_view(reset_camera=False)
         self._analysis_panel.refresh()
+        self._curve_panel.notify_q_changed()
 
     def _on_physical_edited(self) -> None:
         """Mass / COM / inertia edited in the Physical panel."""
@@ -1840,6 +1879,7 @@ class MainWindow(QMainWindow):
             return
         self._tcp_drag.dispose()
         self._target_panel.dispose()
+        self._curve_panel.dispose()
         self._compare_panel.shutdown()
         self._script_runner.cancel()
         self._workspace_panel.cancel()
@@ -2026,6 +2066,15 @@ class MainWindow(QMainWindow):
     @property
     def target_dock(self) -> QDockWidget:
         return self._target_dock
+
+    @property
+    def curve_panel(self) -> CurvePanel:
+        """Curve dock content (U4b.3)."""
+        return self._curve_panel
+
+    @property
+    def curve_dock(self) -> QDockWidget:
+        return self._curve_dock
 
     @property
     def compare_panel(self) -> ComparePanel:

@@ -11,7 +11,8 @@
 * joint_jump: the solution jumps more than ``max_joint_step`` from the previous sample (branch flip)
 
 Sample status: ``bad`` (not reachable, colliding, joint jump), ``warn`` (sigma_min below
-``SINGULAR_WARN`` or clearance below ``CLEARANCE_WARN``), else ``ok``. Samples behind the first
+``SINGULAR_WARN`` or clearance below ``CLEARANCE_WARN``, or half the start clearance when the
+robot already starts tighter than that), else ``ok``. Samples behind the first
 unreachable one are bad too: the arm cannot get there.
 """
 from __future__ import annotations
@@ -112,6 +113,7 @@ def check_path(model: Any, cpath: Any, collision: Any = None, cm: Any = None,
     clr = np.full(n, np.nan)
     reasons = [""] * n
     allowed: dict = {}
+    warn_clr = CLEARANCE_WARN
     for k in range(n):
         if k >= k_ok:
             status[k] = BAD
@@ -148,7 +150,9 @@ def check_path(model: Any, cpath: Any, collision: Any = None, cm: Any = None,
                 allowed = res.depths()
             if res.ok:
                 clr[k] = float(collision.clearance(q))
-                warn = warn or clr[k] < CLEARANCE_WARN
+                if k == 0 and np.isfinite(clr[k]):         # a pair that is tight at the start
+                    warn_clr = min(CLEARANCE_WARN, 0.5 * max(clr[k], 0.0))   # is not news
+                warn = warn or clr[k] < warn_clr
             else:
                 clr[k] = float(min(res.depths().values(), default=0.0))
                 if res.worse_than(allowed):

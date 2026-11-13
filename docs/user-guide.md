@@ -387,3 +387,22 @@ Open the Target dock (side bar "Target", View -> Target).
    collision like any other motion. Targets are saved in the project (targets.json).
 
 Details: [targets](targets.md).
+
+## 16. Curve, follow and live matrices (U4b)
+
+Open the Curve dock (side bar "Curve", it sits next to Target).
+
+1. Make a target in the Target dock. The Curve dock draws a curve from the current arm pose to it.
+2. Type: Line, Arc (through one via point) or Spline (through any number of via points). "Add via
+   point" puts one in the middle of the longest part; drag the yellow sphere in the 3D view or type X Y Z.
+3. The 3D tube shows problems before you play: green = fine, orange = near a singularity or tight
+   to an obstacle, red = unreachable, colliding or a joint flip. "Colour by" switches to TCP speed,
+   collision clearance or singularity closeness. Play and Generate are off while a part is red; the
+   tooltip says which sample and when.
+4. Timing: constant TCP speed, or time-optimal (uses the joint speed, acceleration and torque limits).
+   "Chain several targets" visits the ticked targets in order and shows the total cycle time.
+5. "Generate" puts the curve into the timeline (Simulation dock); "Play" also plays it. A pink
+   marker runs along the tube, a purple ghost shows the end pose. Use the timeline Play / Pause / Stop,
+   speed and scrub slider to follow it.
+
+Details: [curves](curves.md).

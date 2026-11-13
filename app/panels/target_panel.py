@@ -409,6 +409,15 @@ class TargetPanel(QWidget):
         return self._motion_status.text()
 
     @property
+    def target_combo(self) -> QComboBox:
+        return self._combo
+
+    @property
+    def current_index(self) -> int:
+        """Index of the selected target in the store (-1 = none)."""
+        return self._current_index()
+
+    @property
     def table(self) -> QTableWidget:
         return self._table
 

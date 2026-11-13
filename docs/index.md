@@ -26,6 +26,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [Trajectory and playback](trajectory.md): trajectory model, interpolation, project format 1.2.0, 1.3.0 and 1.4.0.
 -   [Collision](collision.md): shapes, allowed collision matrix, project format 1.3.0.
 -   [Targets and ranked IK](targets.md): 3D target, ranked solutions, ghost preview, play to target (U4a).
+-   [Curves, follow and live matrices](curves.md): line / arc / spline, path check, coloured tube, matrix panel (U4b).
 
 ## Import
 
