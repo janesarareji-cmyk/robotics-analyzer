@@ -419,6 +419,6 @@ def _peek_old_version(path: str) -> str | None:
         with zipfile.ZipFile(path) as zf:
             meta = json.loads(zf.read("project_metadata.json").decode("utf-8"))
         v = meta.get("format_version")
-    except (OSError, KeyError, ValueError, zipfile.BadZipFile, AttributeError):
+    except Exception:   # best effort peek: any damage is reported later by load()
         return None
     return v if isinstance(v, str) and is_older(v) else None
