@@ -79,6 +79,11 @@ Specs in `docs/specs/` are the work orders for each stage. They are kept for the
 -   [A1 spec](specs/A1-spec.md)
 -   [F1 spec](specs/F1-spec.md)
 -   [U2 spec](specs/U2-spec.md)
+-   [U3 spec](specs/U3-spec.md)
+-   [U4a spec](specs/U4a-spec.md)
+-   [U4b spec](specs/U4b-spec.md)
+-   [U5 spec](specs/U5-spec.md)
+-   [U6 spec](specs/U6-spec.md)
 
 ## Plans
 

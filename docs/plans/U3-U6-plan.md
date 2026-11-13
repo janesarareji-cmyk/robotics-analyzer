@@ -4,6 +4,18 @@ Agreed with the user on 2026-11-14. This is what we build next, in this order.
 Each stage gets its own spec pack `docs/specs/<stage>-spec.md`, written before the
 stage starts. Workflow rules: `.agents/rules/dev-workflow.md`.
 
+## Spec packs (complete, written 2026-11-14)
+
+| Stage | Spec | Substages |
+|-------|------|-----------|
+| U3 | `docs/specs/U3-spec.md` | U3.1 hull shapes, U3.2 auto ACM, U3.3 floor + CollisionService, U3.4 live blocking, U3.5 red highlight, U3.6 objects, U3.7 grasp, U3.8 second robot (optional), U3.9 stage end |
+| U4a | `docs/specs/U4a-spec.md` | U4a.1 target + 3D handle, U4a.2 ranked IK, U4a.3 ghost preview, U4a.4 Target panel + play, U4a.5 stage end |
+| U4b | `docs/specs/U4b-spec.md` | U4b.1 spline path, U4b.2 path check + tube, U4b.3 curve editor, U4b.4 follow + timeline, U4b.5 matrix panel, U4b.6 stage end |
+| U5 | `docs/specs/U5-spec.md` | U5.1 measure, U5.2 skill review, U5.3 redesign, U5.4 measure again, U5.5 stage end |
+| U6 | `docs/specs/U6-spec.md` | U6.1 overlay framework, U6.2 reach, U6.3 singularity zones, U6.4 load overlay, U6.5 timeline + video, U6.6 stage end, tag v1.1 |
+
+Common rules for all five: `docs/specs/U3-spec.md` "Common rules".
+
 ## Goal
 
 1. Robots act like real ones: links never pass through each other, the floor or objects.
