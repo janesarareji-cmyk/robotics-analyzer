@@ -139,6 +139,14 @@ Forward kinematics, the Jacobian and singularity indicators are described in
 Details: [analysis-panels.md](analysis-panels.md) (IK dock) and [jacobian-ik.md](jacobian-ik.md)
 (method, multiple solutions, limits).
 
+**Drag TCP (View -> Robot -> Drag TCP, key T, toolbar button):** a sphere handle appears at the TCP.
+Drag it with the left mouse button; the robot follows (IK, seed = current joints, position plus the
+current orientation, position only for robots with fewer than 6 arm DOF such as xArm 5). Gripper DOFs
+do not move. If the target cannot be reached the robot stays at the last good pose, the handle turns
+red and the status bar says "Target not reachable". On release the pose is kept (project modified)
+and the handle snaps to the TCP. Camera rotation with the mouse works as before when you do not
+press on the handle. Switch the action off to remove the handle.
+
 ## 5. Dynamics and analysis
 
 **View -> Analysis** shows the results at the current joint vector:

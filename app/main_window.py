@@ -344,6 +344,13 @@ class MainWindow(QMainWindow):
         self._action_show_visuals.setChecked(True)
         self._menu_robot.addAction(self._action_show_visuals)
 
+        self._action_drag_tcp = QAction("&Drag TCP", self)
+        self._action_drag_tcp.setCheckable(True)
+        self._action_drag_tcp.setShortcut(QKeySequence("T"))
+        self._action_drag_tcp.setToolTip("Drag the TCP handle in the 3D view (IK, T)")
+        self._action_drag_tcp.setStatusTip("Drag the TCP handle in the 3D view; the robot follows (IK)")
+        self._menu_robot.addAction(self._action_drag_tcp)
+
         # Robot menu (top-level)
         robot_menu = menubar.addMenu("&Robot")
         self._action_set_tcp = QAction("Set &TCP link...", self)
@@ -384,6 +391,7 @@ class MainWindow(QMainWindow):
         self._action_reset_camera.setToolTip("Reset camera to fit all objects")
         self._action_reset_camera.triggered.connect(self._on_reset_camera)
         toolbar.addAction(self._action_reset_camera)
+        toolbar.addAction(self._action_drag_tcp)
         toolbar.addAction(self._action_focus)
 
     def _setup_status_bar(self) -> None:
@@ -410,6 +418,15 @@ class MainWindow(QMainWindow):
         self._action_show_links.toggled.connect(self._viewport.robot_view.set_show_links)
         self._action_show_tcp.toggled.connect(self._viewport.robot_view.set_show_tcp)
         self._action_show_visuals.toggled.connect(self._viewport.robot_view.set_show_visuals)
+
+        # U2.6: drag the TCP handle (IK on the GUI thread, throttled)
+        from app.viewport.tcp_drag import TcpDragController
+        self._tcp_drag = TcpDragController(
+            self._viewport, lambda: self._project_controller.robot, parent=self)
+        self._tcp_drag.q_changed.connect(self._on_tcp_drag_q)
+        self._tcp_drag.committed.connect(self._on_tcp_drag_committed)
+        self._tcp_drag.reachable_changed.connect(self._on_tcp_reachable)
+        self._action_drag_tcp.toggled.connect(self._tcp_drag.set_enabled)
 
     def _setup_dock_panels(self) -> None:
         """Create and place all dock panels."""
@@ -845,6 +862,7 @@ class MainWindow(QMainWindow):
         if project.robot_model is not None:
             self._dh_editor.set_model(project.robot_model)
             self._joint_panel.set_model(project.robot_model, save_baseline=True)
+            self._tcp_drag.invalidate()
             self._ik_panel.set_model(project.robot_model)
             self._analysis_panel.set_model(project.robot_model)
             self._workspace_panel.set_model(project.robot_model)
@@ -871,6 +889,7 @@ class MainWindow(QMainWindow):
     def _on_project_closed(self) -> None:
         """Clear viewport and disable actions on project close."""
         self._viewport.robot_view.clear()
+        self._tcp_drag.rebuild()
         self._dh_editor.set_model(None)
         self._joint_panel.set_model(None)
         self._physical_panel.set_model(None)
@@ -1020,6 +1039,37 @@ class MainWindow(QMainWindow):
         self._update_robot_view(reset_camera=False)
         self._analysis_panel.refresh()
 
+    def _on_tcp_drag_q(self) -> None:
+        """Drag TCP: live q written to the model (not committed yet)."""
+        model = self._project_controller.robot
+        if model is None:
+            return
+        self._joint_panel.set_model(model, save_baseline=False)
+        self._update_robot_view(reset_camera=False)
+
+    def _on_tcp_drag_committed(self) -> None:
+        """Drag TCP released: final q kept, project modified."""
+        if not self._project_controller.has_project:
+            return
+        self._project_controller.mark_modified()
+        if self._dh_editor.get_model() is not None:
+            self._dh_editor.refresh_q()
+        self._ik_panel.notify_q_edited()
+        self._analysis_panel.refresh()
+        self._sim_panel.notify_q_edited()
+
+    def _on_tcp_reachable(self, ok: bool) -> None:
+        self.set_status("Ready" if ok else "Target not reachable")
+
+    @property
+    def tcp_drag(self):
+        """TCP drag controller (U2.6)."""
+        return self._tcp_drag
+
+    @property
+    def drag_tcp_action(self) -> QAction:
+        return self._action_drag_tcp
+
     def _on_ik_applied(self) -> None:
         """IK Apply: the previewed q is now the model q."""
         if not self._project_controller.has_project:
@@ -1043,6 +1093,7 @@ class MainWindow(QMainWindow):
             self._dh_editor.set_model(model)
         self._joint_panel.set_model(model, save_baseline=False)
         self._physical_panel.set_model(model)
+        self._tcp_drag.invalidate()
         self._ik_panel.set_model(model)
         self._analysis_panel.set_model(model)
         self._workspace_panel.set_model(model)
@@ -1477,6 +1528,7 @@ class MainWindow(QMainWindow):
             import core_bridge as cb
             fk_res = cb.fk(model)
             self._viewport.robot_view.update(model, fk_res)
+            self._tcp_drag.refresh()
             self._joint_panel.update_tcp_readout(fk_res["tcp"])
             self._physical_panel.update_readout()
             if reset_camera:
@@ -1515,6 +1567,7 @@ class MainWindow(QMainWindow):
         if not self._project_controller.close_project(self):
             event.ignore()
             return
+        self._tcp_drag.dispose()
         self._script_runner.cancel()
         self._workspace_panel.cancel()
         self._workspace_panel.dispose()
