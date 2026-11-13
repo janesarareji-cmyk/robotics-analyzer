@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt, Signal
 
 import core_bridge as cb
 from app.gripper import gripper_dofs
+from app.kin_utils import current_q, write_q
 from app.panels.model_panel import joint_links, resolved_tcp_link
 
 # Multiplier for mapping continuous angles/displacements to integer QSlider
@@ -174,6 +175,7 @@ class JointPanel(QWidget):
     """
 
     q_changed = Signal()
+    blocked = Signal(str)       # U3.4: a move was stopped by the motion guard (status text)
     log_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
@@ -336,16 +338,37 @@ class JointPanel(QWidget):
     def gripper_group(self) -> QGroupBox:
         return self._gripper_group
 
+    def set_guard(self, fn: Any) -> None:
+        """Collision guard ``fn(q_new, q_old=None) -> (q_final, blocked)`` (None = off)."""
+        self._guard = fn
+
+    def _guarded(self, new_q: list[float]) -> tuple[list[float], bool]:
+        """Filter a wanted full q through the guard. ``(q, blocked)``."""
+        guard = getattr(self, "_guard", None)
+        if guard is None or self._model is None:
+            return new_q, False
+        return guard(new_q)
+
     def set_gripper(self, closed_fraction: float) -> None:
-        """Move every gripper DOF to ``closed_fraction`` (0 = open, 1 = closed)."""
+        """Move every gripper DOF to ``closed_fraction`` (0 = open, 1 = closed).
+
+        With collision blocking the fingers stop at the first contact; the slider shows the
+        fraction actually reached.
+        """
         if self._model is None or not self._gripper:
             return
         f = min(max(float(closed_fraction), 0.0), 1.0)
+        want = current_q(self._model)
+        for g in self._gripper:
+            want[g.dof_index] = g.value_at(f)
+        final, blocked = self._guarded(want)
+        if blocked:
+            f = self._gripper[0].fraction_of(final[self._gripper[0].dof_index])
+            want = final
         self._updating = True
         try:
             for g in self._gripper:
-                v = g.value_at(f)
-                self._model.joints[g.joint_index].q = v
+                self._model.joints[g.joint_index].q = want[g.dof_index]
             self._sync_gripper_slider(f)
             self._sync_values_to_ui_force()
         finally:
@@ -485,6 +508,17 @@ class JointPanel(QWidget):
         if self._updating or self._model is None:
             return
         if 0 <= joint_index < len(self._model.joints):
+            dof = self._model.q_index_map()[joint_index]
+            if dof >= 0 and getattr(self, "_guard", None) is not None:
+                want = current_q(self._model)
+                want[dof] = new_q
+                final, blocked = self._guarded(want)
+                if blocked:                       # U3.4: slider goes back to the last free q
+                    write_q(self._model, final)
+                    self._sync_values_to_ui()
+                    self.blocked.emit(self._guard_text())
+                    self.q_changed.emit()
+                    return
             self._model.joints[joint_index].q = new_q
             # Re-check warning label for this row
             for row in self._all_rows():
@@ -493,6 +527,11 @@ class JointPanel(QWidget):
                     row.warning_label.setVisible(out)
                     break
             self.q_changed.emit()
+
+    def _guard_text(self) -> str:
+        g = getattr(self, "_guard", None)
+        owner = getattr(g, "__self__", None)
+        return getattr(owner, "text", "") or "Blocked by collision"
 
     def _on_zero_all(self) -> None:
         """Set all non-fixed joint values to 0.0 (clamped to limits)."""

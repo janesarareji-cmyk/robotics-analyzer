@@ -40,6 +40,7 @@ class IKPanel(QWidget):
     target_changed = Signal(object)    # 4x4 iso or None (target triad)
     preview_changed = Signal()         # model q written for a preview / cancel
     applied = Signal()                 # preview committed (project is dirty)
+    blocked = Signal(str)              # U3.4: Apply refused, the solution collides
     log_requested = Signal(str)
 
     def __init__(self, task_runner: Any, parent=None):
@@ -53,6 +54,7 @@ class IKPanel(QWidget):
         self._running = False
         self._generation = 0       # bumped on model change: stale results dropped
         self._task: Any = None
+        self._guard: Any = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -270,11 +272,24 @@ class IKPanel(QWidget):
         self._task = task
         self._runner.submit(task)
 
+    def set_guard(self, fn: Any) -> None:
+        """U3.4: ``fn(q) -> (q | None, blocked)``; Apply refuses a colliding solution."""
+        self._guard = fn
+
     def apply(self) -> None:
         """Commit the previewed solution to the model q (project becomes dirty)."""
         row = self._selected_row()
         if self._model is None or row is None:
             return
+        guard = getattr(self, "_guard", None)
+        if guard is not None:
+            _q, blocked = guard(self._solutions[row]["q"])
+            if blocked:
+                owner = getattr(guard, "__self__", None)
+                self.cancel_preview()
+                self.log_requested.emit("[WARNING] IK: solution not applied, it collides.")
+                self.blocked.emit(getattr(owner, "text", "") or "Blocked by collision")
+                return
         write_q(self._model, self._solutions[row]["q"])
         self._baseline_q = None
         self._previewing = False

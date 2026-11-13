@@ -35,6 +35,7 @@ class AppSettings:
     KEY_SHOW_COORDINATE_FRAMES = "viewport/show_frames"
     KEY_SHOW_GRID = "viewport/show_grid"
     KEY_SHOW_FLOOR = "viewport/show_floor"             # U2.3
+    KEY_COLLISION_ENABLED = "collision/enabled"        # U3.4
     KEY_COMPUTE_BACKEND = "compute/backend"            # "auto" | "cpu" | "cuda"  (R5.5)
     KEY_VRAM_BUDGET_MB = "compute/vram_budget_mb"      # 256..7168, default 6144 (R5.5)
 
@@ -176,6 +177,16 @@ class AppSettings:
     def set_show_floor(self, visible: bool) -> None:
         """Set floor grid visibility."""
         self._settings.setValue(self.KEY_SHOW_FLOOR, bool(visible))
+
+    def collision_enabled(self) -> bool:
+        """Return True if live collision blocking is on (default True; off = pass-through)."""
+        val = self._settings.value(self.KEY_COLLISION_ENABLED, True)
+        if isinstance(val, str):
+            return val.lower() == "true"
+        return bool(val)
+
+    def set_collision_enabled(self, on: bool) -> None:
+        self._settings.setValue(self.KEY_COLLISION_ENABLED, bool(on))
 
     # ------------------------------------------------------------------
     # Compute (R5.5)

@@ -29,6 +29,7 @@ def win(qapp, monkeypatch):
     monkeypatch.setattr(AppSettings, "_APPLICATION", "RoboticsAnalyzer_test_u2t")
     w = MainWindow()
     w.settings._settings.clear()
+    w.collision_service.enabled = False         # these tests move through poses; U3 has its own
     w.show()
     yield w
     w.project_controller._is_modified = False

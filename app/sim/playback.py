@@ -8,6 +8,8 @@ Stop restores the engine initial state (the pose before playback).
 """
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 
 import core_bridge as cb
@@ -46,6 +48,13 @@ class TrajectoryPlayer:
         self.loop = bool(loop)
         self.finished = False
         self._t = 0.0
+        # U3.4: ``collision_check(q) -> (contacts, text)``, contacts = {pair: signed distance},
+        # empty = free. Playback stops at the last free sample; contacts present at play() start
+        # are allowed (not deeper than 1 mm).
+        self.collision_check: Callable | None = None
+        self.collision_stop: tuple[float, str] | None = None   # (t, text) until popped
+        self._allowed: dict = {}
+        self._last_free = None
         if mode == DYNAMIC:
             engine.torque_fn = self._torque
 
@@ -101,6 +110,19 @@ class TrajectoryPlayer:
         self.finished = t >= self.duration
         return self.engine.state
 
+    def _contacts(self, q) -> tuple[dict, str]:
+        return self.collision_check(np.asarray(q, float))
+
+    def _free(self, q) -> tuple[bool, str]:
+        cont, text = self._contacts(q)
+        return all(k in self._allowed and d >= self._allowed[k] - 1e-3
+                   for k, d in cont.items()), text
+
+    def pop_collision_stop(self):
+        """``(t, text)`` of a collision stop since the last call, else None."""
+        s, self.collision_stop = self.collision_stop, None
+        return s
+
     def play(self) -> None:
         """STOPPED: start from the current position (restart at the end);
         PAUSED: resume; RUNNING: nothing."""
@@ -109,6 +131,11 @@ class TrajectoryPlayer:
             return
         if self.finished or self.t >= self.duration:
             self.seek(0.0)
+        self.collision_stop = None
+        if self.collision_check is not None:
+            self._allowed = self._contacts(e.state.q)[0]
+            s = e.state
+            self._last_free = (self.t, s.q.copy(), s.qd.copy())
         if e.clock.state == STOPPED:
             self._apply(self.t)
             e.start()
@@ -146,12 +173,38 @@ class TrajectoryPlayer:
             if reached and self.loop:
                 t = t % T
                 reached = False
-            self._apply(min(t, T))
+            t = min(t, T)
+            if self.collision_check is not None and t >= self._t:
+                ok, text = self._free(self.traj.q(t))
+                if not ok:
+                    lo, hi = self._t, t           # last free time: bisection on the trajectory
+                    for _ in range(14):
+                        m = 0.5 * (lo + hi)
+                        if self._free(self.traj.q(m))[0]:
+                            lo = m
+                        else:
+                            hi = m
+                    self._apply(lo)
+                    self.collision_stop = (lo, text)
+                    self.finished = False
+                    e.pause()
+                    return False
+            self._apply(t)
         else:
             left = T - self.t
             # sim time advanced = min(dt, left): speed only, the engine's time_scale multiplier
             # is divided out so kinematic and dynamic play at the same rate (audit LOW)
             e.advance(min(dt, left) / e.time_scale)
+            if self.collision_check is not None:
+                s = e.state
+                ok, text = self._free(s.q)
+                if not ok and self._last_free is not None:
+                    t0, q0, qd0 = self._last_free
+                    e.set_state(t0, q0, qd0)
+                    self.collision_stop = (float(t0), text)
+                    e.pause()
+                    return False
+                self._last_free = (float(s.t), s.q.copy(), s.qd.copy())
             reached = self.t >= T - 1e-9
             if reached and self.loop:
                 self._apply(0.0)

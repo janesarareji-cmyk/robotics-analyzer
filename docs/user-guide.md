@@ -339,3 +339,13 @@ start pose are not checked. The Collision dock lists them with source `auto`; yo
 Floor: the Collision dock has "Floor collision" (default on). The floor is a plane 1 mm under the
 robot base; parts fixed to the base do not touch it. Some arms start with a part under that plane
 (the UR zero pose puts the wrist there); they can still move away from it.
+
+Live blocking: with the toolbar button "Collision" on (default), the robot cannot be moved into
+itself, the floor or an object. A slider that would enter a collision stops at the last free value
+and goes back; the status bar says "Blocked: <link A> touches <link B>". Drag TCP stops the same way
+and its handle turns red. The gripper slider stops closing at the first contact. IK "Apply" refuses a
+solution that collides. Teach "Add pose" refuses a pose that touches the robot or an object.
+Playback stops at the last free sample ("Playback stopped: collision at t = ... s"). Switch the
+button off to pass through shapes. If a pose already touches something (floor, for example), moves
+that do not add a contact or push an existing one deeper than 1 mm are allowed, so you can always
+move away.

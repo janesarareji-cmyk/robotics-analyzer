@@ -52,6 +52,7 @@ def win(qapp, monkeypatch):
     s.clear()
     s.sync()
     w = MainWindow()
+    w.collision_service.enabled = False         # R6 plays trajectories without collision blocking
     w.show()
     yield w
     w.project_controller._is_modified = False

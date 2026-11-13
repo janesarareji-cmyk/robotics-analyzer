@@ -45,6 +45,21 @@ signal `collision_changed` (only when the colliding pair set changes), `enabled 
 A start that already touches something (UR zero pose: wrist under the base plane) may move on while
 no new contact pair appears. Speed (median per check, random poses): xarm6 0.05 ms, panda 0.07 ms.
 
+## Live blocking (U3.4)
+`app/motion_guard.py` `MotionGuard` sits between every motion input and the model q. `filter(q_new)`
+returns the last free q on the joint segment from the current q (`CollisionService.first_free`) and a
+`blocked` flag, status text "Blocked: A touches B"; `reject_jump(q_new)` refuses a whole far target.
+Wired inputs: joint slider / spinbox (the slider goes back to the last free value), Drag TCP (handle
+turns red, "Blocked: ..."), gripper open/close slider (closing stops at the first contact, finger vs
+object or finger vs finger hull), IK Apply (a colliding solution is not applied; preview is
+cancelled), Teach Add (refuses a pose that touches the robot itself or an object; floor-only contact
+is allowed), trajectory playback (kinematic and dynamic): `TrajectoryPlayer.collision_check` stops at
+the last free sample, kinematic mode bisects the time to the contact; status "Playback stopped:
+collision at t = ... s". Toolbar and Robot menu action "Collision" (saved in AppSettings
+`collision/enabled`, default on); off = old pass-through. Not guarded: Zero all / Reset joint buttons,
+sim state replay when seeking, Ghost panel (it has no apply-to-robot action) and Planning (it plans
+a trajectory; playing it is guarded).
+
 ## Allowed collision matrix (ACM)
 Default: parent-child link pairs are not checked. `CollisionConfig.edits[(a, b)]` = `True` (force
 check) or `False` (never check) overrides. `CollisionWorld.disable_always_colliding()` (panel button

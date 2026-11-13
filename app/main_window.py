@@ -43,6 +43,8 @@ from app.panels.import_report_panel import ImportReportPanel, find_element
 from app.settings import AppSettings, LAYOUT_VERSION
 from app.sample_robots import list_sample_robots
 from app.collision_service import CollisionService
+from app.motion_guard import MotionGuard
+from app.planning.collision import FLOOR_ID
 from app.task_runner import TaskRunner
 from app.project.project_controller import ProjectController
 from app.project.project_data import ProjectData
@@ -73,6 +75,9 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings()
         self._task_runner = TaskRunner(parent=self)
         self._collision_service = CollisionService(self)
+        self._motion_guard = MotionGuard(
+            self._collision_service, lambda: self._project_controller.robot,
+            lambda text: self.set_status(text))
         self._project_controller = ProjectController(
             settings=self._settings, parent=self
         )
@@ -90,6 +95,7 @@ class MainWindow(QMainWindow):
         self._setup_side_bar()
         self._default_state = self.saveState()     # U1: before user state is restored
         self._restore_layout()
+        self._wire_collision()
 
     # ------------------------------------------------------------------
     # Setup methods
@@ -359,6 +365,15 @@ class MainWindow(QMainWindow):
         self._action_drag_tcp.setStatusTip("Drag the TCP handle in the 3D view; the robot follows (IK)")
         self._menu_robot.addAction(self._action_drag_tcp)
 
+        self._action_collision = QAction("&Collision", self)
+        self._action_collision.setCheckable(True)
+        self._action_collision.setChecked(self._settings.collision_enabled())
+        self._action_collision.setToolTip(
+            "Block moves into collisions (self, floor, objects). Off: pass-through")
+        self._action_collision.setStatusTip(
+            "Collision blocking on; switch off to let the robot pass through shapes")
+        self._menu_robot.addAction(self._action_collision)
+
         # Robot menu (top-level)
         robot_menu = menubar.addMenu("&Robot")
         self._action_set_tcp = QAction("Set &TCP link...", self)
@@ -400,6 +415,7 @@ class MainWindow(QMainWindow):
         self._action_reset_camera.triggered.connect(self._on_reset_camera)
         toolbar.addAction(self._action_reset_camera)
         toolbar.addAction(self._action_drag_tcp)
+        toolbar.addAction(self._action_collision)
         toolbar.addAction(self._action_focus)
 
     def _setup_status_bar(self) -> None:
@@ -619,7 +635,7 @@ class MainWindow(QMainWindow):
             "Collision", "collision_dock", self._collision_panel, self._action_view_collision, 260)
         self._collision_panel.log_requested.connect(self.log)
         self._collision_panel.changed.connect(self._on_collision_changed)
-        self._collision_panel.auto_acm_requested.connect(self._start_auto_acm)
+        self._collision_panel.auto_acm_requested.connect(self._recompute_auto_acm)
 
         # Robot comparison (U2.7): sample / URDF robots side by side, runs in the task runner.
         self._compare_panel = ComparePanel(self._task_runner)
@@ -1007,6 +1023,40 @@ class MainWindow(QMainWindow):
         if self._project_controller.has_project:
             self._project_controller.mark_modified()
         self._planning_panel.set_named_configs(self._ghost_panel.store.as_dict())
+
+    def _wire_collision(self) -> None:
+        """U3.4: every motion input asks the motion guard before q changes."""
+        svc, g = self._collision_service, self._motion_guard
+        svc.enabled = self._action_collision.isChecked()
+        self._joint_panel.set_guard(g.filter)
+        self._joint_panel.blocked.connect(self.set_status)
+        self._tcp_drag.set_guard(g.filter)
+        self._tcp_drag.blocked_changed.connect(self._on_tcp_blocked)
+        self._ik_panel.set_guard(g.reject_jump)
+        self._ik_panel.blocked.connect(self.set_status)
+        self._sim_panel.set_collision_check(svc.contacts)
+        self._sim_panel.set_pose_check(self._pose_check)
+        self._sim_panel.collision_stopped.connect(self._on_collision_stopped)
+        self._action_collision.toggled.connect(self._on_collision_toggled)
+
+    def _on_collision_toggled(self, on: bool) -> None:
+        self._settings.set_collision_enabled(on)
+        self._collision_service.enabled = on
+        self.set_status("Collision blocking on" if on else "Collision blocking off (pass-through)")
+
+    def _on_tcp_blocked(self, text: str) -> None:
+        self.set_status(text if text else "Ready")
+
+    def _pose_check(self, q: list) -> str | None:
+        """Teach Add: refuse a pose that touches the robot itself or an object."""
+        res = self._collision_service.check(q, emit=False)
+        hit = [n for p, n in zip(res.pairs, res.names) if p[1] != FLOOR_ID]
+        if not hit:
+            return None
+        return "; ".join(f"{a} touches {b}" for a, b in hit[:3])
+
+    def _on_collision_stopped(self, t: float, text: str) -> None:
+        self.set_status(f"Playback stopped: collision at t = {t:.3f} s ({text})")
 
     def _on_collision_changed(self) -> None:
         self._collision_service.invalidate()
@@ -1522,6 +1572,11 @@ class MainWindow(QMainWindow):
         self.set_status("Auto collision matrix ...")
         self._task_runner.submit(task)
 
+    def _recompute_auto_acm(self) -> None:
+        """Dock button: the user asked for it, so the project becomes modified when it is done."""
+        self._auto_acm_mark = True
+        self._start_auto_acm()
+
     def _on_auto_acm_progress(self, pct: int, msg: str) -> None:
         self.set_status(msg)
 
@@ -1536,10 +1591,20 @@ class MainWindow(QMainWindow):
         if apply_auto_acm(project, result):
             self._collision_panel.set_project(project)
             self._collision_service.invalidate()
-            self._project_controller.mark_modified()
+            if getattr(self, "_auto_acm_mark", False):     # import already made it modified
+                self._auto_acm_mark = False
+                self._project_controller.mark_modified()
             self.log(f"[INFO] Auto collision matrix: {len(result['pairs'])} pairs disabled "
                      f"({result.get('n_samples', 0)} samples, {result.get('seconds', 0)} s)")
             self.set_status("Auto collision matrix ready")
+
+    @property
+    def motion_guard(self) -> MotionGuard:
+        return self._motion_guard
+
+    @property
+    def collision_action(self) -> QAction:
+        return self._action_collision
 
     @property
     def collision_service(self) -> CollisionService:

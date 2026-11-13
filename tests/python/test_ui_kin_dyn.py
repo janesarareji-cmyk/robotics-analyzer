@@ -32,6 +32,7 @@ Q_WRIST = [0.3, 0.5, 0.4, 0.2, -2.305417, 0.3, 0.0]   # sigma_min ~ 1e-9 (scanne
 @pytest.fixture
 def win(qapp):
     w = MainWindow()
+    w.collision_service.enabled = False         # these tests move through poses; U3 has its own
     w.show()
     yield w
     w.project_controller._is_modified = False

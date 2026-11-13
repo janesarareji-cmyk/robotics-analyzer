@@ -11,7 +11,7 @@ every check report free, the old pass-through behaviour.
 
 Start inside a contact (the zero pose of a UR arm puts the wrist under the base plane):
 ``first_free`` then lets a move go on as long as it adds no contact pair that the start
-pose did not already have, so the robot can always leave.
+pose did not already have and makes none of them deeper than 1 mm, so the robot can leave.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from app.planning.collision import (
 log = logging.getLogger(__name__)
 
 FREE_TOL = 1e-3                 # rad (or m) accuracy of first_free
+DEPTH_SLACK = 1e-3              # m: an existing contact may not get deeper than this
 
 
 @dataclass
@@ -57,6 +58,17 @@ class CheckResult:
 
     def key(self) -> tuple:
         return tuple(sorted((a, b) for a, b, _ in self.pairs))
+
+    def depths(self) -> dict:
+        """Signed distance (negative = penetration) per colliding pair."""
+        return {(a, b): float(d) for a, b, d in self.pairs}
+
+    def worse_than(self, allowed: dict, slack: float = DEPTH_SLACK) -> bool:
+        """True when a pair is new, or deeper than in ``allowed`` (pair -> signed distance)."""
+        for k, d in self.depths().items():
+            if k not in allowed or d < allowed[k] - slack:
+                return True
+        return False
 
 
 class CollisionService(QObject):
@@ -159,6 +171,11 @@ class CollisionService(QObject):
             self._last_key = key
             self.collision_changed.emit(res)
 
+    def contacts(self, q: Sequence[float]) -> tuple:
+        """``(pair -> signed distance, text)`` at ``q`` without publishing (playback check)."""
+        r = self.check(q, emit=False)
+        return r.depths(), r.text()
+
     def is_free(self, q: Sequence[float]) -> bool:
         return self.check(q, emit=False).ok
 
@@ -168,18 +185,19 @@ class CollisionService(QObject):
 
         Samples ``steps`` points to find the first contact, then bisects to ``tol`` (largest
         joint change). ``last_block`` keeps the contact that stopped the move (None when free).
-        A start that is already in contact may move on while no new pair appears.
+        A start that is already in contact may move on while no new pair appears and no
+        existing contact gets deeper than ``DEPTH_SLACK``.
         """
         a = np.asarray(q_from, dtype=float)
         b = np.asarray(q_to, dtype=float)
         self.last_block = None
         if not self._enabled or self.world is None:
             return b.tolist()
-        allowed = set(self.check(a, emit=False).key())          # contacts the start already has
+        allowed = self.check(a, emit=False).depths()            # contacts the start already has
 
         def probe(t: float):
             r = self.check(a + t * (b - a), emit=False)
-            return (r.ok or set(r.key()) <= allowed), r
+            return (r.ok or not r.worse_than(allowed)), r
 
         span = float(np.abs(b - a).max())
         lo, hi, hit = 0.0, 1.0, None

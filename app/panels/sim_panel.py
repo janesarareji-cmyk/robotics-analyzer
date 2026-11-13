@@ -32,6 +32,7 @@ DEFAULT_FPS = 60.0
 
 class SimPanel(QWidget):
     state_updated = Signal(object)   # SimState; q already final for this tick
+    collision_stopped = Signal(float, str)   # U3.4: playback stopped at t (s) by a collision
     log_requested = Signal(str)
     trajectory_changed = Signal(object)   # Trajectory or None (relay of the timeline)
     model_replaced = Signal()             # engine / recorder rebuilt (R6.6 graphs)
@@ -48,6 +49,7 @@ class SimPanel(QWidget):
         self._samples: list[tuple[float, np.ndarray]] = []
         self._est_tau = None
         self._player: TrajectoryPlayer | None = None
+        self._collision_check = None
         self._recorder: Recorder | None = None
         self._dof_names: list[str] = []
         self._last_tick = 0.0
@@ -419,7 +421,18 @@ class SimPanel(QWidget):
             kp, kd = resolve_gains(self._settings, e.n_dof)
             self._player = TrajectoryPlayer(e, traj, self._mode, kp, kd,
                                             self._timeline.speed, self._timeline.loop)
+            self._player.collision_check = self._collision_check
         return self._player
+
+    def set_pose_check(self, fn) -> None:
+        """U3.4: ``fn(q) -> None | text``; Teach Add refuses a colliding pose."""
+        self._timeline.set_pose_check(fn)
+
+    def set_collision_check(self, fn) -> None:
+        """U3.4: ``fn(q) -> (contact_keys, text)``; playback stops at the last free sample."""
+        self._collision_check = fn
+        if self._player is not None:
+            self._player.collision_check = fn
 
     def play_trajectory(self) -> None:
         e = self._engine
@@ -527,8 +540,18 @@ class SimPanel(QWidget):
         else:
             eng.advance(wall_dt)
         self._emit_state()
+        self._report_collision_stop()
         if eng.error:
             self.log_requested.emit(f"[WARNING] Simulation paused: {eng.error}")
+
+    def _report_collision_stop(self) -> None:
+        pl = self._player
+        stop = pl.pop_collision_stop() if pl is not None else None
+        if stop is not None:
+            self._update_controls()
+            self.collision_stopped.emit(float(stop[0]), stop[1])
+            self.log_requested.emit(f"[WARNING] Playback stopped: collision at t = {stop[0]:.3f} s "
+                                    f"({stop[1]})")
 
     def _emit_state(self) -> None:
         if self._engine is not None:

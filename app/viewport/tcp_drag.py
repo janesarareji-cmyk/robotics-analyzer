@@ -33,6 +33,7 @@ class TcpDragController(QObject):
     q_changed = Signal()              # live q written (viewport + panels refresh, not committed)
     committed = Signal()              # mouse released: final q kept (project modified)
     reachable_changed = Signal(bool)  # False: "Target not reachable"
+    blocked_changed = Signal(str)     # U3.4: "" = free, else "Blocked: ..." (collision guard)
 
     def __init__(self, viewport: Any, get_model: Callable[[], Any], parent=None,
                  clock: Callable[[], float] = time.monotonic):
@@ -47,6 +48,8 @@ class TcpDragController(QObject):
         self._widget_model_id: int | None = None
         self._dragging = False
         self._reachable = True
+        self._blocked = False
+        self._guard: Callable | None = None
         self._ref_rot: np.ndarray | None = None
         self._last_solve_t = -1e9
         self._pending: np.ndarray | None = None
@@ -64,6 +67,14 @@ class TcpDragController(QObject):
     @property
     def reachable(self) -> bool:
         return self._reachable
+
+    @property
+    def blocked(self) -> bool:
+        return self._blocked
+
+    def set_guard(self, fn: Callable | None) -> None:
+        """Collision guard ``fn(q_new, q_old=None) -> (q_final, blocked)`` (None = off)."""
+        self._guard = fn
 
     @property
     def dragging(self) -> bool:
@@ -195,8 +206,12 @@ class TcpDragController(QObject):
                 q = list(res["q"])
                 for g in gripper_dofs(model):
                     q[g.dof_index] = q0[g.dof_index]
+                blocked = False
+                if self._guard is not None:      # U3.4: stop at the last free q
+                    q, blocked = self._guard(q, q0)
                 write_q(model, q)
                 self._dirty = True
+                self._set_blocked(blocked)
         except Exception:
             ok = False
         self.last_ik_ms = (time.perf_counter() - t0) * 1e3
@@ -209,9 +224,21 @@ class TcpDragController(QObject):
     def _set_reachable(self, ok: bool) -> None:
         changed = ok != self._reachable
         self._reachable = ok
-        self._set_widget_color(COLOR_OK if ok else COLOR_BAD)
+        if not ok:
+            self._blocked = False
+        self._set_widget_color(COLOR_OK if ok and not self._blocked else COLOR_BAD)
         if changed:
             self.reachable_changed.emit(ok)
+
+    def _set_blocked(self, blocked: bool) -> None:
+        """Red handle and status while the collision guard holds the robot back."""
+        changed = blocked != self._blocked
+        self._blocked = blocked
+        self._set_widget_color(COLOR_BAD if blocked or not self._reachable else COLOR_OK)
+        if changed:
+            owner = getattr(self._guard, "__self__", None)
+            self.blocked_changed.emit(
+                (getattr(owner, "text", "") or "Blocked by collision") if blocked else "")
 
     # ---- widget (VTK sphere widget; created only with a real plotter)
 

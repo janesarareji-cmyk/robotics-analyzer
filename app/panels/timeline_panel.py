@@ -57,6 +57,7 @@ class TimelinePanel(QWidget):
         self._quiet = False
         self._want = (True, False, False)   # SimPanel's play / pause / stop request
         self._q_provider: Callable[[], list[float]] | None = None
+        self._pose_check: Callable[[list[float]], str | None] | None = None
         self._build_ui()
         self._update_controls()
 
@@ -303,6 +304,10 @@ class TimelinePanel(QWidget):
             out.append(v)
         return out[0], out[1:]
 
+    def set_pose_check(self, fn: Callable[[list[float]], str | None] | None) -> None:
+        """U3.4: ``fn(q) -> None`` when q is free, else the collision text; Teach Add refuses."""
+        self._pose_check = fn
+
     def _cur_q(self) -> list[float]:
         q = self._q_provider() if self._q_provider is not None else None
         q = list(q) if q is not None else [0.0] * self._n_dof
@@ -331,6 +336,11 @@ class TimelinePanel(QWidget):
         if self._n_dof == 0:
             return
         q = self._cur_q()
+        if self._pose_check is not None:
+            msg = self._pose_check(q)
+            if msg:
+                self.log_requested.emit(f"[WARNING] Teach: pose not added, {msg}")
+                return
         n = self._table.rowCount()
         t = 0.0
         if n:
