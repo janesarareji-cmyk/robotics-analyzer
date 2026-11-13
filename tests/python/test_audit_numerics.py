@@ -356,3 +356,70 @@ def test_low_cartesian_line_far_seed_succeeds():
     res = line(m, T0, T1, seed, n=10, max_joint_step=0.5,
                ik_options={"position_only": True})
     assert res.ok, res.message
+
+
+# ------------------------------------------------------------------ U2.2: PRM cancel latency
+class _SlowCollision:
+    """Wall at q0 in (0.4, 0.6); every batch costs tens of ms (big matmul)."""
+
+    def __init__(self, n=900):
+        self.a = np.random.default_rng(0).random((n, n))
+
+    def check_batch(self, qs):
+        qs = np.asarray(qs, float)
+        for _ in range(3):
+            self.a @ self.a
+        return (qs[:, 0] > 0.4) & (qs[:, 0] < 0.6)
+
+
+class _CpuLoad:
+    """4 threads spinning numpy (context manager)."""
+
+    def __enter__(self):
+        self._stop = threading.Event()
+
+        def spin():
+            a = np.random.default_rng(1).random((200, 200))
+            while not self._stop.is_set():
+                a @ a
+
+        self._ths = [threading.Thread(target=spin, daemon=True) for _ in range(4)]
+        for t in self._ths:
+            t.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        for t in self._ths:
+            t.join()
+
+
+def _prm_cancel_latency(collision, delay=0.3):
+    """Seconds from setting the cancel event to ``plan`` returning."""
+    m = planar_2r()
+    evt = threading.Event()
+    fired = {}
+
+    def fire():
+        fired["t"] = time.perf_counter()
+        evt.set()
+
+    threading.Timer(delay, fire).start()
+    res = plan(m, [0.0, 0.0], [1.0, 1.0], collision, planner="prm", time_limit=30, seed=0,
+               cancel=evt)
+    lat = time.perf_counter() - fired["t"]
+    assert not res.success and res.reason == "cancelled"
+    return lat
+
+
+@pytest.mark.parametrize("kind", ["blocked", "slow_batches"])
+def test_u2_prm_cancel_latency_under_load(kind):
+    """U2.2: cancel is checked between edge checks / roadmap steps: latency < 0.3 s under load."""
+    lats = []
+    with _CpuLoad():
+        for _ in range(4):
+            col = (_Blocked([0.0, 0.0], [1.0, 1.0]) if kind == "blocked" else _SlowCollision())
+            lats.append(_prm_cancel_latency(col))
+    print(f"PRM cancel latency ({kind}, 4-thread load): max {max(lats) * 1000:.1f} ms, "
+          f"all {[round(x * 1000, 1) for x in lats]}")
+    assert max(lats) < 0.3

@@ -325,6 +325,7 @@ def _prm(sp: _Space, start, goals, rng, step, progress, batch=40, k_nn=6, max_no
                 break
             if dd[j] > 4.0 * step:
                 break
+            sp.check()      # U2.2: cancel / time limit between edge checks (each is a batch)
             tried.add((min(i, j), max(i, j)))
             if sp.edge_free(t.q[i], t.q[j]):
                 adj[i][j] = adj[j][i] = float(dd[j])
@@ -334,7 +335,11 @@ def _prm(sp: _Space, start, goals, rng, step, progress, batch=40, k_nn=6, max_no
         dist = {0: 0.0}
         prev = {}
         heap = [(0.0, 0)]
+        pops = 0
         while heap:
+            pops += 1
+            if pops % 256 == 0:
+                sp.check()  # U2.2: Dijkstra on a large roadmap
             c, u = heapq.heappop(heap)
             if c > dist.get(u, math.inf):
                 continue
@@ -374,6 +379,7 @@ def _prm(sp: _Space, start, goals, rng, step, progress, batch=40, k_nn=6, max_no
                 break
         # re-connect start / goal nodes to the new nodes
         for i in range(0, 1 + len(goals)):
+            sp.check()
             connect(i, t.n)
         nodes, gk = route()
         if nodes is not None:

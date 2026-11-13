@@ -74,3 +74,10 @@ Collision panel supplies obstacles and the ACM.
     `time_parametrize(check_torque=False)` by default; use `check_trajectory` afterwards.
 -   Milestone note (R7.7): the fixture effort limit (10 N m) is below its own static gravity torque
     (25.9 N m on dof 1 at q = 0), so the milestone checks torque against an explicit 40 N m.
+
+## Cancel latency (U2.2)
+
+PRM checks cancel and the time limit between edge checks while connecting a node,
+while re-connecting start and goals, and during the roadmap search. Measured on
+the dev machine under a 4-thread numpy load: about 12 ms worst case with
+slow (tens of ms) collision batches (before: about 50 ms).
