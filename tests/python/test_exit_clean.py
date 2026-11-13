@@ -23,3 +23,20 @@ def test_ui_ghosts_subprocess_exits_zero_three_times():
 def test_main_window_close_script_exits_zero():
     r = _run(["tests/python/_exit_script.py"], timeout=120)
     assert r.returncode == 0, f"exit {r.returncode}\n{r.stdout[-1500:]}\n{r.stderr[-1500:]}"
+
+
+def _msg(r, tag=""):
+    return f"{tag} exit {r.returncode} | {r.stdout[-1500:]} | {r.stderr[-1500:]}"
+
+
+def test_script_start_smoke_exits_zero_three_times():
+    for i in range(3):
+        r = _run(["app/main.py", "--smoke"], timeout=180)
+        assert r.returncode == 0, _msg(r, f"run {i}")
+        assert "SMOKE OK" in r.stdout, _msg(r, f"run {i}")
+
+
+def test_module_start_smoke_exits_zero():
+    r = _run(["-m", "app.main", "--smoke"], timeout=180)
+    assert r.returncode == 0, _msg(r)
+    assert "SMOKE OK" in r.stdout, _msg(r)

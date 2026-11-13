@@ -6,6 +6,8 @@ every handoff. Keep it short.
 
 ## Current
 
+-   **A1-fix committed:** `app/main.py` deletes the window via deleteLater + DeferredDelete before exit (app and `smoke()`), repo root put on sys.path (not when frozen) so `python app/main.py` works; 3 new tests in `tests/python/test_exit_clean.py`.
+
 -   **Stage:** A1 --- stage-ready-for-review (blocking). Audit fixes A1.1-A1.9 committed; audit: `docs/audit-2026-11-13.md`; spec pack `docs/specs/A1-spec.md`.
 -   **Next substage:** review A1, then F1.1
 -   **Stage A1 gate (Builder run, 2026-11-13):** milestone `tests/python/test_milestone_a1.py` PASS (11 tests: a close flow Cancel/Discard/Save via closeEvent; b six corruption kinds x (no .prev -> dialog, .prev -> fallback) with a `sys.excepthook` spy; c slow permission dialog (15 s simulated) loads + unanswered ask saves nothing; d bad arrays to GPU FK -> ValueError, GPU alive, and 3-link 1-joint model -> compile ValueError; e prismatic gantry `n_outside == 0` + PRM cancel < 0.5 s). CTest 9/9 (`ctest --test-dir build -C Release`, build no-op); full pytest `python -X faulthandler -m pytest tests/python -q -p no:cacheprovider`: 1263 passed, 4 skipped (1252 + 11), 204.6 s, process exit code 0. GPU tests on the real RTX 5060, none skipped: `test_gpu_fk.py test_workspace.py test_milestone_r5.py test_gpu_errors.py` 117 passed. `python tools/check_docs.py` OK (47 files). `graphify update .` run, `graph.json` committed. `docs/audit-2026-11-13.md` has a Status column (H3: root cause = widgets kept alive by lambda reference cycles destroyed in random order at GC / exit, not a shell artifact). Product fix found by the milestone: `project_controller._peek_old_version` let `zlib.error` (damaged deflate stream) escape from `open_project`; now any peek error returns None and `load()` reports it. Unrelated working-tree change left uncommitted: `tests/python/fixtures/robot_model_v1.json`. Tag `stage-A1-done` local only, no remote, not pushed.
@@ -165,6 +167,7 @@ Legacy (R0-R2 rows only): `ready-for-review` · `approved` ·
 | A1.7 | Small app fixes (Haiku) | test_audit_small.py | committed |
 | A1.8 | Exit crash 0xC0000409 (H3, STOP if no root cause) | test_exit_clean.py | committed |
 | A1.9 | A1 milestone | test_milestone_a1.py | committed |
+| A1-fix | Clean app exit + python app/main.py start | test_exit_clean.py | committed |
 | F1.1 | Pinocchio proof build (STOP after) | requirements-dev.txt | planned |
 | F1.2 | Pinocchio validator tool + report | test_pinocchio_validation.py | planned |
 | F1.3 | Torque-aware time parametrization (TOPP-RA) | test_topp.py | planned |

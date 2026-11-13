@@ -4,7 +4,16 @@ Robotics Analyzer — application entry point.
 R1.3: Initializes AppLogger before creating the MainWindow.
 """
 
+import os
 import sys
+
+if not getattr(sys, "frozen", False):
+    # `python app/main.py` puts app/ on sys.path, not the repo root.
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _ROOT not in sys.path:
+        sys.path.insert(0, _ROOT)
+
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 from app.main_window import MainWindow
 from app.logger import AppLogger, log
@@ -31,6 +40,13 @@ def create_app(log_level: str = "INFO"):
 
     log.info("Main window created. Application ready.")
     return app, window, logger
+
+
+def _destroy_window(app, window) -> None:
+    """Delete the window through the event loop so Qt, not the GC, destroys it (A1.8)."""
+    window.deleteLater()
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
 
 
 def _sample_urdf() -> str:
@@ -65,6 +81,8 @@ def smoke() -> int:
         be = get_backend()
         di = be.device_info()
         window.close()
+        _destroy_window(app, window)
+        del window, _logger
         print("SMOKE OK python={} qt={} vtk={} fk_tcp={} backend={} reason={}".format(
             platform.python_version(), PySide6.__version__, vtk.vtkVersion.GetVTKVersion(),
             [round(x, 6) for x in pos], di.get("backend", be.name), be.reason))
@@ -81,4 +99,7 @@ if __name__ == "__main__":
     app, window, logger = create_app()
     window.show()
     window.project_controller.check_startup_recovery(window)   # R8.4
-    sys.exit(app.exec())
+    rc = app.exec()
+    _destroy_window(app, window)
+    del window, logger
+    sys.exit(rc)
