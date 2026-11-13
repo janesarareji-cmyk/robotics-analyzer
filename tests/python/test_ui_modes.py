@@ -101,3 +101,23 @@ def test_mode_saved_per_project(win):
     win.set_mode("Analyze")
     win._on_project_opened(project)
     assert win.mode == "Analyze"
+
+
+def test_last_mode_is_restored_with_the_layout(qapp, monkeypatch):
+    monkeypatch.setattr(AppSettings, "_ORGANIZATION", "RoboticsAnalyzer_test_modes2")
+    monkeypatch.setattr(AppSettings, "_APPLICATION", "RoboticsAnalyzer_test_modes2")
+    AppSettings()._settings.clear()
+    w = MainWindow()
+    w.show()
+    w.set_mode("Simulate")
+    w.project_controller._is_modified = False
+    w.sim_dock.hide()
+    w.close()
+    w2 = MainWindow()
+    w2.show()
+    try:
+        assert w2.mode == "Simulate" and w2._modes.action("Simulate").isChecked()
+    finally:
+        w2.project_controller._is_modified = False
+        w2.close()
+        AppSettings()._settings.clear()

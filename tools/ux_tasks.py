@@ -155,7 +155,10 @@ def task_plan(win, c):
     c.menu_pick(win._menu_objects, "Box")
     open_panel(win, c, "planning")
     pp = win.planning_panel
-    c.click_button(pp, "Start = current q")
+    from app.kin_utils import current_q
+    import numpy as np
+    if not np.allclose(pp.vector("start"), current_q(win.project_controller.robot), atol=1e-6):
+        c.click_button(pp, "Start = current q")
     q = pp.vector("start")
     q[0] += 0.8
     pp.set_vector("goal", q)

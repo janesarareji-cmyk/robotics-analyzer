@@ -44,7 +44,7 @@ def test_undo_redo_joint_values(win):
     row.spinbox.setValue(row.spinbox.value() + 20.0)
     q2 = current_q(model)
     assert not np.allclose(q0, q1) and not np.allclose(q1, q2)
-    assert win._action_undo.isEnabled() and "Move joints" in win._action_undo.text()
+    assert win._action_undo.isEnabled() and "Move joints" in win._action_undo.toolTip()
     win._action_undo.trigger()
     assert np.allclose(current_q(model), q1, atol=1e-9)
     assert abs(np.radians(row.spinbox.value()) - model.joints[row.joint_index].q) < 1e-2    # rows follow
@@ -96,7 +96,7 @@ def test_undo_target_edits(win):
     tp.auto_solve = False
     tp.move_to(T0[:3, 3] + [0.05, 0.0, 0.0])
     assert abs(tp.current_pose()[0, 3] - (T0[0, 3] + 0.05)) < 1e-9
-    assert "Edit target" in win._action_undo.text()
+    assert "Edit target" in win._action_undo.toolTip()
     win._action_undo.trigger()
     assert np.allclose(tp.current_pose(), T0, atol=1e-9)
     win._action_redo.trigger()
@@ -112,7 +112,7 @@ def test_undo_object_edits(win):
     assert len(cp.config.environment) == 0
     assert win.add_scene_object("box")
     assert len(cp.config.environment) == 1
-    assert "Edit object" in win._action_undo.text()
+    assert "Edit object" in win._action_undo.toolTip()
     win._action_undo.trigger()
     assert len(cp.config.environment) == 0
     win._action_redo.trigger()

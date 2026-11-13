@@ -19,10 +19,12 @@ from tools import ux_tasks                      # noqa: E402
 def win(qapp, monkeypatch):
     monkeypatch.setattr(AppSettings, "_ORGANIZATION", "RoboticsAnalyzer_test_ux")
     monkeypatch.setattr(AppSettings, "_APPLICATION", "RoboticsAnalyzer_test_ux")
+    AppSettings()._settings.clear()          # no saved layout from an earlier run
     w = MainWindow()
     w.settings._settings.clear()
     w.resize(1600, 950)
     w.show()
+    ux_tasks.pump(0.5)
     yield w
     w.project_controller._is_modified = False
     w.sim_dock.hide()

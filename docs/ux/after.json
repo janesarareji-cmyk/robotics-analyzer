@@ -1,0 +1,58 @@
+{
+  "label": "after",
+  "tasks": {
+    "1_load_robot": {
+      "actions": 1,
+      "seconds": 0.56,
+      "steps": [
+        "1x click sample card ur5"
+      ]
+    },
+    "2_jog_joint": {
+      "actions": 1,
+      "seconds": 0.22,
+      "steps": [
+        "1x type joint 2 +30 deg"
+      ]
+    },
+    "3_target_reach": {
+      "actions": 3,
+      "seconds": 0.53,
+      "steps": [
+        "1x click mode Target",
+        "1x type target offset [0.0, 0.0, -50.0] mm",
+        "1x click Play to target"
+      ]
+    },
+    "4_box_and_plan": {
+      "actions": 5,
+      "seconds": 0.46,
+      "steps": [
+        "1x click toolbar Add object",
+        "1x menu Box",
+        "1x click mode Plan",
+        "1x type goal q1",
+        "1x click Plan"
+      ]
+    },
+    "5_dynamic_sim": {
+      "actions": 4,
+      "seconds": 0.69,
+      "steps": [
+        "1x click mode Simulate",
+        "2x choose dynamic",
+        "1x click Start"
+      ]
+    },
+    "6_compare": {
+      "actions": 4,
+      "seconds": 0.54,
+      "steps": [
+        "1x click mode Analyze",
+        "2x tick ur3, ur5",
+        "1x click Compare"
+      ]
+    }
+  },
+  "task1_plus_3": 4
+}

@@ -374,7 +374,13 @@ class CollisionPanel(QWidget):
         return True
 
     def move_shape(self, index: int, xyz) -> bool:
-        """Set the position of object ``index`` (drag widget)."""
+        """Set the position of object ``index`` (drag widget). Same position: nothing to do (the
+        widget calls back when it is created; that must not log, dirty the project or add an undo step)."""
+        cfg = self.config
+        if cfg is not None and 0 <= index < len(cfg.environment):
+            cur = cfg.environment[index].xyz
+            if len(cur) == 3 and all(abs(float(a) - float(b)) < 1e-9 for a, b in zip(cur, xyz)):
+                return True
         return self.update_shape(index, xyz=xyz)
 
     def _update_selected_from_form(self) -> bool:

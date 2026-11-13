@@ -936,7 +936,7 @@ class MainWindow(QMainWindow):
         self._modes = ModeController(self)
         self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._modes.bar)
-        self._modes.apply(DEFAULT_MODE)
+        self._modes.apply(DEFAULT_MODE, remember=False)
         self._setup_undo_help()
 
     # ------------------------------------------------------------------
@@ -948,10 +948,25 @@ class MainWindow(QMainWindow):
         self._undo.register("q", self._snap_q, self._restore_q)
         self._undo.register("targets", self._snap_targets, self._restore_targets)
         self._undo.register("objects", self._snap_objects, self._restore_objects)
-        self._action_undo = self._undo.stack.createUndoAction(self, "&Undo")
+        stack = self._undo.stack
+        # own actions (not createUndoAction): the text stays "Undo" so the toolbar does not jump;
+        # the tool tip names the step ("Undo Move joints (Ctrl+Z)")
+        self._action_undo = QAction("&Undo", self)
         self._action_undo.setShortcut(QKeySequence("Ctrl+Z"))
-        self._action_redo = self._undo.stack.createRedoAction(self, "&Redo")
+        self._action_undo.setEnabled(False)
+        self._action_undo.setToolTip("Undo (Ctrl+Z)")
+        self._action_undo.triggered.connect(self._undo.undo)
+        stack.canUndoChanged.connect(self._action_undo.setEnabled)
+        stack.undoTextChanged.connect(
+            lambda t: self._action_undo.setToolTip(f"Undo {t} (Ctrl+Z)" if t else "Undo (Ctrl+Z)"))
+        self._action_redo = QAction("&Redo", self)
         self._action_redo.setShortcuts([QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")])
+        self._action_redo.setEnabled(False)
+        self._action_redo.setToolTip("Redo (Ctrl+Y)")
+        self._action_redo.triggered.connect(self._undo.redo)
+        stack.canRedoChanged.connect(self._action_redo.setEnabled)
+        stack.redoTextChanged.connect(
+            lambda t: self._action_redo.setToolTip(f"Redo {t} (Ctrl+Y)" if t else "Redo (Ctrl+Y)"))
         edit_menu = QMenu("&Edit", self)
         edit_menu.addAction(self._action_undo)
         edit_menu.addAction(self._action_redo)
@@ -1113,6 +1128,7 @@ class MainWindow(QMainWindow):
     def _restore_layout(self) -> None:
         """Restore saved window geometry and dock layout from AppSettings."""
         self._settings.restore_window(self)
+        self._modes.set_current(self._modes.last_mode())      # the restored layout belongs to it
 
     def _connect_project_signals(self) -> None:
         """Connect ProjectController signals to UI update slots."""

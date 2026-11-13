@@ -24,6 +24,9 @@ Menu names are as shown in the application. For the scripting interface see
 12. [Projects, autosave and recovery](#12-projects-autosave-and-recovery)
 13. [Troubleshooting](#13-troubleshooting)
 14. [Collision while moving (U3)](#14-collision-while-moving-u3)
+15. [Target, ranked IK and Play to target (U4a)](#15-target-ranked-ik-and-play-to-target-u4a)
+16. [Curve, follow and live matrices (U4b)](#16-curve-follow-and-live-matrices-u4b)
+17. [Joint poses, Cartesian jog and the window (U5)](#17-joint-poses-cartesian-jog-and-the-window-u5)
 
 ## 1. Install
 
@@ -96,20 +99,24 @@ Mass, centre of mass and inertia come from the import, from an estimate or from 
 **View -> Physical Properties** edits them and runs the physical checks. See
 [physical-properties.md](physical-properties.md).
 
-### Layout: side bar, Focus 3D (F11), Reset layout
+### Getting started: start screen, modes, Focus 3D (F11)
 
-The 3D view is the main area. At first start only the Robot Model (with Properties as a second tab), the
-Joints (with the DH editor as a second tab) and the Log are open.
+The 3D view is the main area. With no robot it shows the **start screen**: click a sample robot card, or
+Import URDF... / Open project.... The bar of six **modes** under the toolbar (Model, Move, Target, Plan,
+Simulate, Analyze; Ctrl+1 to Ctrl+6) shows only the panels of that job, so the 3D view stays large.
 
--   The **side bar** on the left edge has one button per panel (Model, Joints, DH, IK, Analysis, Workspace,
-    Sim, Graphs, Planning, Ghosts, Collision, Physical, Script, Log). A click opens the panel and brings
-    it to the front of its tab group; a second click closes it.
+-   Load a robot, press **Ctrl+3** (Target), type the new X value and press **Play to target**: three
+    clicks after the card.
 -   **View -> Focus 3D view** (**F11**, also a tool bar button) hides all panels so the 3D view uses the
-    whole window. Press it again to bring back exactly the panels that were open. Opening any panel
-    while in Focus 3D leaves the mode.
--   **View -> Reset layout** restores the default layout and panel sizes.
--   Panels can still be dragged, tabbed and floated. The layout is saved when the program closes. When a
-    new version changes the default layout, the old saved layout is ignored once.
+    whole window. Press it again to bring back exactly the panels that were open. Choosing a mode leaves
+    Focus 3D.
+-   **View -> Reset layout** restores the default layout (Move mode) and panel sizes.
+-   Every panel is also in the **View** menu. Panels can still be dragged, tabbed and floated. The layout
+    is saved when the program closes; when a new version changes the default layout the old saved
+    layout is ignored once.
+-   **F1** shows the shortcuts; **Ctrl+Z / Ctrl+Y** undo and redo.
+
+Details of every control: [user-interface.md](user-interface.md).
 
 ## 3. Joints and the TCP
 
@@ -409,7 +416,16 @@ Details: [curves](curves.md).
 
 ### Matrices dock
 
-Side bar "Matrices": the 4 x 4 tool pose, the transform of a joint you pick, the joint values, the
+The "Matrices" dock (Move mode): the 4 x 4 tool pose, the transform of a joint you pick, the joint values, the
 Jacobian (tick "Show the Jacobian") and the manipulability bar (red near a singularity). The numbers
 follow every move of the arm, also while a curve plays. "Pause updates" freezes them; "Copy as" puts
 all matrices on the clipboard as text, numpy or LaTeX.
+
+## 17. Joint poses, Cartesian jog and the window (U5)
+
+-   Joints panel: degrees, a limit bar per joint (red near a limit), the **Pose** list (Home, Ready, saved
+    poses) and the **Move the tool** buttons (X, Y, Z, Rx, Ry, Rz; hold to repeat; base or tool frame).
+-   3D view: Front / Top / Side / Iso / Fit buttons, hover a link for its name, click it to select it.
+-   Ctrl+Z / Ctrl+Y undo and redo; F1 help; a short tour on the first start.
+
+Details: [user-interface.md](user-interface.md); review of the design: [ui-review-u5.md](ui-review-u5.md).

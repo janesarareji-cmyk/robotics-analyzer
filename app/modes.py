@@ -21,7 +21,7 @@ MODES: dict[str, tuple[str, tuple[str, ...]]] = {
     "Target": ("Set a 3D target or a curve and let the robot follow it", ("target", "curve")),
     "Plan": ("Plan a path around objects", ("planning", "collision", "ghosts")),
     "Simulate": ("Run a simulation and look at graphs", ("simulation", "graphs")),
-    "Analyze": ("Workspace, IK, dynamics, compare robots", ("workspace", "ik", "analysis", "compare", "performance")),
+    "Analyze": ("Workspace, IK, dynamics, compare robots", ("workspace", "ik", "analysis", "compare")),
 }
 MODE_NAMES = list(MODES)
 LEFT_DOCKS = ("model", "props", "physical")
@@ -100,7 +100,7 @@ class ModeController:
                 return d
         return None
 
-    def apply(self, mode: str) -> None:
+    def apply(self, mode: str, remember: bool = True) -> None:
         """Show only the docks of ``mode`` (managed docks only; Log, Script, Plugins stay as they are)."""
         if mode not in MODES or self._applying:
             return
@@ -127,7 +127,8 @@ class ModeController:
             self._on_applied(mode)
         finally:
             self._applying = False
-        self.remember()
+        if remember:
+            self.remember()
 
     def set_current(self, mode: str) -> None:
         """Mark a mode as current without touching the docks (after a layout reset)."""
@@ -140,6 +141,8 @@ class ModeController:
             tp = win.target_panel
             if tp.current_index < 0:
                 tp.add_from_tcp()
+        elif mode == "Plan" and win.project_controller.robot is not None:
+            win.planning_panel.capture_current("start")      # the plan starts where the robot is
 
     # ------------------------------------------------------------------ per project memory
     def _key(self) -> str | None:
@@ -150,12 +153,24 @@ class ModeController:
         return "ui/mode/" + hashlib.sha1(str(path).encode("utf-8", "replace")).hexdigest()[:16]
 
     def remember(self) -> None:
+        try:
+            self.win.settings._settings.setValue("ui/last_mode", self.current)
+        except Exception:
+            pass
         key = self._key()
         if key and self.current:
             try:
                 self.win.settings._settings.setValue(key, self.current)
             except Exception:
                 pass
+
+    def last_mode(self) -> str:
+        """Mode of the last session (the restored dock layout belongs to it)."""
+        try:
+            val = str(self.win.settings._settings.value("ui/last_mode", "") or "")
+        except Exception:
+            val = ""
+        return val if val in MODES else DEFAULT_MODE
 
     def recall(self) -> str | None:
         key = self._key()
