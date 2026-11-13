@@ -77,13 +77,11 @@ every handoff. Keep it short.
 
 ## Handoff protocol (stage-batch, from R3)
 
-1.  Builder builds every substage of the stage in order. Per substage:
-    tests green → `graphify update .` → row status `committed` → commit
-    `R<x>.<y>: <summary>`.
-2.  After the last substage: stage milestone test + stage gate
-    (`docs/MASTER_PLAN.md` 1.3), results under "Current", tag
-    `stage-R<x>-done`, stage status `stage-ready-for-review`, Owner →
-    Reviewer.
+1.  Builder (Sonnet) builds every substage of the stage in order, one commit
+    `<stage>.<n>: <summary>` each, no tests or review between substages.
+2.  After the last substage: full tests + stage milestone, `graphify update .`,
+    results under "Current", tag `stage-<x>-done`, push, status
+    `stage-ready-for-review`. Next stage starts at once (no stage lock).
 3.  Reviewer sets `stage-approved` or `stage-changes-requested` with an
     `R<x>-fix` list under "Open review items", and writes the next spec pack.
 4.  A substage red after two fix attempts → row `blocked`, write it under
@@ -267,6 +265,7 @@ Specs do not live in this file. Find them here:
 -   2026-11-13: F1.3 method (Opus orchestrator): TOPP by reachability analysis (Pham & Pham 2018), own exact 2-variable LP, no scipy; torque via RNEA split a/b/c, friction excluded then re-checked.
 
 -   2026-11-13: Pinocchio validator skipped: `pip install pin --only-binary=:all:` -> no matching distribution (no cp313 win_amd64 wheel for any version); source build of `pin` fails in build deps. numpy oracle stays the only reference. F1.1 and F1.2 marked committed (skipped: no wheel) per user decision (no stop). Alternatives for later: conda env or Python 3.12 venv just for validation.
+-   2026-11-14: User decision: new workflow. Claude only (no Gemini). Sonnet builds all product code; Haiku very low tasks only; Opus advisor only when necessary plus at each stage end for advice and to review the next plan. No test runs or reviews between substages; full tests once per stage. No stage lock: review non-blocking. Rules in CLAUDE.md and .agents/rules/dev-workflow.md.
 
 ## Risks
 

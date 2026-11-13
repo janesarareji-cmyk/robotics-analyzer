@@ -14,22 +14,27 @@ Claude Code does not auto-load `.agents/rules/`. These imports make it load them
 2. **Graphify first.** Before any review or spec: run `graphify query "<topic>"`
    (or `graphify explain` / `graphify path`). Read
    `graphify-out/GRAPH_REPORT.md` only if query not enough. Raw file reads come after.
-3. **Haiku for chores.** Mechanical work goes to an Agent subagent with
-   `model: "haiku"`: edit PROGRESS.md / docs from my decisions, git add/commit,
-   file search, read+summarize, run `.\run_tests.ps1` and report.
-   Me (Sonnet) only decide, spec, review. Opus only per dev-workflow Advisor rule.
-4. **Product code via subagents.** Sonnet itself does not edit product code
-   (`app/`, `core/`, `bindings/`, `cuda/`, `tests/`, CMake). It launches Agent
-   subagents (haiku for parser/UI/mechanical, sonnet for C++ kinematics/numerics)
-   with the spec section pasted in, then reviews the diff before the next substage.
+3. **Claude only.** No Gemini. All dev work is done by Claude agents.
+4. **Sonnet builds.** All product code (`app/`, `core/`, `bindings/`, `cuda/`,
+   `tests/`, CMake) is written by Sonnet Agent subagents, with the spec section
+   pasted in. The main session does not edit product code.
+5. **Haiku for very low tasks only.** git add/commit/push, file search,
+   PROGRESS.md bookkeeping from decisions already made, run tests and report.
+6. **Opus advisor.** Use Opus only when necessary (hard math, architecture/schema
+   later work depends on, GPU memory model, fix that failed twice). Also loop
+   Opus in after each major chunk of development (stage end) for advice and to
+   review the next plan / spec pack. Log every Opus call in PROGRESS.md "Decisions".
+7. **Test per stage, not per substage.** No test runs or reviews between
+   substages. Full test suite once when the stage is complete.
+8. **No stage lock.** Next stage starts without waiting for review approval.
 
 ## "review" checklist (stage)
 
 1. Read `PROGRESS.md` → find stage with `stage-ready-for-review`. None → say so, stop.
 2. Graphify query the stage areas (rule 2).
-3. Haiku subagent: run `.\run_tests.ps1`, report pass/fail.
-4. Read stage diff: `git diff stage-R<x-1>-done..stage-R<x>-done` (or from the last approved commit if no tag). Read every file in it.
-5. Findings in Caveman. Verdict `stage-approved` or `stage-changes-requested` with `R<x>-fix` list.
-6. If approved, write next stage spec pack `docs/specs/R<x+1>-spec.md`. Set its rows `planned`.
+3. Haiku subagent: run the full test suite (`.\run_tests.ps1`, or CTest + pytest by hand), report pass/fail.
+4. Read stage diff: `git diff stage-<x-1>-done..stage-<x>-done` (or from the last reviewed commit if no tag).
+5. Findings in Caveman. Problems become `<x>-fix` substages at the top of the next stage (non-blocking).
+6. Opus advisor reviews the next stage spec pack `docs/specs/<next>-spec.md` and gives advice.
 7. Haiku subagent: write status + findings + spec pack pointer into `PROGRESS.md`, commit
-   `docs(progress): review stage R<x>`.
+   `docs(progress): review stage <x>`.

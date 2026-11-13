@@ -1,75 +1,48 @@
 ---
 trigger: always_on
-description: What the Sonnet orchestrator does when the user says "continue" (or "go", "next", "proceed"). It runs the loop by launching Builder subagents.
+description: What the Sonnet orchestrator does when the user says "continue" (or "go", "next", "proceed"). It builds the stage with Claude Sonnet subagents.
 ---
 
-## Continue Protocol (Sonnet orchestrator + Builder subagents)
+## Continue Protocol (Sonnet builders, one stage at a time)
 
-The Sonnet orchestrator runs this loop. It launches Builder subagents (Agent tool, haiku or sonnet tier per substage) with the spec section pasted in. Gemini is retired.
-
-From Stage R3 the project uses the **stage-batch loop** below.
-Authority: `docs/MASTER_PLAN.md` section 1. The old per-substage protocol
-(R0 to R2) is at the end, for history only. Do not use it.
+Claude only. Gemini is retired. Sonnet builder subagents write all product code.
+Haiku does very low chores. Tests run once per stage, not per substage.
+Authority: `.agents/rules/dev-workflow.md` and `docs/MASTER_PLAN.md` section 1.
 
 ### Read order (every new session)
 
 1. `.agents/rules/*.md` (all files).
 2. `PROGRESS.md` → "Current" and the "Substage log".
-3. `docs/MASTER_PLAN.md` section 1 (workflow, gate, push).
-4. The current stage spec pack `docs/specs/R<x>-spec.md`. Read its
+3. `docs/MASTER_PLAN.md` section 1 (points to dev-workflow).
+4. The current stage spec pack `docs/specs/<stage>-spec.md`. Read its
    "Common rules" and "Code facts" first.
-5. Docs the spec names (for R3: `docs/urm-schema-v2.md`).
+5. Docs the spec names.
 
-### Stage-batch loop
+### Stage loop
 
-When the user says "continue" (or "go", "next", "proceed") with no other
-instruction:
+When the user says "continue" (or "go", "next", "proceed") with no other instruction:
 
-1. Read the files in "Read order".
-2. Run `graphify update .`. Use `graphify query` for the area of the
-   substage. Do not create a file or class that already exists.
-3. Look at "Current" in `PROGRESS.md`:
+1. Read the files in "Read order". Run `graphify update .`. Use `graphify query`
+   for the stage areas. Do not create a file or class that already exists.
+2. Look at the stage status in "Current":
 
 | Stage status in "Current" | Action |
 |---------------------------|--------|
-| `stage-ready-for-review` | Do nothing. Tell the user: "Waiting for Claude review of stage R<x>." Stop. |
-| `stage-changes-requested` | Do the `R<x>-fix` rows first (spec in "Open review items"), one commit each `R<x>-fix: <summary>`. Then run the stage gate again and set `stage-ready-for-review`. Stop. |
-| `stage-approved` | Start the next stage at step 4 if its spec pack exists. If not, tell the user: "Need `docs/specs/R<x+1>-spec.md` from Claude." Stop. |
+| `stage-ready-for-review` | No stage lock. Start the next stage at step 3 if its spec pack exists. If not, tell the user: "Need `docs/specs/<next>-spec.md`." Stop. |
+| `stage-changes-requested` | Put the `<x>-fix` substages first in the next stage. Then go to step 3. |
 | `blocked` | Tell the user the blocker. Stop. |
-| `in-progress` | Go to step 4. |
+| `in-progress` | Go to step 3. |
 
-4. Take the first substage row of the stage whose status is not
-   `committed`. Set it `in-progress`. Implement it. Follow its spec exactly.
-   If the spec is unclear or contradicts the code: do not guess. Write the
-   question in `PROGRESS.md` → "Blockers", set the row `blocked`, stop,
-   tell the user.
-   Sonnet reviews the substage diff before the next substage starts.
-5. Build if C++ changed: `cmake --build build --config Release`.
-   Run `.\run_tests.ps1`. All tests must pass.
-   A failure you fix in the same substage is normal. If the same substage
-   is still red after a second full fix attempt: stop. Write the failure in
-   `PROGRESS.md` → "Blockers". Set the row `blocked`. Tell the user. Stop.
-6. Run `graphify update .`. Set the row `committed`. Update "Current"
-   (next substage). Commit `R<x>.<y>: <summary>` with `PROGRESS.md` and
-   `graphify-out/graph.json`. Never commit `build/` or binaries.
-7. Repeat from step 4 until every substage of the stage is `committed`. Do
-   not wait for review between substages.
-8. Run the stage milestone test and the stage gate
-   (`docs/MASTER_PLAN.md` 1.3). Record the results in `PROGRESS.md` →
-   "Current".
-9. Tag `stage-R<x>-done` locally. Push only if a remote exists:
-   `git push origin main`, then `git push origin stage-R<x>-done`. Never
-   push with a red test. Never force-push.
-10. Set stage status `stage-ready-for-review`. Set "Owner now" to Reviewer.
-11. If the stage is blocking review (R3, R4, R5.2 decision): stop. Wait for
-    `stage-approved`. Otherwise: start the next stage if its spec pack
-    exists; if not, stop and tell the user.
-12. Report to the user in 3 lines or fewer: substages done, test result,
-    last commit hash.
-
-### Legacy per-substage protocol (R0 to R2 only, do not use)
-
-R0 to R2 used one review per substage: status `ready-for-review` after each
-substage, Claude set `approved` / `changes-requested`, and the Builder did
-one substage per "continue". Specs for that period are archived in
-`docs/specs/R2-spec.md`.
+3. Launch Sonnet builder subagents with the stage spec pasted in. The builder
+   builds all substages of the stage in order. One commit per substage:
+   `<stage>.<n>: <summary>`. No tests, no review, no graphify between substages.
+4. Stage end: full test suite once (CTest + pytest + stage milestone), stage gate
+   (`docs/MASTER_PLAN.md` 1.3), `graphify update .`. Record results under "Current".
+   Commit `PROGRESS.md` and `graphify-out/graph.json` with the stage-end commit.
+5. Tag `stage-<x>-done`. Push `main` and the tag if a remote exists. Never force-push.
+6. Set stage status `stage-ready-for-review`. Owner → Reviewer. Next stage starts
+   at once (no stage lock). Opus is looped in at stage end for advice and to
+   review the next spec pack. Log each Opus call in "Decisions".
+7. Stop rule: stage tests still red after two fix attempts → write the failure in
+   "Blockers", set status `blocked`, stop, wait for the user.
+8. Report to the user in 3 lines or fewer: substages done, test result, last commit hash.

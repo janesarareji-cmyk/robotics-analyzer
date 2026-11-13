@@ -13,6 +13,8 @@ is pushed, when it is reviewed. `PROGRESS.md` stays the live status file.
 
 ## 1. How work runs (stage-batch workflow)
 
+> 2026-11-14: Workflow rules in this section are replaced by .agents/rules/dev-workflow.md (Claude only, Sonnet builds, test per stage, no stage lock, Opus advisor at stage end).
+
 ### 1.1 Cycle for every stage
 
 | Step | Who | Action | Output |
