@@ -239,20 +239,21 @@ def test_camera_not_reset_on_robot_changed(qapp):
 
 
 def test_view_robot_submenu_actions(qapp):
-    """View > Robot submenu has 6 checkable actions (R3.5 Visuals, U2.3 Floor Grid, U2.6 Drag TCP), default checked except Drag TCP."""
+    """View > Robot submenu has 7 checkable actions (R3.5 Visuals, U2.3 Floor Grid, U2.6 Drag TCP, U3.4 Collision), default checked except Drag TCP."""
     win = MainWindow()
     try:
         assert win._menu_robot is not None
         assert "Robot" in win._menu_robot.title()
 
         actions = win._menu_robot.actions()
-        assert len(actions) == 6
+        assert len(actions) == 7
 
         titles = [a.text() for a in actions]
         assert any("Frames" in t for t in titles)
         assert any("Links" in t for t in titles)
         assert any("TCP" in t for t in titles)
         assert any("Visuals" in t for t in titles)
+        assert any("Collision" in t for t in titles)
 
         for a in actions:
             assert a.isCheckable()
