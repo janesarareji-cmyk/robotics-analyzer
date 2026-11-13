@@ -46,10 +46,11 @@ def apply_theme(app: QApplication | None = None) -> None:
     app = app or QApplication.instance()
     if app is None:
         return
-    if app.style().name().lower() != "fusion":
-        app.setStyle("Fusion")
-    if app.palette().color(QPalette.ColorRole.Highlight).name() != ACCENT:
-        app.setPalette(dark_palette())
+    if getattr(app, "_ra_theme_applied", False):
+        return                      # once: setStyle / setPalette re-polish every live widget (slow)
+    app.setStyle("Fusion")
+    app.setPalette(dark_palette())
+    app._ra_theme_applied = True
 
 
 def glyph_icon(char: str, color: str = "#d8d8d8", size: int = 20, active: str | None = None) -> QIcon:
