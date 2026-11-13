@@ -42,23 +42,14 @@ def dark_palette() -> QPalette:
     return p
 
 
-# Extra rules: only tooltips. Fusion already draws a focus frame on Tab; per-widget focus rules would
-# switch every button to style-sheet drawing and change its look.
-EXTRA_QSS = """
-QToolTip { color: #f0f0f0; background: #2b2b36; border: 1px solid #4f8cff; padding: 4px; }
-"""
-
-
 def apply_theme(app: QApplication | None = None) -> None:
     app = app or QApplication.instance()
     if app is None:
         return
-    if getattr(app, "_ra_theme_applied", False):
-        return
-    app.setStyle("Fusion")
-    app.setPalette(dark_palette())
-    app.setStyleSheet(app.styleSheet() + EXTRA_QSS)
-    app._ra_theme_applied = True
+    if app.style().name().lower() != "fusion":
+        app.setStyle("Fusion")
+    if app.palette().color(QPalette.ColorRole.Highlight).name() != ACCENT:
+        app.setPalette(dark_palette())
 
 
 def glyph_icon(char: str, color: str = "#d8d8d8", size: int = 20, active: str | None = None) -> QIcon:
