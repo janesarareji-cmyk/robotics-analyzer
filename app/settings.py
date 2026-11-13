@@ -36,6 +36,7 @@ class AppSettings:
     KEY_SHOW_GRID = "viewport/show_grid"
     KEY_SHOW_FLOOR = "viewport/show_floor"             # U2.3
     KEY_COLLISION_ENABLED = "collision/enabled"        # U3.4
+    KEY_IK_RANK_WEIGHTS = "target/rank_weights"        # U4a.2
     KEY_COMPUTE_BACKEND = "compute/backend"            # "auto" | "cpu" | "cuda"  (R5.5)
     KEY_VRAM_BUDGET_MB = "compute/vram_budget_mb"      # 256..7168, default 6144 (R5.5)
 
@@ -177,6 +178,21 @@ class AppSettings:
     def set_show_floor(self, visible: bool) -> None:
         """Set floor grid visibility."""
         self._settings.setValue(self.KEY_SHOW_FLOOR, bool(visible))
+
+    def ik_rank_weights(self) -> tuple:
+        """Weights of the IK ranking (motion, limits, manipulability, clearance); bad value = default."""
+        default = (0.4, 0.2, 0.2, 0.2)
+        val = self._settings.value(self.KEY_IK_RANK_WEIGHTS, None)
+        try:
+            parts = [float(v) for v in (val.split(",") if isinstance(val, str) else val)]
+            if len(parts) == 4 and all(p >= 0 for p in parts) and sum(parts) > 0:
+                return tuple(parts)
+        except (TypeError, ValueError):
+            pass
+        return default
+
+    def set_ik_rank_weights(self, weights) -> None:
+        self._settings.setValue(self.KEY_IK_RANK_WEIGHTS, ",".join(f"{float(w):.6g}" for w in weights))
 
     def collision_enabled(self) -> bool:
         """Return True if live collision blocking is on (default True; off = pass-through)."""

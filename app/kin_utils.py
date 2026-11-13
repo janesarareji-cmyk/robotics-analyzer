@@ -2,6 +2,11 @@
 import core_bridge as cb
 
 
+# sigma_min of the TCP Jacobian below this value: "near singularity" (target colour orange,
+# U4a.3; also used by the curve check U4b and the overlays U6).
+SINGULAR_WARN = 0.05
+
+
 def singularity_at(cm, q, mode="full", threshold=1e-3):
     """Singularity indicators of the TCP Jacobian at ``q`` (R4.5).
 

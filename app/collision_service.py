@@ -179,6 +179,17 @@ class CollisionService(QObject):
             self._last_key = key
             self.collision_changed.emit(res)
 
+    def clearance(self, q: Sequence[float]) -> float:
+        """Smallest distance (m) between any checked pair at ``q``; negative when touching.
+
+        ``inf`` when blocking is off or there is no world / nothing to check (U4a.2).
+        """
+        w = self.world if self._enabled else None
+        if w is None:
+            return float("inf")
+        w.set_q(q)
+        return float(w.min_distance())
+
     def contacts(self, q: Sequence[float]) -> tuple:
         """``(pair -> signed distance, text)`` at ``q`` without publishing (playback check)."""
         r = self.check(q, emit=False)
