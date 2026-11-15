@@ -97,7 +97,30 @@ title shown in the File menu:
 
 Licences are given in each `SOURCE.txt`.
 
-## Install and run
+## Easy install (wizard)
+
+Double-click `install.bat`. A console wizard asks for the install folder, gets
+the source (git clone, or a zip if git is missing), checks Python 3.13, CMake
+and the Visual Studio C++ tools (it offers `winget` installs and says honestly
+how big they are), lets you choose Auto / CPU only / GPU, runs `setup.ps1`,
+and can add Desktop and Start-menu shortcuts and start the app. Enter accepts
+the default, Q quits, and it is safe to run again. The log is `install.log`
+in the install folder.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -Yes -CpuOnly -InstallDir C:\RoboticsAnalyzer
+```
+
+Options: `-InstallDir <path>`, `-Yes` (no questions, take the defaults),
+`-CpuOnly`, `-NoShortcuts`, `-SkipLaunch`, `-DryRun` (only prints what it
+would do; nothing is installed and no winget, git or cmake is run).
+
+To remove it: double-click `uninstall.bat` (or run `uninstall.ps1`). It deletes
+only a folder that holds the marker file `.robotics-analyzer-install` written
+by the wizard, asks first, and removes the shortcuts. A clone you made yourself
+is never deleted: only `.venv`, `build/`, the built `.pyd` files and the log go.
+
+## Install and run (manual)
 
 Windows 11 only. Everything is installed by one script and started by another.
 

@@ -39,7 +39,10 @@ Two ways to run the program:
     known limits are in [packaging.md](packaging.md). A clean-profile test is described in
     [clean-machine-test.md](clean-machine-test.md). A Windows installer (Inno Setup) is not part of the
     delivered build yet.
--   **From source.** Run `setup.ps1` once (it creates `.venv`, installs `requirements.txt`, builds the
+-   **From source, easy way.** Double-click `install.bat` (a console wizard: folder, source, Python 3.13,
+    CMake, C++ tools, GPU or CPU, shortcuts; `uninstall.bat` removes it again). See "Easy install (wizard)"
+    in the [README](../README.md).
+-   **From source, by hand.** Run `setup.ps1` once (it creates `.venv`, installs `requirements.txt`, builds the
     C++ core and, when CUDA and an NVIDIA GPU are found, the GPU module), then start the program with
     `run.ps1` or `run.bat`. See "Install and run" in the [README](../README.md). The main entry point
     is `app/main.py`.

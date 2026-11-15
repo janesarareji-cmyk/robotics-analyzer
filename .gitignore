@@ -34,3 +34,5 @@ desktop.ini
 *.env
 
 dist/
+install.log
+.robotics-analyzer-install

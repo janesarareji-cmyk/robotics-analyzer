@@ -57,7 +57,7 @@ Three layers, one process, plus optional GPU code:
 Requirements: Windows 11, Visual Studio Build Tools (MSVC, C++20), CMake 3.25+, Python 3.13, CUDA Toolkit
 (only for the GPU module; see [hardware-audit.md](hardware-audit.md) for the versions used).
 
-The easy way is `setup.ps1` (see "Install and run" in the README): it creates `.venv`, installs the
+The easiest way is the wizard `install.bat` / `install.ps1` (it calls `setup.ps1`; `-DryRun` shows its plan, `uninstall.ps1` only deletes a folder with the `.robotics-analyzer-install` marker). The direct way is `setup.ps1` (see "Install and run" in the README): it creates `.venv`, installs the
 packages, detects CUDA and the GPU architecture, builds and runs the smoke test. `run.ps1` starts the app.
 By hand:
 
