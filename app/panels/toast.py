@@ -1,4 +1,4 @@
-"""Small non-modal hint card at the bottom of the 3D view (D1.3).
+"""Small non-modal hint card at the top of the 3D view (D1.3).
 
 ``Toast(host)`` floats over ``host`` (the viewport), shows a message and an optional action button,
 closes with the x button or after ``timeout_ms``. ``show_message(text, action_text, callback)``.
@@ -80,11 +80,10 @@ class Toast(QFrame):
             cb()
 
     def _place(self) -> None:
-        w = min(max(360, self._host.width() - 80), 760)
+        w = min(max(360, self._host.width() - 360), 760)       # keeps clear of the view buttons
         self.setFixedWidth(w)
         self.adjustSize()
-        self.move(max(0, (self._host.width() - self.width()) // 2),
-                  max(0, self._host.height() - self.height() - 24))
+        self.move(max(0, (self._host.width() - 340 - self.width()) // 2 + 16), 16)
 
     def hideEvent(self, e) -> None:           # noqa: N802
         self._timer.stop()

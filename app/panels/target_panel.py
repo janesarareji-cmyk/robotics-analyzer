@@ -123,6 +123,7 @@ class TargetPanel(QWidget):
         self.last_rank_ms = 0.0
         self.last_motion: Any = None
         self.last_classification: list = []
+        self._fit_next = False
         self.auto_solve = True
         self._disposed = False
         self.markers: Any = None
@@ -549,6 +550,7 @@ class TargetPanel(QWidget):
     def load_targets(self, targets: Any) -> None:
         """Replace the project targets with copies of ``targets`` (sample targets, D1.2)."""
         self.demo.cancel()
+        self._fit_next = True
         self._store.clear()
         for t in targets:
             self._store.add(t.pose, t.name, t.frame)
@@ -913,11 +915,22 @@ class TargetPanel(QWidget):
         if gen != self._marker_gen or self.markers is None or self._disposed:
             return
         self.last_classification = res
+        if self._fit_next:                 # sample targets just loaded: frame robot and targets
+            self._fit_next = False
+            self._fit_view()
         cur = self._store[self._current_index()].name if self._current_index() >= 0 else None
         self.markers.set_entries([(r["name"], self._pose_of(r["name"]), r["status"]) for r in res
                                   if self._pose_of(r["name"]) is not None])
         self.markers.set_current(cur)
         self._apply_marker_visibility()
+
+    def _fit_view(self) -> None:
+        try:
+            pl = self._viewport.plotter
+            pl.reset_camera()
+            pl.render()
+        except Exception:
+            pass
 
     def _pose_of(self, name: str):
         i = self._store.index(name)

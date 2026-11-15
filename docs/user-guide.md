@@ -27,6 +27,8 @@ Menu names are as shown in the application. For the scripting interface see
 15. [Target, ranked IK and Play to target (U4a)](#15-target-ranked-ik-and-play-to-target-u4a)
 16. [Curve, follow and live matrices (U4b)](#16-curve-follow-and-live-matrices-u4b)
 17. [Joint poses, Cartesian jog and the window (U5)](#17-joint-poses-cartesian-jog-and-the-window-u5)
+18. [Analysis overlays (U6)](#18-analysis-overlays-u6)
+19. [Sample targets and the demo tour (D1)](#19-sample-targets-and-the-demo-tour-d1)
 
 ## 1. Install
 
@@ -444,3 +446,20 @@ a new one.
     File -> Export -> Playback video (MP4 if ffmpeg exists, GIF, PNG frames).
 
 Details: [overlays.md](overlays.md).
+
+## 19. Sample targets and the demo tour (D1)
+
+Quickest way to see the whole program work: open a sample robot (start screen card or File -> Open Sample
+Robot). Five targets are added to the project: **Pick A**, **Place B** and **Home-side C** are reachable
+(valid, collision-free solution, free approach, free planned motion between them), **Too far** and
+**Too close** are not. In the 3D view they are green and red labelled markers; the Target tab lists them.
+
+1.  Press **Run demo** on the hint card, or in the Target tab.
+2.  The robot moves Pick A, Place B, Home-side C, back to Pick A. Each move is planned around objects and
+    the floor; the pink marker follows the path, the status line shows "Step k of N".
+3.  Red targets are skipped and flagged in the status line.
+4.  **Stop demo** ends it at once.
+
+Your own targets work the same way: the demo uses every target in the list, in order. The sample files
+are `robots/<name>/targets.json`, made by `python tools/gen_sample_targets.py` and checked in
+`tests/python/test_sample_targets.py`. Details: [targets.md](targets.md).

@@ -5,9 +5,23 @@ How the window is organised and how to do the common things with the fewest clic
 
 ## Start screen
 
-With no robot loaded the 3D view shows the start screen: nine sample robot cards (picture and name),
-**Import URDF...**, **Open project...** and the last five projects. One click on a card loads the robot.
+With no robot loaded the 3D view shows the start screen: nine sample robot cards, **Import URDF...**,
+**Open project...** and the last five projects. One click on a card loads the robot.
 You can also drop a `.urdf` or `.robotproj` file on the window.
+
+Each card has the same size and shows the picture, the full robot name (it wraps to two lines, never cut:
+"UFACTORY xArm 5 + Gripper"), the maker, and a line such as "6 DOF - 6-axis arm". The number of columns
+follows the window width (rows stay even); a small window scrolls instead of overlapping cards.
+Display data: `SAMPLE_INFO` in `app/sample_robots.py`.
+
+### Sample targets and the demo (D1)
+
+A sample robot brings five targets: **Pick A**, **Place B**, **Home-side C** (reachable) and **Too far**,
+**Too close** (unreachable). They appear in the 3D view as labelled markers, green = reachable, red =
+unreachable, and in the Target tab. A hint card at the top of the 3D view offers **Run demo**. The demo
+visits the targets one by one with planned, collision-free motion, pauses at each, skips the red ones with
+a status line ("Target "Too far": unreachable, skipped"), returns to Pick A, and shows "Step 2 of 6".
+It runs from the Target tab (**Run demo** / **Stop demo**) and works with the Simulation dock hidden.
 
 ## Work modes
 

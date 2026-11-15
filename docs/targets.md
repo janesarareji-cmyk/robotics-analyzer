@@ -44,3 +44,18 @@ the straight Cartesian approach line (IK per 5 mm, every sample collision checke
 reverse as retreat. The last waypoint of the approach is exactly the chosen solution. The motion is
 sent to the timeline (kinematic mode) and played at once; playback blocking of U3.4 applies.
 Dense samples use linear interpolation at 0.04 s.
+
+## Sample targets and the demo tour (D1)
+
+`robots/<name>/targets.json` (`app/sample_targets.py`) holds 5 targets per sample robot: 3 reachable
+(`kind: "reachable"`) and 2 unreachable (`kind: "unreachable"`). A reachable target has a valid ranked
+IK solution (limits, floor and self collision), a valid solution 80 mm back along the tool z axis joined
+to it by a collision-free joint segment, and the chain start -> A -> B -> C -> A plans without collision.
+`tools/gen_sample_targets.py` picks them from forward kinematics of random collision-free poses near wanted
+azimuth / radius / height slots (tool pointing down when possible). Opening a sample robot puts them in
+`targets.json` of the new project. `TargetMarkers` (`app/viewport/target_markers.py`) draws them in 3D.
+
+`DemoRunner` (`app/demo.py`) classifies the targets (`classify_targets`, same test as the markers), then
+per step plans `plan_target_motion` (no approach) from the current pose and asks the window to play it
+(timeline in kinematic mode, background play, path tube + marker). Pause 1.2 s at a reached target,
+1.5 s on a skipped one. Steps = number of targets, plus one return to the first reachable target.
