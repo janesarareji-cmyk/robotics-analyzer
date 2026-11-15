@@ -853,6 +853,7 @@ class MainWindow(QMainWindow):
             lambda _t, txt: self._target_panel.demo.on_play_failed(f"collision: {txt}"))
         self._sim_panel.position_changed.connect(self._on_demo_position)
         self._target_panel.demo.status_changed.connect(self._on_demo_status)
+        self._target_panel.demo.finished.connect(self._on_demo_finished)
         self._demo_loaded: Any = None
 
         # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
@@ -2145,6 +2146,11 @@ class MainWindow(QMainWindow):
         self._toast.hide()
         self.set_mode("Target")
         return self._target_panel.start_demo()
+
+    def _on_demo_finished(self, summary: Any) -> None:
+        """Stop demo: the motion that is playing stops too (the robot does not run on)."""
+        if getattr(summary, "cancelled", False) and self._demo_loaded is not None                 and self._sim_panel.trajectory is self._demo_loaded:
+            self._sim_panel.pause_trajectory()
 
     def _on_demo_status(self, text: str) -> None:
         self.set_status(text)

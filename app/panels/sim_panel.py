@@ -442,9 +442,9 @@ class SimPanel(QWidget):
         e = self._engine
         if e is None or self._timeline.playable is None:
             return
+        bg = self._bg_play                   # stop / new player discard the flag: read it first
         if self._player is None and e.clock.state != STOPPED:
             e.stop()   # free-running dynamics: back to the initial state first
-        bg = self._bg_play                   # creating the player discards the old one and its flag
         pl = self._ensure_player()
         self._bg_play = bg and pl is not None
         if pl is None:
