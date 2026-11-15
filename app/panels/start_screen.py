@@ -10,21 +10,27 @@ from typing import Any
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QToolButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+                               QToolButton, QVBoxLayout, QWidget)
 
-from app.sample_robots import list_sample_robots
+from app.sample_robots import SAMPLE_INFO, list_sample_robots, sample_info
 
-COLUMNS = 3
-THUMB = QSize(200, 131)
+THUMB = QSize(156, 102)
+CARD = QSize(176, 222)         # fixed for every card: name wraps to 2 lines, never elided
+GAP = 12
 
 STYLE = """
 QWidget#start_screen { background: #1a1a2e; }
 QLabel#start_title { color: #ffffff; font-size: 20pt; font-weight: 600; }
 QLabel#start_sub { color: #c8c8d4; font-size: 11pt; }
 QLabel#start_head { color: #e0e0e8; font-size: 12pt; font-weight: 600; }
-QToolButton#start_card { color: #e8e8f0; background: #24243a; border: 1px solid #3a3a55;
-                         border-radius: 6px; padding: 6px; font-size: 10pt; }
+QToolButton#start_card { background: #24243a; border: 1px solid #3a3a55; border-radius: 6px; }
+QLabel#card_name { color: #ffffff; font-size: 10.5pt; font-weight: 600; background: transparent; }
+QLabel#card_maker { color: #c0c0d0; font-size: 9pt; background: transparent; }
+QLabel#card_kind { color: #9fc0ff; font-size: 9pt; background: transparent; }
+QLabel#card_thumb { background: #1a1a2e; border-radius: 4px; }
+QScrollArea#start_scroll, QScrollArea#start_scroll > QWidget > QWidget { background: transparent; }
+QScrollArea#start_scroll { border: none; }
 QToolButton#start_card:hover { background: #2f2f4d; border-color: #4f8cff; }
 QToolButton#start_card:focus { border: 2px solid #ffffff; }
 QPushButton#start_action { color: #ffffff; background: #3d6fcc; border: none; border-radius: 4px;
@@ -51,7 +57,18 @@ class StartScreen(QWidget):
         self.setStyleSheet(STYLE)
         self._cards: dict[str, QToolButton] = {}
         self._recent_buttons: list[QPushButton] = []
-        outer = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea()
+        self._scroll.setObjectName("start_scroll")
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        root.addWidget(self._scroll)
+        content = QWidget()
+        content.setObjectName("start_content")
+        self._scroll.setWidget(content)
+        outer = QVBoxLayout(content)
         outer.setContentsMargins(32, 16, 32, 16)
         outer.setSpacing(8)
         title = QLabel("Robotics Analyzer")
@@ -67,6 +84,7 @@ class StartScreen(QWidget):
         self._grid = QGridLayout()
         self._grid.setSpacing(12)
         self._grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._cols = 0
         outer.addLayout(self._grid)
         self._build_cards()
         row = QHBoxLayout()
@@ -92,25 +110,78 @@ class StartScreen(QWidget):
 
     # ------------------------------------------------------------------ content
     def _build_cards(self) -> None:
-        for i, (title, path) in enumerate(list_sample_robots()):
+        order = list(SAMPLE_INFO)
+        items = sorted(list_sample_robots(), key=lambda t: (order.index(t[1].parent.name)
+                                                          if t[1].parent.name in order else 99, t[0]))
+        for title, path in items:
             stem = Path(path).parent.name
+            info = sample_info(stem, title)
             btn = QToolButton()
             btn.setObjectName("start_card")
-            btn.setText(title)
-            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-            btn.setIconSize(THUMB)
-            btn.setFixedSize(THUMB.width() + 24, THUMB.height() + 46)
-            thumb = Path(path).parent / "thumb.png"
-            if thumb.is_file():
-                btn.setIcon(QIcon(QPixmap(str(thumb))))
-            else:
-                btn.setMinimumSize(THUMB)
-            btn.setToolTip(f"Open the sample robot {title}")
-            btn.setAccessibleName(f"Open sample robot {title}")
+            btn.setFixedSize(CARD)
+            lay = QVBoxLayout(btn)
+            lay.setContentsMargins(9, 9, 9, 6)
+            lay.setSpacing(2)
+            thumb = QLabel()
+            thumb.setObjectName("card_thumb")
+            thumb.setFixedSize(THUMB)
+            thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            tp = Path(path).parent / "thumb.png"
+            if tp.is_file():
+                thumb.setPixmap(QPixmap(str(tp)).scaled(
+                    THUMB, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            name = QLabel(info["name"])
+            name.setObjectName("card_name")
+            name.setWordWrap(True)
+            name.setFixedHeight(40)          # two lines reserved: all cards the same height
+            name.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            maker = QLabel(info["maker"])
+            maker.setObjectName("card_maker")
+            dof = info["dof"]
+            kind = QLabel(f"{dof} DOF - {info['kind']}" if dof else info["kind"])
+            kind.setObjectName("card_kind")
+            kind.setWordWrap(True)
+            kind.setMinimumHeight(30)
+            kind.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            for w in (thumb, name, maker, kind):
+                w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            lay.addWidget(thumb, 0, Qt.AlignmentFlag.AlignHCenter)
+            lay.addWidget(name)
+            lay.addWidget(maker)
+            lay.addWidget(kind)
+            lay.addStretch(1)
+            btn.setToolTip(f"Open the sample robot {info['name']} ({info['maker']}, {info['kind']})")
+            btn.setAccessibleName(f"Open sample robot {info['name']}")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _c=False, p=str(path): self.sample_requested.emit(p))
-            self._grid.addWidget(btn, i // COLUMNS, i % COLUMNS)
             self._cards[stem] = btn
+        self._relayout(force=True)
+
+    def _relayout(self, force: bool = False) -> None:
+        """Columns follow the width; the screen scrolls when the cards do not fit."""
+        avail = max(self.width() - 64, 0)
+        n = len(self._cards) or 1
+        cols = max(1, min(n, (avail + GAP) // (CARD.width() + GAP)))
+        cols = -(-n // (-(-n // cols)))          # even rows (9 cards -> 5+4, or 3+3+3)
+        if cols == self._cols and not force:
+            return
+        self._cols = cols
+        for i, btn in enumerate(self._cards.values()):
+            self._grid.addWidget(btn, i // cols, i % cols)
+
+    def resizeEvent(self, ev) -> None:           # noqa: N802
+        super().resizeEvent(ev)
+        self._relayout()
+
+    @property
+    def columns(self) -> int:
+        return self._cols
+
+    def card_name(self, stem: str) -> str:
+        """Display name shown on the card of ``stem`` (full text, never elided)."""
+        for lab in self._cards[stem].findChildren(QLabel, "card_name"):
+            return lab.text()
+        return ""
 
     def card(self, stem: str) -> QToolButton:
         """Card of the sample robot whose folder name is ``stem``."""

@@ -44,6 +44,30 @@ def list_sample_robots(root: Path | str | None = None) -> list[tuple[str, Path]]
     return out
 
 
+# D1.1: human display data for the start screen (folder name -> name, maker, dof, kind).
+# dof = joints the user moves (gripper fingers not counted); checked against the models in tests.
+SAMPLE_INFO: dict[str, dict] = {
+    "ur3": {"name": "UR3", "maker": "Universal Robots", "dof": 6, "kind": "6-axis arm"},
+    "ur5": {"name": "UR5", "maker": "Universal Robots", "dof": 6, "kind": "6-axis arm"},
+    "ur10": {"name": "UR10", "maker": "Universal Robots", "dof": 6, "kind": "6-axis arm"},
+    "xarm5": {"name": "UFACTORY xArm 5", "maker": "UFACTORY", "dof": 5, "kind": "5-axis arm"},
+    "xarm5_gripper": {"name": "UFACTORY xArm 5 + Gripper", "maker": "UFACTORY", "dof": 5,
+                      "kind": "5-axis arm + gripper"},
+    "xarm6": {"name": "UFACTORY xArm 6", "maker": "UFACTORY", "dof": 6, "kind": "6-axis arm"},
+    "xarm7": {"name": "UFACTORY xArm 7", "maker": "UFACTORY", "dof": 7, "kind": "7-axis arm (redundant)"},
+    "kuka_iiwa": {"name": "KUKA LBR iiwa 14", "maker": "KUKA", "dof": 7, "kind": "7-axis arm (redundant)"},
+    "panda": {"name": "Franka Panda", "maker": "Franka Emika", "dof": 7, "kind": "7-axis arm + 2-finger hand"},
+}
+
+
+def sample_info(stem: str, fallback_title: str = "") -> dict:
+    """Display data of the sample robot folder ``stem`` (fallback when unknown)."""
+    info = SAMPLE_INFO.get(stem)
+    if info:
+        return dict(info)
+    return {"name": fallback_title or stem, "maker": "", "dof": 0, "kind": ""}
+
+
 _GENERIC_ROBOT_NAMES = {"", "uf_robot", "robot", "unnamed robot"}
 
 

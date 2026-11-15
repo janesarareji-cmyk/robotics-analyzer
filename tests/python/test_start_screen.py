@@ -73,3 +73,26 @@ def test_recent_projects_listed_and_open(win, monkeypatch):
     assert [b.toolTip() for b in bs] == ["D:/x/two.robotproj", "D:/x/one.robotproj"]
     QTest.mouseClick(bs[0], Qt.MouseButton.LeftButton)
     assert opened == ["D:/x/two.robotproj"]
+
+
+def test_cards_show_full_names_same_size_no_overlap_at_any_width(win):
+    from PySide6.QtWidgets import QLabel
+    s = win.start_screen
+    assert s.card_name("xarm5_gripper") == "UFACTORY xArm 5 + Gripper"
+    assert s.card_name("panda") == "Franka Panda" and s.card_name("ur5") == "UR5"
+    for stem in s.card_stems:
+        labs = {lab.objectName(): lab.text() for lab in s.card(stem).findChildren(QLabel)}
+        assert labs["card_name"] and labs["card_maker"] and "DOF" in labs["card_kind"]
+    for w in (1500, 1100, 700, 420):
+        win.resize(w + 300, 900)
+        QCoreApplication.processEvents()
+        s._relayout()
+        s._scroll.widget().layout().activate()
+        QCoreApplication.processEvents()
+        cards = [s.card(st) for st in s.card_stems]
+        assert len({(c.width(), c.height()) for c in cards}) == 1
+        rects = [c.geometry() for c in cards]
+        for i, a in enumerate(rects):
+            for b in rects[i + 1:]:
+                assert not a.intersects(b)
+        assert s.columns >= 1
