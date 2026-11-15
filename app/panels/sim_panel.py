@@ -572,6 +572,17 @@ class SimPanel(QWidget):
         now = time.perf_counter()
         wall_dt = min(now - self._last_tick, MAX_WALL_DT)
         self._last_tick = now
+        self._advance(wall_dt)
+
+    def advance_playback(self, wall_dt: float) -> None:
+        """Advance the running playback by ``wall_dt`` s without the timer (tests, demo checks)."""
+        eng = self._engine
+        if eng is None or eng.clock.state != RUNNING:
+            return
+        self._advance(float(wall_dt))
+
+    def _advance(self, wall_dt: float) -> None:
+        eng = self._engine
         reached = False
         if self._player is not None:
             reached = bool(self._player.advance(wall_dt))

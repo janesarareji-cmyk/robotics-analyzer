@@ -14,7 +14,7 @@ import threading
 from typing import Any, Callable
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 import core_bridge as cb
 from app.analysis.ik_rank import DEFAULT_WEIGHTS, PART_NAMES, rank_solutions, rerank
 from app.analysis.target_motion import plan_target_motion
+from app.demo import DemoRunner, classify_targets
 from app.kin_utils import CompiledCache, current_q
 from app.target import TargetStore, pose_from_xyz_rpy, rotate_pose, xyz_rpy_from_pose
 from app.target_preview import TargetPreview, target_status
@@ -88,6 +89,7 @@ class TargetPanel(QWidget):
     trajectory_ready = Signal(object, dict)      # Trajectory, info (segments, q_goal)
     targets_changed = Signal()                   # store edited (project dirty)
     status_message = Signal(str)
+    demo_play_requested = Signal(object, dict)  # Trajectory, info: the window plays it
     _solved = Signal(int, object)
     _failed = Signal(int, str)
     _planned = Signal(int, object)
@@ -120,12 +122,44 @@ class TargetPanel(QWidget):
         self._motion: Any = None
         self.last_rank_ms = 0.0
         self.last_motion: Any = None
+        self.last_classification: list = []
         self.auto_solve = True
         self._disposed = False
+        self.markers: Any = None
+        self._marker_gen = 0
+        self._marker_task: Any = None
+        self.demo = DemoRunner(task_runner, self)
+        self._marker_timer = QTimer(self)
+        self._marker_timer.setSingleShot(True)
+        self._marker_timer.setInterval(250)
+        self._marker_timer.timeout.connect(self.refresh_markers)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(6)
+
+        # ---- 0. demo tour
+        g0 = QGroupBox("Demo tour")
+        l0 = QVBoxLayout(g0)
+        row = QHBoxLayout()
+        self._btn_demo = QPushButton("Run demo")
+        self._btn_demo.setToolTip("Visit every target in the list one after the other with planned, "
+                                  "collision-free motion. Unreachable targets are skipped and flagged.")
+        self._btn_demo.clicked.connect(lambda _c=False: self.start_demo())
+        self._btn_demo_stop = QPushButton("Stop demo")
+        self._btn_demo_stop.clicked.connect(lambda _c=False: self.demo.cancel())
+        row.addWidget(self._btn_demo, 1)
+        row.addWidget(self._btn_demo_stop)
+        l0.addLayout(row)
+        self._demo_status = QLabel("Visits the targets below: green = reachable, red = unreachable.")
+        self._demo_status.setWordWrap(True)
+        l0.addWidget(self._demo_status)
+        lay.addWidget(g0)
+        self.demo.status_changed.connect(self._demo_status.setText)
+        self.demo.step_started.connect(self._on_demo_step)
+        self.demo.finished.connect(lambda _s: self._after_demo())
+        self.demo.progress_changed.connect(lambda _a, _b: self._update_buttons())
+        self.demo.play_requested.connect(self.demo_play_requested)
 
         # ---- 1. targets
         g1 = QGroupBox("Target")
@@ -167,6 +201,10 @@ class TargetPanel(QWidget):
         self._name.editingFinished.connect(self._on_rename)
         row.addWidget(self._name, 1)
         l1.addLayout(row)
+        self._chk_markers = QCheckBox("Show all targets in 3D (green reachable, red not)")
+        self._chk_markers.setChecked(True)
+        self._chk_markers.toggled.connect(lambda _on: self._apply_marker_visibility())
+        l1.addWidget(self._chk_markers)
         self._hint = QLabel("No target yet. Use New at TCP, or Pick on surface.")
         self._hint.setWordWrap(True)
         l1.addWidget(self._hint)
@@ -280,6 +318,9 @@ class TargetPanel(QWidget):
         self._failed.connect(self._on_failed)
         self._planned.connect(self._on_planned)
         self._failed_m.connect(self._failed_motion)
+        self.demo.configure(lambda: self._model, lambda: self._store,
+                            lambda: self._svc.session() if self._svc is not None else None,
+                            self._cache.get_cm)
         self._update_buttons()
 
     # ------------------------------------------------------------------ setup
@@ -287,6 +328,8 @@ class TargetPanel(QWidget):
     def attach_viewport(self, viewport: Any) -> None:
         from app.viewport.target_widget import TargetController
         self._viewport = viewport
+        from app.viewport.target_markers import TargetMarkers
+        self.markers = TargetMarkers(viewport)
         self.controller = TargetController(viewport, get_ref_rot=self._tcp_rot, parent=self)
         self.controller.standoff = self._standoff.value() / 1000.0
         self.controller.pose_changed.connect(self._on_controller_pose)
@@ -330,6 +373,7 @@ class TargetPanel(QWidget):
         if project is self._project and (project is not None or len(self._store) == 0):
             return
         self._cancel_work()
+        self.demo.cancel()
         self._project = project
         self._store = project.targets if project is not None and getattr(project, "targets", None) \
             is not None else TargetStore()
@@ -344,12 +388,16 @@ class TargetPanel(QWidget):
         self._cache.invalidate()
         self._clear_results()
         self._update_buttons()
+        self.schedule_markers()
 
     def set_active(self, on: bool) -> None:
         """Dock visible: show the 3D target frame; hidden: remove it (and the ghosts)."""
         self._active = bool(on)
         if self.controller is None or self._disposed:
             return
+        self._apply_marker_visibility()
+        if on:
+            self.schedule_markers()
         if on and self._model is not None and self._current_index() >= 0:
             self.controller.show(True)
         else:
@@ -374,7 +422,11 @@ class TargetPanel(QWidget):
 
     def dispose(self) -> None:
         self._disposed = True
+        self._marker_timer.stop()
+        self.demo.cancel()
         self._cancel_work()
+        if self.markers is not None:
+            self.markers.dispose()
         if self.preview is not None:
             self.preview.clear()
         if self.controller is not None:
@@ -494,6 +546,15 @@ class TargetPanel(QWidget):
         self._after_target_change(solve=False)
         return True
 
+    def load_targets(self, targets: Any) -> None:
+        """Replace the project targets with copies of ``targets`` (sample targets, D1.2)."""
+        self.demo.cancel()
+        self._store.clear()
+        for t in targets:
+            self._store.add(t.pose, t.name, t.frame)
+        self._reload_combo()
+        self.targets_changed.emit()
+
     def delete_target(self) -> None:
         i = self._current_index()
         if i < 0:
@@ -548,6 +609,7 @@ class TargetPanel(QWidget):
                 self.controller.show(False)
         self._status.setText(_STATUS_TEXT["neutral"])
         self._update_buttons()
+        self.schedule_markers()
         if has and solve and self.auto_solve:
             self.solve()
 
@@ -803,6 +865,88 @@ class TargetPanel(QWidget):
         """The Ghosts dock cleared every ghost: draw the IK preview again."""
         self._show_preview()
 
+    # ------------------------------------------------------------------ markers + demo
+
+    def _apply_marker_visibility(self) -> None:
+        if self.markers is None or self._disposed:
+            return
+        on = self._chk_markers.isChecked() and (self._active or self.demo.running)
+        self.markers.set_visible(on)
+
+    def schedule_markers(self) -> None:
+        """Re-check every target (debounced) and redraw the green / red 3D markers."""
+        if self.markers is None or self._disposed or self.demo.running:
+            return
+        self._marker_timer.start()
+
+    def refresh_markers(self) -> None:
+        """Classify all targets in a worker: ok (green), warn (orange), bad (red)."""
+        if self.markers is None or self._disposed:
+            return
+        model = self._model
+        if model is None or len(self._store) == 0:
+            self.markers.clear()
+            return
+        # neutral markers at once, the verdict arrives from the worker
+        self.markers.set_entries([(t.name, t.pose, "neutral") for t in self._store])
+        self._apply_marker_visibility()
+        self._marker_gen += 1
+        gen = self._marker_gen
+        targets = [t.copy() for t in self._store]
+        q = current_q(model)
+        svc = self._svc
+        try:
+            cm = self._cache.get_cm(model)
+        except Exception:
+            return
+
+        def work():
+            session = svc.session() if svc is not None else None
+            return classify_targets(model, targets, q, session, cm)
+
+        task = FunctionTask(work)
+        task.signals.result.connect(lambda r, g=gen: self._on_markers_classified(g, r))
+        self._marker_task = task
+        self._runner.submit(task)
+
+    def _on_markers_classified(self, gen: int, res: list) -> None:
+        if gen != self._marker_gen or self.markers is None or self._disposed:
+            return
+        self.last_classification = res
+        cur = self._store[self._current_index()].name if self._current_index() >= 0 else None
+        self.markers.set_entries([(r["name"], self._pose_of(r["name"]), r["status"]) for r in res
+                                  if self._pose_of(r["name"]) is not None])
+        self.markers.set_current(cur)
+        self._apply_marker_visibility()
+
+    def _pose_of(self, name: str):
+        i = self._store.index(name)
+        return None if i < 0 else self._store[i].pose
+
+    def start_demo(self) -> bool:
+        """Run the demo tour (all targets in order). Returns at once."""
+        if self.demo.running:
+            return False
+        self._chk_markers.setChecked(True)
+        self._apply_marker_visibility()
+        if self.markers is not None:
+            self.markers.set_visible(True)
+        ok = self.demo.start()
+        self._update_buttons()
+        return ok
+
+    def _on_demo_step(self, name: str, _kind: str) -> None:
+        if self.markers is not None:
+            self.markers.set_current(name)
+        i = self._store.index(name)
+        if i >= 0 and self._combo.currentIndex() != i:
+            self._combo.setCurrentIndex(i)
+
+    def _after_demo(self) -> None:
+        self._update_buttons()
+        self._apply_marker_visibility()
+        self.schedule_markers()
+
     # ------------------------------------------------------------------ motion
 
     def play_to_target(self) -> None:
@@ -891,7 +1035,10 @@ class TargetPanel(QWidget):
     def _update_buttons(self) -> None:
         has_model = self._model is not None
         has_t = self._current_index() >= 0
-        busy = self._solving or self._planning
+        demo = self.demo.running
+        busy = self._solving or self._planning or demo
+        self._btn_demo.setEnabled(has_model and len(self._store) > 0 and not busy)
+        self._btn_demo_stop.setEnabled(demo)
         self._btn_add.setEnabled(has_model and not busy)
         self._btn_click.setEnabled(has_model)
         self._btn_delete.setEnabled(has_t and not busy)

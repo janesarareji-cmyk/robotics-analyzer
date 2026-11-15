@@ -56,6 +56,7 @@ from app.undo import UndoManager
 from app.cartesian_jog import CartesianJog
 from app.panels.jog_panel import JogPanel
 from app.panels.start_screen import StartScreen, attach as _attach_start
+from app.panels.toast import Toast
 from app.modes import DEFAULT_MODE, ModeController, mode_for_dock as _mode_for_dock
 from app.settings import AppSettings, LAYOUT_VERSION
 from app.sample_robots import list_sample_robots
@@ -568,6 +569,7 @@ class MainWindow(QMainWindow):
         self._start_screen.open_requested.connect(self._on_open_project)
         self._start_screen.recent_requested.connect(
             lambda p: self._project_controller.open_project(self, p))
+        self._toast = Toast(self._viewport)
         self._refresh_start_screen()
 
     def _setup_dock_panels(self) -> None:
@@ -824,6 +826,7 @@ class MainWindow(QMainWindow):
         self._target_panel.status_message.connect(self.set_status)
         self._target_panel.targets_changed.connect(self._on_targets_changed)
         self._target_panel.trajectory_ready.connect(self._on_target_trajectory)
+        self._target_panel.demo_play_requested.connect(self._on_demo_play)
         self._target_panel.targets_changed.connect(lambda: self._probe_target(None))
         self._target_panel.controller.pose_changed.connect(self._probe_target)
 
@@ -845,6 +848,12 @@ class MainWindow(QMainWindow):
         self._sim_panel.position_changed.connect(self._on_curve_position)
         self._sim_panel.playback_finished.connect(self._on_playback_finished)
         self._sim_panel.playback_finished.connect(lambda: self._undo.rebase("q"))
+        self._sim_panel.playback_finished.connect(self._target_panel.demo.on_playback_finished)
+        self._sim_panel.collision_stopped.connect(
+            lambda _t, txt: self._target_panel.demo.on_play_failed(f"collision: {txt}"))
+        self._sim_panel.position_changed.connect(self._on_demo_position)
+        self._target_panel.demo.status_changed.connect(self._on_demo_status)
+        self._demo_loaded: Any = None
 
         # Script console (R8.1) - bottom, tabbed with the log, hidden at start.
         self._script_runner = ScriptRunner(
@@ -2097,9 +2106,72 @@ class MainWindow(QMainWindow):
         prefix = "[WARNING]" if report.by_severity(SEV_WARNING) else "[INFO]"
         self.log(f"{prefix} URDF imported: {where}{report.summary()}")
         self._start_auto_acm()
+        self._after_sample_import(path)
         n_warn = len(report.by_severity(SEV_WARNING))
         if n_warn and not report.has_errors():
             self.set_status(f"Imported with {n_warn} warnings (View > Import Report)")
+
+    def _after_sample_import(self, path: str) -> None:
+        """D1.2: a bundled sample robot brings its 5 sample targets (3 reachable, 2 not)."""
+        from app.sample_targets import load_sample_targets
+        try:
+            store = load_sample_targets(path)
+        except Exception as exc:
+            self.log(f"[WARNING] Sample targets not loaded: {exc}")
+            return
+        if store is None:
+            return
+        self._target_panel.load_targets(store)
+        self.log(f"[INFO] Sample targets loaded: {', '.join(store.names())}")
+        self._toast.show_message(
+            f"{len(store)} sample targets added (3 reachable, 2 not). "
+            "Run the demo to see the whole program work.", "Run demo", self.start_demo)
+
+    def start_demo(self) -> bool:
+        """D1.3: switch to the Target tab and run the demo tour over the project targets."""
+        if self._project_controller.robot is None:
+            self.set_status("Demo: open a sample robot first (File > Open Sample Robot).")
+            return False
+        self._toast.hide()
+        self.set_mode("Target")
+        return self._target_panel.start_demo()
+
+    def _on_demo_status(self, text: str) -> None:
+        self.set_status(text)
+        self.log(f"[INFO] {text}")
+
+    def _on_demo_play(self, traj: Any, info: dict) -> None:
+        """Demo tour: load one planned motion into the timeline, draw its tube, play it."""
+        import core_bridge as cb
+        sp = self._sim_panel
+        if not sp.load_trajectory(traj):
+            self._target_panel.demo.on_play_failed("motion does not fit the robot")
+            return
+        self._demo_loaded = sp.trajectory
+        try:
+            from app.planning.curve import tcp_at_time
+            model = self._project_controller.robot
+            cm = cb.compile(model)
+            ts = np.append(np.arange(0.0, traj.duration, 0.04), traj.duration)
+            pts = np.array([np.asarray(cb.fk_compiled(cm, list(traj.q(float(t))))["tcp"], float)[:3, 3]
+                            for t in ts])
+            self._viewport.robot_view.set_path_tube(pts)
+        except Exception as exc:
+            self.log(f"[WARNING] Demo path not drawn: {exc}")
+        sp.set_mode("kinematic")
+        sp.set_background_play(True)
+        sp.play_trajectory()
+
+    def _on_demo_position(self, t: float) -> None:
+        """Playback time: the pink marker follows the demo path in 3D."""
+        if self._demo_loaded is None or self._sim_panel.trajectory is not self._demo_loaded:
+            return
+        try:
+            from app.planning.curve import tcp_at_time
+            model = self._project_controller.robot
+            self._viewport.robot_view.set_path_marker(tcp_at_time(model, self._demo_loaded, t))
+        except Exception:
+            pass
 
     def _start_auto_acm(self) -> None:
         """U3.2: compute the automatic allowed-collision matrix of the new project in a worker."""
