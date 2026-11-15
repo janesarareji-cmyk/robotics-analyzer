@@ -97,34 +97,86 @@ title shown in the File menu:
 
 Licences are given in each `SOURCE.txt`.
 
-## Requirements
-
--   Windows 11, Python 3.13.
--   Visual Studio Build Tools (MSVC, C++20), CMake, CUDA Toolkit (for the GPU module).
--   NVIDIA GPU with CUDA is optional. Without it, all computation runs on the CPU.
-    Reference hardware: RTX 5060 Laptop (8 GB VRAM), 24 GB RAM.
-
 ## Install and run
 
+Windows 11 only. Everything is installed by one script and started by another.
+
+### Prerequisites
+
+| Need | Version | Where | Required |
+|------|---------|-------|----------|
+| Python (64-bit) | 3.13 | https://www.python.org/downloads/windows/ | yes |
+| CMake | 3.25 or newer | https://cmake.org/download/ (`winget install Kitware.CMake`) | yes |
+| Visual Studio Build Tools | 2022 or newer, workload "Desktop development with C++" | https://visualstudio.microsoft.com/downloads/ | yes |
+| Git | any | https://git-scm.com/ | to clone |
+| CUDA Toolkit + NVIDIA GPU | 12 or newer | https://developer.nvidia.com/cuda-downloads | no (GPU module only) |
+
+No administrator rights are needed by the scripts. The first build downloads
+Eigen, nlohmann_json and pybind11, so it needs internet.
+
+### Three commands
+
 ```powershell
-pip install -r requirements.txt
-cmake -S . -B build
-cmake --build build --config Release
-python app/main.py
+git clone https://github.com/janesarareji-cmyk/robotics-analyzer.git
+cd robotics-analyzer
+powershell -ExecutionPolicy Bypass -File setup.ps1     # install + build (once)
+.\run.ps1                                              # start the app (or double-click run.bat)
 ```
 
-`requirements-dev.txt` adds the MuJoCo validator package (`mujoco==4.0.1`).
+`setup.ps1` checks the tools, creates `.venv`, installs `requirements.txt`,
+builds the C++ core (`core_bridge`) and, when it finds CUDA and an NVIDIA GPU,
+the GPU module (`gpu_bridge`), then runs `python -m app.main --smoke`. The
+built `.pyd` files are copied to the repo root, where the app imports them.
+You can run it again at any time.
+
+Options: `-CpuOnly` (skip the GPU module), `-SkipBuild` (venv and packages
+only), `-Dev` (also installs pytest, pytest-qt and mujoco from
+`requirements-dev.txt`), `-Clean` (delete `.venv`, `build/` and the `.pyd`
+files first).
+
+### CPU only or GPU
+
+-   **GPU:** needs the CUDA Toolkit (`nvcc`) and an NVIDIA GPU with a driver.
+    `setup.ps1` reads the GPU architecture with `nvidia-smi` and builds
+    `gpu_bridge` for it. Workspace analysis then runs on the GPU.
+-   **CPU only:** if CUDA or the GPU is missing (or you pass `-CpuOnly`), no
+    `gpu_bridge` is built. The app falls back to the CPU on its own. All
+    features work; very large workspace runs are slower.
+-   Manual CMake: `cmake -S . -B build -DRA_ENABLE_CUDA=OFF` (CPU only), or
+    `-DRA_CUDA_ARCH=89-real` to choose the GPU architecture by hand.
+
+### Update
+
+```powershell
+git pull
+powershell -ExecutionPolicy Bypass -File setup.ps1
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| "running scripts is disabled" | Start with `powershell -ExecutionPolicy Bypass -File setup.ps1`, or use `run.bat`. |
+| "Python 3.13 was not found" | Install 64-bit Python 3.13; other versions do not work with the built modules. `py -0` lists what is installed. |
+| "CMake was not found" or too old | Install CMake 3.25 or newer, tick "Add to PATH", open a new terminal. |
+| "Visual Studio Build Tools were not found" / "C++ tools are missing" | Install the Build Tools and tick "Desktop development with C++". |
+| "CUDA Toolkit not found" | Not an error: the build is CPU only. Install the CUDA Toolkit and run `setup.ps1` again for the GPU module. |
+| Configure with CUDA fails | The script retries CPU only by itself. For the GPU, reinstall the CUDA Toolkit with its Visual Studio integration. |
+| Download fails during configure | Check internet access (gitlab.com and github.com), then `setup.ps1 -Clean`. |
+| Smoke test fails | Run `setup.ps1 -Clean`. If it still fails, run `.\.venv\Scripts\python.exe -m app.main --smoke` and read the message. |
+| App says to run setup first | `.venv` or `core_bridge` is missing: run `setup.ps1`. |
+
+### Run the tests
+
+```powershell
+powershell -ExecutionPolicy Bypass -File setup.ps1 -Dev    # once, adds pytest
+.\.venv\Scripts\Activate.ps1
+.\run_tests.ps1                                            # CTest and pytest together
+python -m pytest tests/python -q                          # Python tests only
+ctest --test-dir build -C Release                         # C++ tests only
+```
+
 The packaged one-folder build is described in [docs/packaging.md](docs/packaging.md).
-
-## Tests
-
-```powershell
-.\run_tests.ps1                              # C++ (CTest) and Python (pytest) together
-python -m pytest tests/python -q             # Python tests only
-ctest --test-dir build -C Release            # C++ tests only
-```
-
-Latest full suite: 1625 passed, 6 skipped (run in five foreground chunks of test files).
 
 ## Documentation
 

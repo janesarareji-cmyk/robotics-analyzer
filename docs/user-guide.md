@@ -39,9 +39,10 @@ Two ways to run the program:
     known limits are in [packaging.md](packaging.md). A clean-profile test is described in
     [clean-machine-test.md](clean-machine-test.md). A Windows installer (Inno Setup) is not part of the
     delivered build yet.
--   **From source (developers).** Install the Python packages in `requirements.txt` (PySide6, PyVista,
-    pyvistaqt, pyqtgraph, python-fcl, numpy and the test tools). Build the C++ core with CMake
-    (`cmake --build build --config Release`). The main entry point is `app/main.py`.
+-   **From source.** Run `setup.ps1` once (it creates `.venv`, installs `requirements.txt`, builds the
+    C++ core and, when CUDA and an NVIDIA GPU are found, the GPU module), then start the program with
+    `run.ps1` or `run.bat`. See "Install and run" in the [README](../README.md). The main entry point
+    is `app/main.py`.
 
 Hardware the program is written for: Windows 11, an NVIDIA GPU with CUDA support (RTX 5060 Laptop,
 8 GB VRAM, used as the reference) and 24 GB RAM. The GPU is optional: without it every computation

@@ -13,10 +13,12 @@ target_compile_features(test_eigen PUBLIC cxx_std_20)
 add_test(NAME test_eigen COMMAND test_eigen)
 
 # test_cuda — R0.6
-add_executable(test_cuda test_cuda.cpp)
-target_link_libraries(test_cuda PRIVATE cuda_lib)
-target_include_directories(test_cuda PRIVATE ${CMAKE_SOURCE_DIR}/cuda)
-add_test(NAME test_cuda COMMAND test_cuda)
+if(RA_ENABLE_CUDA)
+    add_executable(test_cuda test_cuda.cpp)
+    target_link_libraries(test_cuda PRIVATE cuda_lib)
+    target_include_directories(test_cuda PRIVATE ${CMAKE_SOURCE_DIR}/cuda)
+    add_test(NAME test_cuda COMMAND test_cuda)
+endif()
 
 # test_urm — R2.1
 add_executable(test_urm test_urm.cpp)

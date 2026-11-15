@@ -54,17 +54,24 @@ Three layers, one process, plus optional GPU code:
 
 ## Build
 
-Requirements: Windows 11, Visual Studio Build Tools (MSVC, C++20), CMake, Python 3.13, CUDA Toolkit
+Requirements: Windows 11, Visual Studio Build Tools (MSVC, C++20), CMake 3.25+, Python 3.13, CUDA Toolkit
 (only for the GPU module; see [hardware-audit.md](hardware-audit.md) for the versions used).
+
+The easy way is `setup.ps1` (see "Install and run" in the README): it creates `.venv`, installs the
+packages, detects CUDA and the GPU architecture, builds and runs the smoke test. `run.ps1` starts the app.
+By hand:
 
 ```powershell
 # Python packages
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt          # -r requirements-dev.txt for pytest, mujoco
 
 # C++ core, bridge and (optional) GPU module
-cmake -S . -B build
+cmake -S . -B build                                 # -DRA_ENABLE_CUDA=OFF for CPU only, -DRA_CUDA_ARCH=120-real
 cmake --build build --config Release
 ```
+
+CMake option `RA_ENABLE_CUDA` defaults to ON when a CUDA compiler is found, else OFF. With it OFF,
+`gpu_bridge` and the CUDA test are skipped; `core_bridge` and the other tests still build.
 
 The built `core_bridge` and `gpu_bridge` modules (`.pyd`) are git-ignored; the Python code imports them
 from `bindings/` and the repo root. `build/` and binaries are never committed.
