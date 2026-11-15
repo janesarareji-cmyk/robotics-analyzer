@@ -64,6 +64,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [Hardware audit](hardware-audit.md): GPU, CUDA, compiler and tool versions.
 -   [Code audit 2026-11-13](audit-2026-11-13.md): full code audit, findings H1-H3, M1-M9.
 -   [Audit 2026-11-15](audit-2026-11-15.md): audit and UI walkthrough after stage D1.
+-   [Security audit 2026-11-15](security-audit-2026-11-15.md): installer, untrusted files, plugins, supply chain; fix plan S1-S12.
 -   [Master plan](MASTER_PLAN.md): stages R3 to R8, workflow, stage gate.
 -   [Collision library decision](collision-decision.md): python-fcl choice (R7.2).
 -   [Planner decision](planner-decision.md): own planners instead of OMPL (R7.3).

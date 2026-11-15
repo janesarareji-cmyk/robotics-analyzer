@@ -449,7 +449,7 @@ function Read-Marker([string]$dir) {
 
 function Write-Marker([string]$dir, [string]$mode, [string[]]$shortcuts) {
     if ($DryRun) { Dry "would write marker file $MarkerName"; return }
-    $lines = @($MarkerHead, "created_by=install.ps1", "mode=$mode", "dir=$dir", "date=$(Get-Date -Format 'yyyy-MM-dd HH:mm')")
+    $lines = @($MarkerHead, "created_by=install.ps1", "version=1", "mode=$mode", "dir=$dir", "date=$(Get-Date -Format 'yyyy-MM-dd HH:mm')")
     foreach ($s in $shortcuts) { if ($s) { $lines += "shortcut=$s" } }
     [System.IO.File]::WriteAllText((Join-Path $dir $MarkerName), (($lines -join "`r`n") + "`r`n"))
 }
@@ -486,6 +486,7 @@ function Test-DirChoice([string]$cand) {
     try { $full = [System.IO.Path]::GetFullPath($cand.Trim('"').Trim()) } catch { $res.Msg = "That is not a valid path."; return $res }
     if ($full.Length -gt 3) { $full = $full.TrimEnd('\') }
     $res.Full = $full
+    if ($full -match '[%!^&]') { $res.Msg = "The path must not contain the characters % ! ^ &."; return $res }
     $root = [System.IO.Path]::GetPathRoot($full)
     if ($full.TrimEnd('\') -eq $root.TrimEnd('\')) { $res.Msg = "Do not install into a drive root. Pick a folder."; return $res }
     $bad = @($env:USERPROFILE, $env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, $env:APPDATA)
@@ -554,8 +555,9 @@ if (-not $Dir) { Fail-Wizard "No usable install folder after 4 tries." @("Run th
 $mk = Read-Marker $Dir
 if (Test-IsClone $Dir) {
     $Script:SourcePresent = $true
-    if ($mk.ContainsKey("mode")) { $Script:Mode = $mk["mode"] } else { $Script:Mode = "clone" }
-    if ($Dir -ieq $PSScriptRoot.TrimEnd('\')) { $Script:Mode = "clone" }
+    # S4: a folder that already holds source is a clone. A marker found there is never trusted
+    # for "mode": this run writes its own marker with mode=clone.
+    $Script:Mode = "clone"
 } elseif ($mk.ContainsKey("_valid")) {
     Info "Found an earlier unfinished install here. I will continue it."
 }
@@ -797,7 +799,7 @@ if ($doShort) {
             $sh = New-Object -ComObject WScript.Shell
             if (Test-Path -LiteralPath $lnk) {
                 $old = $sh.CreateShortcut($lnk)
-                if (-not ([string]$old.TargetPath).StartsWith($Dir, [StringComparison]::OrdinalIgnoreCase)) {
+                if (-not ([string]$old.TargetPath).StartsWith($Dir.TrimEnd([char]92) + [string][char]92, [StringComparison]::OrdinalIgnoreCase)) {
                     Warn ("A shortcut with that name already exists and belongs to something else, leaving it: " + $lnk)
                     continue
                 }

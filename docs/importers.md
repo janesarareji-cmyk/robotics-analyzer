@@ -156,15 +156,28 @@ Archive members added in 1.1.0:
 - `assets/<name>`: each distinct existing, non-fallback mesh file, copied
   once. Same basename from another folder gets `stem_1.ext`, `stem_2.ext`.
   The item's `mesh_path` becomes `assets/<name>`. Fallback items keep their
-  original `mesh_path` unchanged.
+  original `mesh_path` unchanged. Names are cleaned to `[A-Za-z0-9._-]`
+  (other characters become `_`; Windows reserved names like `NUL` get a `_`
+  prefix). Security (S2): only existing regular local files with a mesh
+  extension (`.stl .obj .ply .dae .glb .gltf .3mf .off`) are copied. A UNC or
+  device path, a non-mesh file or a folder is not embedded: the item is
+  saved as `mesh_path = null`, `fallback = true` and a warning is logged.
 
 On load:
 
 - All `assets/*` members are extracted into a new `tempfile.mkdtemp`
-  folder (prefix `robotproj_assets_`). Names are taken with `PurePosixPath`
-  name only (no zip-slip).
-- `mesh_path` is rewritten to the temp file. A missing asset logs a warning,
-  sets `mesh_path = None` and `fallback = True`.
+  folder (prefix `robotproj_assets_`). Security (S1): a member name must be
+  one plain component matching `^[A-Za-z0-9._-]{1,128}$`, no trailing dot,
+  not a Windows reserved name (`CON`, `NUL`, `COM1` ...). Anything else
+  (`D:x.py`, `a:b`, backslashes, `..`, sub-folders) is skipped with a warning,
+  and the resolved target must be directly inside the temp folder.
+- `mesh_path` is rewritten to the temp file. A missing or skipped asset logs a
+  warning, sets `mesh_path = None` and `fallback = True`. A `mesh_path` that
+  does not start with `assets/` is never read on open (S2): it is cleared
+  and the placeholder cube is shown.
+- URDF import (S2): `resolve_mesh` refuses UNC paths, device paths,
+  `file://<host>/...` (only `file:///` and `file://localhost/`) and names with
+  a `:` stream marker; they count as "mesh not found".
 - Temp folder is held in `ProjectData.asset_dir`, and removed with
   `shutil.rmtree` when the project data releases it
   (`app/project/project_data.py:149-152`).

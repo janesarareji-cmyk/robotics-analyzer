@@ -75,15 +75,50 @@ function Get-FolderMB([string]$dir) {
     return 0
 }
 
+function Test-Reparse([string]$path) {
+    try {
+        $a = [System.IO.File]::GetAttributes($path)
+        return (($a -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+    } catch { return $false }
+}
+
+# S3: delete junctions / symlinks inside the tree first (the link itself, never its target),
+# then delete the tree with .NET. No cmd.exe, so no %VAR% expansion.
+function Remove-Links([string]$path) {
+    $subs = @()
+    try { $subs = @([System.IO.Directory]::GetDirectories($path)) } catch { return }
+    foreach ($d in $subs) {
+        if (Test-Reparse $d) {
+            try { [System.IO.Directory]::Delete($d, $false) } catch { }
+        } else {
+            Remove-Links $d
+        }
+    }
+}
+
 function Remove-Tree([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) { return }
     if ($DryRun) { Say "   [dry-run] would delete $path" "DarkYellow"; return }
-    & cmd.exe /c "rmdir /s /q `"$path`"" 2>$null | Out-Null
-    if (Test-Path -LiteralPath $path) {
-        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    try {
+        if (Test-Reparse $path) {
+            [System.IO.Directory]::Delete($path, $false)
+        } else {
+            Remove-Links $path
+            [System.IO.Directory]::Delete($path, $true)
+        }
+    } catch { }
     if (Test-Path -LiteralPath $path) { Say "   ! could not delete everything in $path (is something still running from there?)" "Yellow" }
     else { Say "   removed $path" "Green" }
+}
+
+# S4: the marker must be complete and belong to this folder, else nothing is deleted
+function Test-MarkerStrict($mk, [string]$dir) {
+    if (-not $mk.ContainsKey("created_by") -or $mk["created_by"].Trim() -ne "install.ps1") { return "no created_by=install.ps1 line" }
+    if (-not $mk.ContainsKey("dir")) { return "no dir= line" }
+    if ($mk["dir"].Trim().TrimEnd('\') -ine $dir) { return "dir= says '$($mk['dir'])', not this folder" }
+    if (-not $mk.ContainsKey("mode") -or @("fresh", "clone") -notcontains $mk["mode"].Trim()) { return "mode= missing or unknown" }
+    if (-not $mk.ContainsKey("version") -or $mk["version"].Trim() -notmatch '^[0-9]+$') { return "version= missing or not a number" }
+    return ""
 }
 
 Write-Host ""
@@ -115,18 +150,34 @@ if (-not $Dir) {
     exit 1
 }
 # the marker must belong to this very folder (a copied marker does not count)
-if ($mk.ContainsKey("dir") -and ($mk["dir"].TrimEnd('\') -ine $Dir)) {
-    Say "The marker in $Dir says it belongs to $($mk['dir']). The folder was moved or copied." "Red"
-    Say "  Refusing to delete. Remove it by hand if you are sure."
+$why = Test-MarkerStrict $mk $Dir
+if ($why) {
+    Say "The marker in $Dir is not valid: $why." "Red"
+    Say "  Refusing to delete. Nothing was deleted. Remove the folder by hand if you are sure."
+    exit 1
+}
+if ($Dir -match '[%!^&]') {
+    Say "Refusing: the path $Dir has one of the characters % ! ^ &. Nothing was deleted." "Red"
+    exit 1
+}
+if (Test-Reparse $Dir) {
+    Say "Refusing: $Dir is a junction or symbolic link. Nothing was deleted." "Red"
     exit 1
 }
 $root = [System.IO.Path]::GetPathRoot($Dir)
-if ($Dir -ieq $root.TrimEnd('\') -or $Dir -ieq $env:USERPROFILE -or $Dir -ieq $env:SystemRoot) {
-    Say "Refusing: $Dir is a protected location." "Red"
+$prot = @($env:USERPROFILE, $env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramData, $env:LOCALAPPDATA, $env:APPDATA, $env:SystemDrive)
+$isProt = ($Dir -ieq $root.TrimEnd('\'))
+foreach ($b in $prot) {
+    if (-not $b) { continue }
+    $bb = $b.TrimEnd('\')
+    # the folder itself, or a folder that contains it (the profile inside it would be deleted too)
+    if ($Dir -ieq $bb -or $bb.StartsWith($Dir + "\", [StringComparison]::OrdinalIgnoreCase)) { $isProt = $true }
+}
+if ($isProt) {
+    Say "Refusing: $Dir is a protected location. Nothing was deleted." "Red"
     exit 1
 }
-$mode = "fresh"
-if ($mk.ContainsKey("mode")) { $mode = $mk["mode"] }
+$mode = $mk["mode"].Trim()
 
 Say "  Found install: $Dir" "White"
 Say ("  Installed by : install.ps1 on " + $mk["date"] + "  (mode: $mode)")
@@ -145,7 +196,7 @@ foreach ($l in $links) {
     try {
         $sh = New-Object -ComObject WScript.Shell
         $t = [string]($sh.CreateShortcut($l)).TargetPath
-        if ($t.StartsWith($Dir, [StringComparison]::OrdinalIgnoreCase)) { $ours += $l }
+        if ($t.StartsWith($Dir + "\", [StringComparison]::OrdinalIgnoreCase)) { $ours += $l }
         else { Say "  Skipping shortcut $l (it points elsewhere)" "Yellow" }
     } catch { }
 }

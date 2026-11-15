@@ -24,6 +24,10 @@ from typing import Any
 
 import core_bridge as cb
 
+from app.importers.visuals import (
+    EMBED_EXTENSIONS, is_remote_or_device_path, is_safe_asset_name,
+    sanitize_asset_name,
+)
 from app.project.migrations import migrate, is_newer, parse_version
 from app.project.project_data import (
     ProjectData,
@@ -259,6 +263,17 @@ def _write_json(zf: zipfile.ZipFile, name: str, data: Any) -> None:
     zf.writestr(name, text.encode(ENCODING))
 
 
+def _embeddable(src: str) -> bool:
+    """S2: embed only existing regular local files with a mesh extension."""
+    if is_remote_or_device_path(src):
+        return False
+    try:
+        p = Path(src)
+        return p.suffix.lower() in EMBED_EXTENSIONS and p.is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def _write_visuals(zf: zipfile.ZipFile, project: ProjectData) -> None:
     """Write visuals.json and copy each distinct mesh file into assets/."""
     name_of: dict[str, str] = {}     # source abs path -> archive name
@@ -267,7 +282,7 @@ def _write_visuals(zf: zipfile.ZipFile, project: ProjectData) -> None:
     def archive_name(src: str) -> str:
         if src in name_of:
             return name_of[src]
-        base = Path(src).name
+        base = sanitize_asset_name(Path(src).name)
         stem, suffix = Path(base).stem, Path(base).suffix
         cand, n = base, 0
         while cand in used:
@@ -283,8 +298,14 @@ def _write_visuals(zf: zipfile.ZipFile, project: ProjectData) -> None:
         for v in items:
             d = v.to_dict()
             src = d.get("mesh_path")
-            if src and not d.get("fallback") and Path(src).is_file():
-                d["mesh_path"] = f"{_ASSET_DIR}/{archive_name(src)}"
+            if src and not d.get("fallback"):
+                if _embeddable(src):
+                    d["mesh_path"] = f"{_ASSET_DIR}/{archive_name(src)}"
+                elif d.get("kind") == "mesh":
+                    # S2: never copy foreign / non-mesh files into the project
+                    log.warning("Mesh path '%s' not embedded (not a local mesh file)", src)
+                    d["mesh_path"] = None
+                    d["fallback"] = True
             out.append(d)
         return out
 
@@ -304,11 +325,22 @@ def _read_visuals(zf: zipfile.ZipFile, names: list[str]):
     asset_names = [n for n in names
                    if n.startswith(_ASSET_DIR + "/") and not n.endswith("/")]
     asset_dir = None
+    written: set[str] = set()
     if asset_names:
         asset_dir = tempfile.mkdtemp(prefix="robotproj_assets_")
+        root = Path(asset_dir).resolve()
         for n in asset_names:
-            target = Path(asset_dir) / PurePosixPath(n).name   # no zip-slip
+            # S1: one plain component, allow-list, target must stay inside root
+            leaf = n[len(_ASSET_DIR) + 1:]
+            if not is_safe_asset_name(leaf):
+                log.warning("Unsafe asset name %r in project archive skipped", n)
+                continue
+            target = (root / leaf).resolve()
+            if target.parent != root:
+                log.warning("Asset %r escapes the asset folder; skipped", n)
+                continue
             target.write_bytes(zf.read(n))
+            written.add(leaf)
 
     def load(items: list[dict[str, Any]]) -> list[Any]:
         out = []
@@ -316,14 +348,20 @@ def _read_visuals(zf: zipfile.ZipFile, names: list[str]):
             v = LinkVisual.from_dict(d)
             mp = v.mesh_path
             if mp and mp.startswith(_ASSET_DIR + "/"):
-                real = Path(asset_dir) / PurePosixPath(mp).name if asset_dir else None
-                if real is not None and real.is_file():
-                    v.mesh_path = str(real)
+                leaf = mp[len(_ASSET_DIR) + 1:]
+                if asset_dir and leaf in written:
+                    v.mesh_path = str(Path(asset_dir).resolve() / leaf)
                 else:
                     log.warning("Missing asset '%s' in project archive; "
                                 "placeholder cube is used", mp)
                     v.mesh_path = None
                     v.fallback = True
+            elif mp:
+                # S2: a path outside the project assets is never read on open
+                log.warning("Mesh path '%s' outside project assets ignored; "
+                            "placeholder cube is used", mp)
+                v.mesh_path = None
+                v.fallback = True
             out.append(v)
         return out
 

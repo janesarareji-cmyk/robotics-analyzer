@@ -156,7 +156,7 @@ def test_uninstall_dry_run_with_marker(tmp_path):
     d.mkdir()
     (d / "a.txt").write_text("x")
     (d / ".robotics-analyzer-install").write_text(
-        NL.join(["RoboticsAnalyzer-install-marker", "created_by=install.ps1", "mode=fresh", f"dir={d}", "date=now", ""]))
+        NL.join(["RoboticsAnalyzer-install-marker", "created_by=install.ps1", "version=1", "mode=fresh", f"dir={d}", "date=now", ""]))
     r = subprocess.run(
         [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "uninstall.ps1"),
          "-Yes", "-DryRun", "-InstallDir", str(d)],
@@ -164,3 +164,136 @@ def test_uninstall_dry_run_with_marker(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert "would delete" in r.stdout
     assert (d / "a.txt").exists()
+
+
+# ---------------------------------------------------------------- S3 / S4 (security audit)
+def _marker(d, **over):
+    fields = {"created_by": "install.ps1", "version": "1", "mode": "fresh", "dir": str(d), "date": "now"}
+    for k, v in over.items():
+        if v is None:
+            fields.pop(k, None)
+        else:
+            fields[k] = v
+    lines = ["RoboticsAnalyzer-install-marker"] + [f"{k}={v}" for k, v in fields.items()] + [""]
+    (d / ".robotics-analyzer-install").write_text(NL.join(lines), encoding="ascii")
+
+
+def _uninstall(d, *extra, dry=True):
+    ps = _powershell()
+    if ps is None:
+        pytest.skip("PowerShell not available")
+    return subprocess.run(
+        [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "uninstall.ps1"),
+         "-Yes", *(["-DryRun"] if dry else []), "-InstallDir", str(d), *extra],
+        capture_output=True, text=True, timeout=120)
+
+
+def _folder(tmp_path, name="inst"):
+    d = tmp_path / name
+    d.mkdir()
+    (d / "keep.txt").write_text("x")
+    return d
+
+
+@pytest.mark.parametrize("over", [
+    {"dir": None}, {"mode": None}, {"mode": "weird"}, {"version": None}, {"version": "x"},
+    {"created_by": None}, {"created_by": "evil"}, {"dir": "C:\\somewhere\\else"},
+])
+def test_uninstall_refuses_incomplete_or_wrong_marker(tmp_path, over):
+    d = _folder(tmp_path)
+    _marker(d, **over)
+    r = _uninstall(d)
+    assert r.returncode != 0, r.stdout
+    assert "Refusing" in r.stdout
+    assert "would delete" not in r.stdout
+    assert (d / "keep.txt").exists()
+
+
+def test_uninstall_header_only_marker_refuses(tmp_path):
+    d = _folder(tmp_path)
+    (d / ".robotics-analyzer-install").write_text("RoboticsAnalyzer-install-marker" + NL)
+    r = _uninstall(d)
+    assert r.returncode != 0 and "would delete" not in r.stdout
+    assert (d / "keep.txt").exists()
+
+
+def test_uninstall_refuses_percent_in_path(tmp_path):
+    d = _folder(tmp_path, "%USERPROFILE%")
+    _marker(d)
+    r = _uninstall(d)
+    assert r.returncode != 0
+    assert "Refusing" in r.stdout and "would delete" not in r.stdout
+    assert (d / "keep.txt").exists()
+
+
+def test_uninstall_refuses_junction(tmp_path):
+    if not hasattr(subprocess, "run") or not _powershell():
+        pytest.skip("PowerShell not available")
+    target = _folder(tmp_path, "target")
+    _marker(target)
+    link = tmp_path / "link"
+    r0 = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, text=True)
+    if r0.returncode != 0:
+        pytest.skip("cannot create a junction: " + r0.stdout + r0.stderr)
+    _marker(target, dir=str(link))
+    r = _uninstall(link)
+    assert r.returncode != 0
+    assert "junction" in r.stdout and "would delete" not in r.stdout
+    assert (target / "keep.txt").exists()
+
+
+def test_uninstall_refuses_drive_root_and_profile(tmp_path):
+    import os
+    root = os.path.splitdrive(str(tmp_path))[0] + "\\"
+    for p in (root, os.environ.get("USERPROFILE", root), os.environ.get("SystemRoot", root)):
+        r = _uninstall(p)
+        assert r.returncode != 0, p
+        assert "would delete" not in r.stdout, p
+
+
+def test_uninstall_refuses_parent_of_profile(tmp_path):
+    import os
+    prof = os.environ.get("USERPROFILE")
+    if not prof:
+        pytest.skip("no USERPROFILE")
+    r = _uninstall(os.path.dirname(prof))
+    assert r.returncode != 0 and "would delete" not in r.stdout
+
+
+def test_uninstall_valid_fresh_marker_dry_run(tmp_path):
+    d = _folder(tmp_path)
+    _marker(d)
+    r = _uninstall(d)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "would delete" in r.stdout
+    assert (d / "keep.txt").exists()
+
+
+def test_scripts_have_no_cmd_or_expression_eval():
+    for name in ("uninstall.ps1", "install.ps1", "setup.ps1", "run.ps1"):
+        text = (ROOT / name).read_text(encoding="ascii")
+        code = NL.join(ln for ln in text.splitlines() if not ln.strip().startswith("#"))
+        assert not re.search(r"cmd(\.exe)?\s+/c", code, re.I), name
+        assert not re.search(r"Invoke-Expression|iex", code, re.I), name
+        assert "rmdir" not in code.lower(), name
+
+
+def test_install_never_adopts_mode_from_marker():
+    text = (ROOT / "install.ps1").read_text(encoding="ascii")
+    assert '$Script:Mode = $mk["mode"]' not in text
+    assert '"version=1"' in text
+
+
+def test_uninstall_real_delete_does_not_follow_inner_junction(tmp_path):
+    d = _folder(tmp_path, "inst")
+    _marker(d)
+    outside = _folder(tmp_path, "outside")
+    (outside / "precious.txt").write_text("keep")
+    r0 = subprocess.run(["cmd", "/c", "mklink", "/J", str(d / "robots"), str(outside)],
+                        capture_output=True, text=True)
+    if r0.returncode != 0:
+        pytest.skip("cannot create a junction: " + r0.stdout + r0.stderr)
+    r = _uninstall(d, dry=False)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not d.exists()
+    assert (outside / "precious.txt").read_text() == "keep"

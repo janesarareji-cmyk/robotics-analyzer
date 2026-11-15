@@ -119,6 +119,10 @@ To remove it: double-click `uninstall.bat` (or run `uninstall.ps1`). It deletes
 only a folder that holds the marker file `.robotics-analyzer-install` written
 by the wizard, asks first, and removes the shortcuts. A clone you made yourself
 is never deleted: only `.venv`, `build/`, the built `.pyd` files and the log go.
+The marker must be complete (`created_by`, `version`, `mode` = `fresh` or `clone`,
+and `dir=` equal to the folder), else uninstall refuses and deletes nothing. It
+also refuses drive roots, system folders, the user profile (or a folder that
+contains it), junctions, and paths with `% ! ^ &`.
 
 ## Install and run (manual)
 

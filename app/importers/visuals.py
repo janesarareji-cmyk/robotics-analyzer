@@ -7,6 +7,7 @@ mesh loading. Pure Python. The C++ URM does not store visuals.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
@@ -18,6 +19,53 @@ MESH_FORMATS = (".stl", ".obj", ".ply")
 MAX_TRIANGLES = 2_000_000
 
 KINDS = ("box", "cylinder", "sphere", "mesh")
+
+# S2: extensions a project may embed from disk (save); reading stays MESH_FORMATS
+EMBED_EXTENSIONS = (".stl", ".obj", ".ply", ".dae", ".glb", ".gltf", ".3mf", ".off")
+
+# S1: allow-list for archive asset names
+_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_RESERVED = {"CON", "PRN", "AUX", "NUL",
+             *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def is_safe_asset_name(name: str) -> bool:
+    """True for a plain file name that is safe to create in a temp folder (Windows rules)."""
+    if not isinstance(name, str) or not _ASSET_NAME_RE.match(name):
+        return False
+    if name in (".", "..") or name.endswith("."):
+        return False
+    if name.split(".")[0].upper() in _RESERVED:
+        return False
+    return True
+
+
+def sanitize_asset_name(name: str) -> str:
+    """Make a safe asset name from a file name (used on save)."""
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", str(name))[:128].rstrip(".")
+    if base in ("", ".", "..") or base.split(".")[0].upper() in _RESERVED:
+        base = "_" + base.lstrip(".")
+    return base if is_safe_asset_name(base) else "mesh.bin"
+
+
+def is_remote_or_device_path(path: str) -> bool:
+    """UNC, device (backslash-backslash-?/.) paths, file:// with a host, NTFS streams."""
+    p = str(path or "").strip()
+    if not p:
+        return False
+    q = p.replace("\\", "/")
+    if q.startswith("//"):
+        return True
+    low = q.lower()
+    if low.startswith("file:"):
+        rest = low[5:]
+        return (rest.startswith("//") and not rest.startswith("///")
+                and not rest.startswith("//localhost/"))
+    # a colon anywhere except as the drive letter ("C:") or "package://" is a stream or odd scheme
+    body = q[2:] if re.match(r"^[A-Za-z]:", q) else q
+    if low.startswith("package://"):
+        body = q[len("package://"):]
+    return ":" in body
 
 
 @dataclass
@@ -91,7 +139,7 @@ def resolve_mesh(
 ) -> Optional[str]:
     """Return the absolute path of a mesh file, or None when not found."""
     fn = (filename or "").strip()
-    if not fn:
+    if not fn or is_remote_or_device_path(fn):
         return None
     roots = [Path(r) for r in (search_roots or []) if r]
     base = Path(urdf_dir)
@@ -118,7 +166,7 @@ def resolve_mesh(
         parsed = urlparse(fn)
         path = url2pathname(unquote(parsed.path))
         if parsed.netloc and parsed.netloc != "localhost":
-            path = "//" + parsed.netloc + path
+            return None     # S2: no network paths
         return _first_file([Path(path)])
 
     p = Path(fn)
@@ -183,8 +231,8 @@ def load_visual_mesh(v: LinkVisual, triad_length: float = 0.05,
     if v.kind != "mesh":
         return fallback_cube(triad_length)
 
-    if v.fallback or not v.mesh_path or not os.path.isfile(v.mesh_path) \
-            or not mesh_format_ok(v.mesh_path):
+    if v.fallback or not v.mesh_path or is_remote_or_device_path(v.mesh_path) \
+            or not os.path.isfile(v.mesh_path) or not mesh_format_ok(v.mesh_path):
         return fallback_cube(triad_length)
 
     scale = tuple(float(s) for s in v.params.get("scale", (1.0, 1.0, 1.0)))
