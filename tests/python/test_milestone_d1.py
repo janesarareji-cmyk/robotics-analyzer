@@ -16,7 +16,12 @@ from app.main_window import MainWindow
 from app.planning.collision import CollisionWorld, shapes_from_project
 from app.sample_targets import sample_kinds
 from app.settings import AppSettings
-from tests.python.test_live_blocking import SAMPLES, load
+from tests.python.test_live_blocking import SAMPLES, load as _load
+
+
+def load(win, name):
+    win._import_sample = True        # as if opened from the start screen / sample menu
+    return _load(win, name)
 
 RESULTS: dict = {}
 

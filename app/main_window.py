@@ -564,7 +564,7 @@ class MainWindow(QMainWindow):
         # U5.5: start screen over the 3D view until a robot is loaded
         self._start_screen = StartScreen()
         _attach_start(self._start_screen, self._viewport)
-        self._start_screen.sample_requested.connect(self.import_urdf_file)
+        self._start_screen.sample_requested.connect(self.import_sample_file)
         self._start_screen.import_requested.connect(self._on_import_urdf)
         self._start_screen.open_requested.connect(self._on_open_project)
         self._start_screen.recent_requested.connect(
@@ -1229,7 +1229,7 @@ class MainWindow(QMainWindow):
             return
         for title, path in robots:
             a = self._menu_samples.addAction(title)
-            a.triggered.connect(lambda checked=False, p=str(path): self.import_urdf_file(p))
+            a.triggered.connect(lambda checked=False, p=str(path): self.import_sample_file(p))
 
     def _restore_layout(self) -> None:
         """Restore saved window geometry and dock layout from AppSettings."""
@@ -2061,11 +2061,19 @@ class MainWindow(QMainWindow):
         else:
             self.set_status(f"Dropped file ignored (need .urdf or .robotproj): {path}")
 
+    def import_sample_file(self, path: str) -> None:
+        """Open a bundled sample robot (start screen, File > Open Sample Robot): its 5 sample targets
+        are added to the new project (D1.2)."""
+        self._want_sample = True
+        self.import_urdf_file(path)
+
     def import_urdf_file(self, path: str) -> None:
         """Run the URDF import in a worker task; result handled on the GUI thread."""
         self.set_status(f"Importing {path} ...")
         roots = self._settings.mesh_search_roots()
         self._import_path = path
+        self._import_sample = getattr(self, "_want_sample", False)     # only for a sample robot
+        self._want_sample = False
         from app.task_runner import FunctionTask
         task = FunctionTask(lambda: import_urdf(path, roots))
         task.signals.result.connect(self._on_urdf_import_result)
@@ -2106,7 +2114,9 @@ class MainWindow(QMainWindow):
         prefix = "[WARNING]" if report.by_severity(SEV_WARNING) else "[INFO]"
         self.log(f"{prefix} URDF imported: {where}{report.summary()}")
         self._start_auto_acm()
-        self._after_sample_import(path)
+        if getattr(self, "_import_sample", False):
+            self._import_sample = False
+            self._after_sample_import(path)
         n_warn = len(report.by_severity(SEV_WARNING))
         if n_warn and not report.has_errors():
             self.set_status(f"Imported with {n_warn} warnings (View > Import Report)")

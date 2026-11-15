@@ -14,7 +14,12 @@ from PySide6.QtTest import QTest
 from app.main_window import MainWindow
 from app.sample_targets import sample_kinds
 from app.settings import AppSettings
-from tests.python.test_live_blocking import SAMPLES, load
+from tests.python.test_live_blocking import SAMPLES, load as _load
+
+
+def load(win, name):
+    win._import_sample = True        # as if opened from the start screen / sample menu
+    return _load(win, name)
 
 
 @pytest.fixture
@@ -52,3 +57,21 @@ def test_sample_targets_loaded_with_robot(win):
     for r in tp.last_classification:
         assert (r["status"] != "bad") == (kinds[r["name"]] == "reachable"), r
     assert tp.markers.status_of("Pick A") in ("ok", "warn")
+
+
+def test_plain_import_has_no_sample_targets(win):
+    from tests.python.test_live_blocking import load as plain
+    plain(win, "ur3")
+    assert len(win.target_panel.store) == 0
+
+
+def test_sample_card_loads_targets(win):
+    from PySide6.QtCore import Qt
+    QTest.mouseClick(win.start_screen.card("ur3"), Qt.MouseButton.LeftButton)
+    assert win.task_runner.wait_all(30000)
+    QCoreApplication.processEvents()
+    assert len(win.target_panel.store) == 5
+    win.project_controller._is_modified = False
+    win.project_controller.close_project(win)
+    QCoreApplication.processEvents()
+    assert len(win.target_panel.store) == 0
