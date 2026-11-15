@@ -27,6 +27,7 @@ Every document in `docs/` is listed below. `tests/python/test_docs.py` fails whe
 -   [Collision](collision.md): shapes, allowed collision matrix, project format 1.3.0.
 -   [Targets and ranked IK](targets.md): 3D target, ranked solutions, ghost preview, play to target (U4a).
 -   [Curves, follow and live matrices](curves.md): line / arc / spline, path check, coloured tube, matrix panel (U4b).
+-   [Walkthrough](walkthrough.md): guided tour of every panel, menu and shortcut with screenshots, plus a 10 minute first-run script.
 -   [User interface](user-interface.md): start screen, work modes, joint poses, Cartesian jog, 3D view buttons, undo, help (U5).
 -   [UI review U5](ui-review-u5.md): findings of the GUI skills, what was fixed or skipped.
 -   [Analysis overlays](overlays.md): reach map, singularity zones, joint load, timeline and video export (U6).
